@@ -1,0 +1,177 @@
+# Expense Tracking Tool
+
+This is an expense tracking tool we are building together incrementally.
+**Always wait for explicit instruction before making changes.**
+**Always read CLAUDE.md fully before writing any code.**
+**Always match field names exactly to `create.sql` column names — it is the source of truth.**
+
+---
+
+## High-Level Workflow
+
+```
+Gmail (label: 'Finanzas Personales')
+  └── Step 1-3: email_reader.py   ← polls unread emails, parses body, writes → transactions_raw
+        └── Step 4: enricher.py   ← bank detection + field extraction → transactions_enriched
+              └── Step 5: Classification  ← category/subcategory/logic → transactions_classified (NOT YET BUILT)
+                    └── Step 6: Notification  ← email and/or WhatsApp to client (NOT YET BUILT)
+                          └── Step 7: Reclassification  ← client can override (NOT YET BUILT)
+```
+
+### Email Routing
+- Bank sends notification to client's personal email
+- Client forwards (or has a rule forwarding) to: `crgastostesting+{client_alias}@gmail.com`
+- `email_reader.py` reads from that Gmail account, filtered to label **'Finanzas Personales'**
+- The `To:` header is matched against `core.clients.email_forward` to identify the client
+- Emails are often **forwarded** by the client, so `from_email` in `transactions_raw` may be
+  the client's personal Gmail — not the original bank sender
+
+---
+
+## Database Schema (`core` schema in PostgreSQL)
+
+Source of truth: **`create.sql`**. Never modify it without explicit instruction.
+
+### `core.businesses`
+Top-level multi-tenant grouping. Sentinel record
+`id = '00000000-0000-0000-0000-000000009999'` (`__individual__`) is used for clients
+not tied to any company.
+
+### `core.clients`
+One row per person. Key fields:
+- `email_forward` — the `crgastostesting+{alias}@gmail.com` forwarding address
+- `active` — only active clients are processed
+- `business_id` — links to `core.businesses` (or sentinel for individuals)
+
+### `core.transactions_raw`
+One row per email. Written by `email_reader.py` at ingest time (Steps 1–3).
+
+| Field | Notes |
+|---|---|
+| `id` | `uuid.uuid4()` generated at insert |
+| `message_id` | Gmail message ID — dedup key |
+| `thread_id` | Gmail thread ID |
+| `individual_id` | Matched from `email_forward` on `To:` header |
+| `business_id` | Copied from `core.clients.business_id` |
+| `from_email` | `From:` header (may be client's address if forwarded) |
+| `to_email` | `To:` header |
+| `subject` | `Subject:` header |
+| `body_text_full` | Full body (HTML→text preferred, plain text fallback, max 20,000 chars) |
+| `body_condensed` | Keyword-filtered version of body (max 1,200 chars) |
+| `ms_date` | `internalDate` from Gmail API (epoch ms) |
+| `local_date` | `ms_date` converted to `America/Costa_Rica` |
+| `label_source` | Always `'Finanzas Personales'` |
+| `month` / `year` / `year_month` | Derived from `local_date`. `year_month` zero-padded: `'YYYY-MM'` |
+
+Unique constraint: `(individual_id, message_id)`.
+Fields removed from schema (do NOT use): `source`, `payload_json`, `processed`, `received_at`, `transaction_type_guess`, `errors`.
+
+### `core.transactions_enriched`
+One row per `transactions_raw` row. Written by `enricher.py` (Step 4).
+
+| Field | Notes |
+|---|---|
+| `raw_id` | FK → `transactions_raw.id` |
+| `bank` | Detected bank name: `'bac'`, `'promerica'`, `'davibank'`, or `NULL` |
+| `merchant_guess` | Extracted merchant, title-cased |
+| `amount_guess` | Numeric amount (`NUMERIC(14,2)`) |
+| `currency_guess` | `'CRC'`, `'USD'`, or `'EUR'` |
+| `desc_guess` | Human-readable description, e.g. `'Compra en Auto Mercado'` |
+| `transaction_type_guess` | `'debito'` / `'credito'` / `'unknown'` |
+| `transaction_status` | `'Procesado'` / `'Procesado parcialmente'` / `'Descartado'` / `'unknown'` |
+| `amount_local` / `currency_local` / `fx_rate` / `fx_rate_date` | FX fields — **not yet implemented** |
+
+Status logic:
+- `'Procesado'` → all 4 guess fields populated
+- `'Procesado parcialmente'` → `amount_guess` populated but not all others
+- `'Descartado'` → `amount_guess` missing
+- `'unknown'` → AI assistance was off and bank parser couldn't fill all fields
+
+### `core.transactions_classified`
+Step 5 — **not yet built**.
+Key fields: `merchant`, `category`, `subcategory`, `permanent_rule`, `logic`,
+`classified_by` (`'rules'` | `'openai'`), notification tracking.
+
+### `core.categories`
+Category catalog. Business-level or client-specific.
+Unique on `(business_id, individual_id, category, subcategory)`.
+
+---
+
+## Supported Banks
+
+| Bank | Detection keywords | Parser file | Status |
+|---|---|---|---|
+| BAC Credomatic | `bac`, `baccredomatic`, `notificacionesbaccr` | `banks/bac.py` | Implemented |
+| Promérica | `promerica` | `banks/promerica.py` | Implemented (basic) |
+| DAVIbank | `davibank`, `davivienda` | — | **NOT YET BUILT** — waiting for email samples |
+
+### BAC Parsing Rules (`banks/bac.py`)
+- **COMPRA**: merchant from `Comercio:` field, strip `Ciudad y país:` suffix
+- **SINPE Móvil**: subject contains `sinpe` → payee from body, desc = `'SINPE Móvil: {payee}'`
+- **Notificación de Transferencia**: merchant = `'Transferencia BAC'`, concept from `por concepto de:`
+- **Generic**: fallback `Comercio:` extraction for other BAC emails
+
+### Promérica Parsing Rules (`banks/promerica.py`)
+- Generic `Comercio:` extraction with `Ciudad y País:` stripping
+
+### Bank Detection
+Bank is detected in `enricher.py` by searching `subject + from_email + body_condensed`
+for keyword patterns. Since many emails are **forwarded**, detection relies on content keywords,
+not just `from_email`.
+
+### Amount / Currency Parsing (`banks/utils.py` → `parse_amount_currency`)
+Handles European (`1.234,56`) and US (`1,234.56`) number formats.
+Recognises: `por CRC/USD/EUR`, `Monto: CRC`, `por un monto de ... CRC`, `₡`, `$`.
+
+---
+
+## Current File Structure
+
+```
+email_reader.py          Entry point — Gmail poller loop (Steps 1–3)
+gmail_client.py          Gmail API auth, label lookup, fetch/mark-as-read
+parser.py                MIME body extraction, HTML→text, condense_bank, build_raw_row
+enricher.py              Step 4 orchestrator — bank detection, field extraction, OpenAI fallback
+db.py                    Postgres connection + all DB functions
+banks/
+  __init__.py
+  utils.py               Shared helpers: normalize_number, parse_amount_currency,
+                         strip_city_country_suffix, smart_title_case
+  bac.py                 BacParser class
+  promerica.py           PromericaParser class
+email_extractor.py       Standalone utility — dumps emails to Excel for parser development
+create.sql               PostgreSQL schema (source of truth — do not modify)
+Code.js                  Original Apps Script reference — do not modify
+```
+
+---
+
+## Environment Variables (`.env`)
+
+| Variable | Purpose |
+|---|---|
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Postgres connection |
+| `OPENAI_API_KEY` | OpenAI API key for AI fallback in enricher |
+| `AI_ASSISTANCE` | `0` = OFF (default during testing), `1` = ON — enables OpenAI fallback |
+
+---
+
+## Coding Conventions
+- Python 3.11+
+- `psycopg2` for Postgres — raw SQL only, no ORM
+- `uuid.uuid4()` for all generated UUIDs
+- All timestamps UTC internally; convert to `America/Costa_Rica` only for `local_date`
+- `year_month` always zero-padded: `f"{year}-{month:02d}"`
+- Never hardcode credentials — use `.env` / environment variables
+- Bank-specific logic lives in `banks/` — `parser.py` and `email_reader.py` must stay bank-agnostic
+- One function per responsibility
+
+---
+
+## What Is NOT Yet Built
+- DAVIbank parser (`banks/davibank.py`) — waiting for real email samples via `email_extractor.py`
+- FX conversion (BCCR API) for `amount_local`, `fx_rate`, `fx_rate_date`
+- Step 5: Classification (`transactions_classified`)
+- Step 6: Notification (email / WhatsApp)
+- Step 7: Reclassification

@@ -12,6 +12,7 @@ import uuid
 from openai import OpenAI
 
 from banks.bac import BacParser
+from banks.davibank import DavibankParser
 from banks.promerica import PromericaParser
 
 log = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ log = logging.getLogger(__name__)
 
 _BANK_PARSERS = [
     BacParser(),
+    DavibankParser(),
     PromericaParser(),
 ]
 
@@ -37,8 +39,8 @@ _BANK_KEYWORDS = {
 # Detection helpers
 # ---------------------------------------------------------------------------
 
-def detect_bank(subject: str, from_email: str, body_condensed: str) -> str:
-    text = " ".join([subject or "", from_email or "", body_condensed or ""])
+def detect_bank(subject: str, from_email: str, body_text_full: str, body_condensed: str) -> str:
+    text = " ".join([subject or "", from_email or "", body_condensed or "", body_text_full or ""])
     for bank, patterns in _BANK_KEYWORDS.items():
         for pat in patterns:
             if re.search(pat, text, re.IGNORECASE):
@@ -165,7 +167,7 @@ def enrich_raw(raw_row: dict) -> dict:
     body_text = raw_row.get("body_text_full") or ""
     body_condensed = raw_row.get("body_condensed") or ""
 
-    bank = detect_bank(subject, from_email, body_condensed)
+    bank = detect_bank(subject, from_email, body_text, body_condensed)
     txn_type = detect_transaction_type(subject, body_condensed)
 
     log.info(f"  Enriching: bank={bank} type={txn_type}")
@@ -185,7 +187,7 @@ def enrich_raw(raw_row: dict) -> dict:
     desc = fields.get("desc_guess")
 
     # Use OpenAI if bank unknown OR any field still missing
-    needs_ai = bank == "unknown" or not all([merchant, amount, currency, desc])
+    needs_ai = bank == "unknown" or not all([merchant, amount is not None, currency, desc])
     ai_enabled = os.environ.get("AI_ASSISTANCE", "0") == "1"
 
     if needs_ai and ai_enabled:

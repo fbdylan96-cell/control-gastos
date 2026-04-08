@@ -117,10 +117,17 @@ CREATE TABLE core.transactions_enriched (
     fx_rate NUMERIC(10,4),        -- rate used (e.g. 531.2500 means 1 USD = 531.25 CRC)
     fx_rate_date DATE,            -- date the rate was fetched from BCCR
 
+    -- Approval state — 'Denegada' when "deneg" is found in subject or body; skips all further steps
+    transaction_approval TEXT NOT NULL DEFAULT 'Aprobada'
+        CONSTRAINT chk_transaction_approval CHECK (transaction_approval IN ('Aprobada', 'Denegada')),
+
     -- Pipeline state
     transaction_status TEXT NOT NULL DEFAULT 'unknown'
         CONSTRAINT chk_transaction_status CHECK (transaction_status IN ('unknown', 'Procesado', 'Procesado parcialmente', 'Descartado')),
-    
+
+    -- Whether OpenAI was invoked to fill missing fields
+    ai_assistance BOOLEAN NOT NULL DEFAULT FALSE,
+
     errors TEXT,
  
     -- Always set to now() on insert; NOT NULL to match pipeline behaviour

@@ -170,7 +170,7 @@ Code.js                  Original Apps Script reference — do not modify
 ---
 
 ## What Is NOT Yet Built
-- DAVIbank parser (`banks/davibank.py`) — waiting for real email samples via `email_extractor.py`
+- DAVIbank parser (`banks/davibank.py`) 
 - FX conversion (BCCR API) for `amount_local`, `fx_rate`, `fx_rate_date`
 - Step 5: Classification (`transactions_classified`)
 - Step 6: Notification (email / WhatsApp)

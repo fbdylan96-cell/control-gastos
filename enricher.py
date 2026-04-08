@@ -12,6 +12,7 @@ import uuid
 from openai import OpenAI
 
 from banks.bac import BacParser
+from banks.bcr import BcrParser
 from banks.davibank import DavibankParser
 from banks.promerica import PromericaParser
 
@@ -23,6 +24,7 @@ log = logging.getLogger(__name__)
 
 _BANK_PARSERS = [
     BacParser(),
+    BcrParser(),
     DavibankParser(),
     PromericaParser(),
 ]
@@ -31,6 +33,7 @@ _BANK_PARSERS = [
 # Searched in: subject + from_email + body_condensed (case-insensitive).
 _BANK_KEYWORDS = {
     "bac": [r"\bbac\b", r"baccredomatic", r"notificacionesbaccr"],
+    "bcr": [r"bancobcr", r"banco\s+bcr", r"\bbcr\b"],
     "promerica": [r"prom[eé]rica"],
     "davibank": [r"davibank", r"davivienda"],
 }
@@ -48,10 +51,17 @@ def detect_bank(subject: str, from_email: str, body_text_full: str, body_condens
     return "unknown"
 
 
+def detect_approval(subject: str, body_text_full: str) -> str:
+    text = f"{subject or ''} {body_text_full or ''}"
+    if re.search(r"deneg", text, re.IGNORECASE):
+        return "Denegada"
+    return "Aprobada"
+
+
 def detect_transaction_type(subject: str, body_condensed: str) -> str:
     text = f"{subject or ''} {body_condensed or ''}".lower()
 
-    debit_patterns = [r"\bcompra\b", r"\bgasto\b", r"\bd[eé]bito\b"]
+    debit_patterns = [r"\bcompra\b", r"\bgasto\b", r"\bd[eé]bito\b", r"\bdebitado\b", r"\bdebit[oó]\b", r"\btarjeta BCR\b"]
     credit_patterns = [r"\bcr[eé]dito\b", r"\brecibido\b"]
 
     for pat in debit_patterns:
@@ -89,7 +99,7 @@ You will receive bank notification emails (subject, sender, and condensed body t
 Rules:
 - Only extract data that is explicitly stated in the email. Do NOT invent or guess data.
 - If the email is not a financial transaction notification (e.g. marketing, welcome messages, account statements without a specific transaction), set "is_transaction" to false.
-- For merchant_guess: the store or payee name, in title case.
+- For merchant_guess: the store or payee name, in title case. NEVER use a bank name as the merchant (e.g. BAC, Baccredomatic, BCR, Banco de Costa Rica, Promerica, DAVIbank, Davivienda). If the payee is a bank, set merchant_guess to null.
 - For amount_guess: numeric amount only as a float (e.g. 15000.00). No currency symbols.
 - For currency_guess: use exactly "CRC", "USD", or "EUR". Null if unknown.
 - For desc_guess: a short human-readable description (e.g. "Compra en Auto Mercado").
@@ -167,6 +177,28 @@ def enrich_raw(raw_row: dict) -> dict:
     body_text = raw_row.get("body_text_full") or ""
     body_condensed = raw_row.get("body_condensed") or ""
 
+    approval = detect_approval(subject, body_text)
+
+    # Denied transactions: mark as Procesado and skip all extraction
+    if approval == "Denegada":
+        log.info("  Transaction denied — skipping extraction")
+        return {
+            "id": str(uuid.uuid4()),
+            "raw_id": str(raw_row["id"]),
+            "individual_id": str(raw_row["individual_id"]),
+            "business_id": str(raw_row["business_id"]),
+            "bank": None,
+            "merchant_guess": None,
+            "amount_guess": None,
+            "currency_guess": None,
+            "desc_guess": None,
+            "transaction_type_guess": "unknown",
+            "transaction_approval": "Denegada",
+            "transaction_status": "Procesado",
+            "ai_assistance": False,
+            "errors": None,
+        }
+
     bank = detect_bank(subject, from_email, body_text, body_condensed)
     txn_type = detect_transaction_type(subject, body_condensed)
 
@@ -189,11 +221,13 @@ def enrich_raw(raw_row: dict) -> dict:
     # Use OpenAI if bank unknown OR any field still missing
     needs_ai = bank == "unknown" or not all([merchant, amount is not None, currency, desc])
     ai_enabled = os.environ.get("AI_ASSISTANCE", "0") == "1"
+    ai_used = False
 
     if needs_ai and ai_enabled:
         log.info("  Falling back to OpenAI")
         ai = _openai_fallback(subject, from_email, body_condensed)
         if ai:
+            ai_used = True
             merchant = merchant or ai.get("merchant_guess")
             amount = amount or ai.get("amount_guess")
             currency = currency or ai.get("currency_guess")
@@ -208,12 +242,14 @@ def enrich_raw(raw_row: dict) -> dict:
             "individual_id": str(raw_row["individual_id"]),
             "business_id": str(raw_row["business_id"]),
             "bank": bank if bank != "unknown" else None,
-                "merchant_guess": merchant,
+            "merchant_guess": merchant,
             "amount_guess": amount,
             "currency_guess": currency,
             "desc_guess": desc,
             "transaction_type_guess": txn_type,
+            "transaction_approval": approval,
             "transaction_status": status,
+            "ai_assistance": False,
             "errors": None,
         }
 
@@ -231,6 +267,8 @@ def enrich_raw(raw_row: dict) -> dict:
         "currency_guess": currency,
         "desc_guess": desc,
         "transaction_type_guess": txn_type,
+        "transaction_approval": approval,
         "transaction_status": status,
+        "ai_assistance": ai_used,
         "errors": None,
     }

@@ -24,7 +24,7 @@ Gmail (label: 'Finanzas Personales')
 - `email_reader.py` reads from that Gmail account, filtered to label **'Finanzas Personales'**
 - The `To:` header is matched against `core.clients.email_forward` to identify the client
 - Emails are often **forwarded** by the client, so `from_email` in `transactions_raw` may be
-  the client's personal Gmail — not the original bank sender
+  the client's personal Gmail — not the original bank sender. In production, the client will set a filter rule so the email will be automatically sent.
 
 ---
 

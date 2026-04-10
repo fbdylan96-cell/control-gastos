@@ -154,16 +154,43 @@ CREATE TABLE core.transactions_classified (
     category TEXT,
     subcategory TEXT,
 
-    -- Mirrors '💾 Crear Regla Permanente' checkbox in the sheet
-    permanent_rule BOOLEAN NOT NULL DEFAULT FALSE,
-    logic TEXT,           -- free-text reasoning (Razonamiento)
-    classified_by TEXT,   -- 'rules' | 'openai'
+    classified_by TEXT,             -- 'rules' | 'openai'
+    ai_assistance BOOLEAN NOT NULL DEFAULT FALSE,
 
-    -- Notification / action tracking (mirrors sheet columns)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+DROP TABLE IF EXISTS core.transactions_notifications CASCADE;
+
+-- One row per classified transaction.
+-- Tracks notification delivery and the user's final classification decision.
+-- final_category / final_subcategory = user-confirmed ground truth:
+--   copied from transactions_classified on send, overwritten if user reclassifies.
+-- reclassified_by: 'confirmed' = user accepted the guess, 'user' = user overrode it.
+CREATE TABLE core.transactions_notifications (
+    id UUID PRIMARY KEY,
+    classified_id UUID NOT NULL REFERENCES core.transactions_classified(id),
+    individual_id UUID NOT NULL REFERENCES core.clients(id),
+    business_id UUID NOT NULL REFERENCES core.businesses(id),
+
+    -- Final classification (ground truth after user interaction)
+    final_category TEXT,  -- equal to transactions_classified.category value if user doesn't reclassify
+    final_subcategory TEXT, -- equal to transactions_classified.subcategory value if user doesn't reclassify
+    reclassified_by TEXT             -- 'confirmed' | 'user'
+        CONSTRAINT chk_reclassified_by CHECK (reclassified_by IN ('confirmed', 'user')),
+    reclassified_at TIMESTAMPTZ,
+
+    -- Email notification
     email_notified BOOLEAN NOT NULL DEFAULT FALSE,
     email_notified_at TIMESTAMPTZ,
     email_action_at TIMESTAMPTZ,
     email_action_value TEXT,
+
+    -- WhatsApp notification
+    whatsapp_notified BOOLEAN NOT NULL DEFAULT FALSE,
+    whatsapp_notified_at TIMESTAMPTZ,
+    whatsapp_action_at TIMESTAMPTZ,
+    whatsapp_action_value TEXT,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -186,6 +213,45 @@ CREATE TABLE core.categories (
 
     CONSTRAINT uq_cat UNIQUE (business_id, individual_id, category, subcategory)
 );
+
+
+DROP TABLE IF EXISTS core.category_rules CASCADE;
+
+-- Learned classification rules: maps a normalized merchant key to a category/subcategory.
+-- Acts as a self-improving rule engine — checked first at Step 5 before falling back to AI.
+-- Business-level rules (individual_id NULL) apply to all individuals in the business.
+-- Individual-level rules (individual_id NOT NULL) take precedence over business-level ones.
+CREATE TABLE core.category_rules (
+    id UUID PRIMARY KEY,
+
+    business_id UUID NOT NULL REFERENCES core.businesses(id),
+    individual_id UUID REFERENCES core.clients(id),  -- NULL = applies to all in business
+
+    merchant_key TEXT NOT NULL,   -- normalized form used for lookup, e.g. 'walmart'
+    merchant_raw TEXT,            -- original merchant string before normalization
+
+    category TEXT NOT NULL, -- Learn from the final result transactions_notifications.final_category
+    subcategory TEXT, -- Learn from the final result transactions_notifications.final_subategory
+
+    -- Origin of the rule
+    -- 'user'   → created/confirmed by user feedback (highest trust)
+    -- 'ai'     → created from an AI classification result
+    -- 'system' → seeded by the system at setup time
+    source TEXT NOT NULL DEFAULT 'ai'
+        CONSTRAINT chk_rule_source CHECK (source IN ('user', 'ai', 'system')),
+
+    -- 0.0–1.0: starts lower for AI rules, raised to 1.0 when user confirms
+    confidence NUMERIC(4,3) NOT NULL DEFAULT 1.0,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT uq_rule UNIQUE NULLS NOT DISTINCT (business_id, individual_id, merchant_key)
+);
+
+-- Fast merchant lookup during Step 5 classification
+CREATE INDEX idx_category_rules_merchant_key
+    ON core.category_rules (business_id, merchant_key);
 
 
 -- TRUNCATE core.transactions_raw CASCADE;

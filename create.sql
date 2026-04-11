@@ -154,8 +154,8 @@ CREATE TABLE core.transactions_classified (
     category TEXT,
     subcategory TEXT,
 
-    classified_by TEXT,             -- 'rules' | 'openai'
-    ai_assistance BOOLEAN NOT NULL DEFAULT FALSE,
+    classified_by TEXT              -- 'rules' | 'openai'
+        CONSTRAINT chk_classified_by CHECK (classified_by IN ('rules', 'openai')),
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

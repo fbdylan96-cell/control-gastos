@@ -192,6 +192,8 @@ CREATE TABLE core.transactions_notifications (
     whatsapp_action_at TIMESTAMPTZ,
     whatsapp_action_value TEXT,
 
+    rule_processing BOOLEAN NOT NULL DEFAULT FALSE,
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

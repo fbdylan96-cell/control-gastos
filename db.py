@@ -98,6 +98,104 @@ def insert_enriched_transaction(conn, row):
     conn.commit()
 
 
+def get_unclassified_enriched(conn):
+    """Return approved, non-discarded enriched rows that have no classified row yet."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT e.id, e.raw_id, e.individual_id, e.business_id,
+                   e.merchant_guess, e.amount_guess, e.currency_guess,
+                   e.desc_guess, e.transaction_type_guess
+            FROM core.transactions_enriched e
+            WHERE NOT EXISTS (
+                SELECT 1 FROM core.transactions_classified c WHERE c.raw_id = e.raw_id
+            )
+            AND e.transaction_approval = 'Aprobada'
+            AND e.transaction_status != 'Descartado'
+            AND e.amount_guess IS NOT NULL
+            ORDER BY e.created_at ASC
+            """
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def get_categories(conn, business_id, individual_id):
+    """Return all categories available for this business/individual as list of dicts."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT category, subcategory
+            FROM core.categories
+            WHERE business_id = %s
+              AND (individual_id = %s OR individual_id IS NULL)
+            ORDER BY category, subcategory NULLS LAST
+            """,
+            (str(business_id), str(individual_id)),
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def find_category_rule(conn, business_id, individual_id, merchant_key):
+    """
+    Return the best matching rule for a merchant_key, or None.
+    Individual-level rules take precedence over business-level rules.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT category, subcategory, source, confidence
+            FROM core.category_rules
+            WHERE business_id = %s
+              AND merchant_key = %s
+              AND (individual_id = %s OR individual_id IS NULL)
+            ORDER BY individual_id NULLS LAST
+            LIMIT 1
+            """,
+            (str(business_id), merchant_key, str(individual_id)),
+        )
+        row = cur.fetchone()
+        if row:
+            cols = [d[0] for d in cur.description]
+            return dict(zip(cols, row))
+        return None
+
+
+def insert_classified_transaction(conn, row):
+    """Insert one row into core.transactions_classified. Skips if raw_id already exists."""
+    sql = """
+        INSERT INTO core.transactions_classified (
+            id, raw_id, individual_id, business_id,
+            merchant, category, subcategory, logic, classified_by
+        ) VALUES (
+            %(id)s, %(raw_id)s, %(individual_id)s, %(business_id)s,
+            %(merchant)s, %(category)s, %(subcategory)s, %(logic)s, %(classified_by)s
+        )
+        ON CONFLICT DO NOTHING
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql, row)
+    conn.commit()
+
+
+def insert_notification_row(conn, row):
+    """Insert one row into core.transactions_notifications."""
+    sql = """
+        INSERT INTO core.transactions_notifications (
+            id, classified_id, individual_id, business_id,
+            final_category, final_subcategory
+        ) VALUES (
+            %(id)s, %(classified_id)s, %(individual_id)s, %(business_id)s,
+            %(final_category)s, %(final_subcategory)s
+        )
+        ON CONFLICT DO NOTHING
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql, row)
+    conn.commit()
+
+
 def insert_raw_transaction(conn, row):
     """
     Insert one row into core.transactions_raw.

@@ -132,3 +132,102 @@ def smart_title_case(s):
         else:
             result.append(w[0].upper() + w[1:])
     return " ".join(result).strip()
+
+
+# ---------------------------------------------------------------------------
+# Merchant normalization for classification (ported from Classify.js)
+# ---------------------------------------------------------------------------
+
+import unicodedata as _unicodedata
+
+_CR_LOCATION_STOP = {
+    "san", "jose", "sanjose", "escazu", "santa", "ana", "curridabat",
+    "moravia", "heredia", "alajuela", "cartago", "montes", "oca",
+    "barva", "belen", "tibas", "desamparados", "guadalupe", "pavas",
+    "lindora", "costa", "rica", "cr", "cri", "multiplaza", "oxigeno",
+    "terramall", "lincoln", "plaza", "city", "mall", "ocn", "oc", "crl",
+}
+
+_PAYMENT_PREFIX_RE = re.compile(r"^\s*(dlc\*|dl\*|payu\*|stripe\*|sq\*)\s*", re.IGNORECASE)
+
+_DISPLAY_EXCEPTIONS = {
+    "uber eats": "Uber Eats",
+    "uber": "Uber",
+    "pricesmart": "PriceSmart",
+    "price smart": "PriceSmart",
+    "icloud": "iCloud",
+    "amazon marketplace": "Amazon",
+}
+
+_TITLE_STOP = {"y", "de", "la", "el", "los", "las", "del", "al", "and", "of", "the"}
+
+
+def clean_merchant_key(name: str) -> str:
+    """
+    Deterministic lookup key: lowercase, no accents, no symbols, collapsed spaces.
+    e.g. 'WALMART OXÍGENO' → 'walmart oxigeno'
+    """
+    if not name:
+        return ""
+    s = str(name).lower().strip()
+    s = _unicodedata.normalize("NFD", s)
+    s = "".join(c for c in s if _unicodedata.category(c) != "Mn")
+    s = re.sub(r"[^a-z0-9 ]", "", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def strip_cr_location_suffix(s: str) -> str:
+    """
+    Remove trailing Costa Rica location tokens from a merchant name.
+    Works token-by-token from the right, stopping at the first non-location word.
+    e.g. 'Walmart Oxigeno San Jose' → 'Walmart'
+    """
+    if not s:
+        return ""
+    s = str(s)
+    s = re.sub(r"\b(ciudad\s*y\s*pa[íi]s?|ciudad\s*y\s*pa)\b.*$", "", s, flags=re.IGNORECASE).strip()
+    s = re.sub(r"\s+", " ", s).strip()
+    if not s:
+        return ""
+    tokens = s.split(" ")
+    while len(tokens) > 1:
+        last_key = clean_merchant_key(tokens[-1])
+        if not last_key or last_key in _CR_LOCATION_STOP or re.match(r"^\d+$", last_key):
+            tokens.pop()
+        else:
+            break
+    return " ".join(tokens).strip()
+
+
+def _title_case_smart(s: str) -> str:
+    parts = str(s or "").strip().split()
+    out = []
+    for i, word in enumerate(parts):
+        w = word.lower()
+        # preserve short all-caps tokens (e.g. 'KFC', 'AM PM')
+        if len(word) <= 5 and re.match(r"^[A-Z0-9]+$", word) and re.search(r"[A-Z]", word):
+            out.append(word)
+        elif i > 0 and w in _TITLE_STOP:
+            out.append(w)
+        else:
+            out.append(w[0].upper() + w[1:] if w else w)
+    return " ".join(out)
+
+
+def format_merchant_display(name: str) -> str:
+    """
+    Clean display name for a merchant:
+    strips CR location suffixes, removes payment processor prefixes, applies title case.
+    e.g. 'DLC* UBER EATS SAN JOSE CRI' → 'Uber Eats'
+    """
+    if not name:
+        return ""
+    t = str(name).strip()
+    t = re.sub(r"\s{2,}", " ", t).strip()
+    t = strip_cr_location_suffix(t)
+    t = _PAYMENT_PREFIX_RE.sub("", t).strip()
+    t = _title_case_smart(t)
+    lower = t.lower()
+    if lower in _DISPLAY_EXCEPTIONS:
+        return _DISPLAY_EXCEPTIONS[lower]
+    return t

@@ -3,6 +3,7 @@ import time
 
 from dotenv import load_dotenv
 
+import classifier
 import db
 import enricher
 import gmail_client
@@ -47,6 +48,10 @@ def process_one_message(service, msg_meta, clients, conn):
     enriched_row = enricher.enrich_raw(row)
     db.insert_enriched_transaction(conn, enriched_row)
     log.info(f"  Inserted enriched row | status={enriched_row['transaction_status']} | bank={enriched_row['bank']}")
+
+    if enriched_row.get("transaction_approval") != "Denegada":
+        classifier.classify_transaction(conn, enriched_row)
+        log.info(f"  Classification done")
 
     gmail_client.mark_as_read(service, msg_id)
 

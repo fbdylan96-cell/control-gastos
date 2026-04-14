@@ -75,7 +75,9 @@ def insert_enriched_transaction(conn, row):
             currency_guess,
             desc_guess,
             transaction_type_guess,
+            transaction_approval,
             transaction_status,
+            ai_assistance,
             errors
         ) VALUES (
             %(id)s,
@@ -88,7 +90,9 @@ def insert_enriched_transaction(conn, row):
             %(currency_guess)s,
             %(desc_guess)s,
             %(transaction_type_guess)s,
+            %(transaction_approval)s,
             %(transaction_status)s,
+            %(ai_assistance)s,
             %(errors)s
         )
         ON CONFLICT DO NOTHING
@@ -167,10 +171,10 @@ def insert_classified_transaction(conn, row):
     sql = """
         INSERT INTO core.transactions_classified (
             id, raw_id, individual_id, business_id,
-            merchant, category, subcategory, logic, classified_by
+            merchant, category, subcategory, classified_by
         ) VALUES (
             %(id)s, %(raw_id)s, %(individual_id)s, %(business_id)s,
-            %(merchant)s, %(category)s, %(subcategory)s, %(logic)s, %(classified_by)s
+            %(merchant)s, %(category)s, %(subcategory)s, %(classified_by)s
         )
         ON CONFLICT DO NOTHING
     """

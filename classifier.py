@@ -127,13 +127,13 @@ def _build_taxonomy_text(categories: list[dict]) -> str:
 def _classify_with_ai(merchant_key: str, categories: list[dict]) -> dict:
     """
     Call OpenAI to pick the best category/subcategory for merchant_key.
-    Returns dict with keys: category, subcategory, logic.
-    Falls back to 'Sin Clasificar' on any error.
+    Returns dict with keys: category, subcategory.
+    Falls back to 'Otros' on any error.
     """
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         log.warning("OPENAI_API_KEY not set — skipping AI classification")
-        return {"category": "Otros", "subcategory": None, "logic": "[SKIP] No API key"}
+        return {"category": "Otros", "subcategory": None}
 
     taxonomy_text = _build_taxonomy_text(categories)
     user_content = (
@@ -158,11 +158,10 @@ def _classify_with_ai(merchant_key: str, categories: list[dict]) -> dict:
         subcategory = (data.get("subcategory") or None)
         if subcategory:
             subcategory = subcategory.strip() or None
-        logic = f"[IA] {data.get('reason', '').strip()}" if data.get("reason") else "[IA]"
-        return {"category": category, "subcategory": subcategory, "logic": logic}
+        return {"category": category, "subcategory": subcategory}
     except Exception as e:
         log.error(f"  AI classification error: {e}")
-        return {"category": "Otros", "subcategory": None, "logic": f"[ERROR] {e}"}
+        return {"category": "Otros", "subcategory": None}
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +195,6 @@ def classify_transaction(conn, enriched_row: dict) -> bool:
         category = rule["category"]
         subcategory = rule["subcategory"]
         classified_by = "rules"
-        logic = f"Regla encontrada para '{merchant_key}' (fuente: {rule['source']})"
         log.info(f"  Rule hit → {category} / {subcategory}")
     else:
         # Step 2B: AI classification
@@ -206,7 +204,6 @@ def classify_transaction(conn, enriched_row: dict) -> bool:
         category = result["category"]
         subcategory = result["subcategory"]
         classified_by = "openai"
-        logic = result["logic"]
         log.info(f"  AI result → {category} / {subcategory}")
 
     # Step 3: insert into transactions_classified
@@ -219,7 +216,6 @@ def classify_transaction(conn, enriched_row: dict) -> bool:
         "merchant": merchant or None,
         "category": category,
         "subcategory": subcategory,
-        "logic": logic,
         "classified_by": classified_by,
     }
     insert_classified_transaction(conn, classified_row)

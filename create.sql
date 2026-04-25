@@ -128,6 +128,12 @@ CREATE TABLE core.transactions_enriched (
     -- Whether OpenAI was invoked to fill missing fields
     ai_assistance BOOLEAN NOT NULL DEFAULT FALSE,
 
+    -- Business member detection: TRUE when a member name was found in the email body
+    -- and the transaction was reassigned away from the admin recipient
+    member_detected BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Who this transaction actually belongs to (may differ from individual_id when member_detected = TRUE)
+    assigned_individual_id UUID NOT NULL REFERENCES core.clients(id),
+
     errors TEXT,
  
     -- Always set to now() on insert; NOT NULL to match pipeline behaviour

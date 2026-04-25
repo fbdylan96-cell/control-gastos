@@ -21,10 +21,27 @@ def get_active_clients(conn):
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, business_id, email_forward
+            SELECT id, business_id, email_forward, business_admin, client_name
             FROM core.clients
             WHERE active = TRUE
             """
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def get_business_members(conn, business_id, exclude_id):
+    """Return all active members of a business except the given client (the admin)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, client_name
+            FROM core.clients
+            WHERE business_id = %s
+              AND active = TRUE
+              AND id != %s
+            """,
+            (str(business_id), str(exclude_id)),
         )
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
@@ -78,6 +95,8 @@ def insert_enriched_transaction(conn, row):
             transaction_approval,
             transaction_status,
             ai_assistance,
+            member_detected,
+            assigned_individual_id,
             errors
         ) VALUES (
             %(id)s,
@@ -93,6 +112,8 @@ def insert_enriched_transaction(conn, row):
             %(transaction_approval)s,
             %(transaction_status)s,
             %(ai_assistance)s,
+            %(member_detected)s,
+            %(assigned_individual_id)s,
             %(errors)s
         )
         ON CONFLICT DO NOTHING

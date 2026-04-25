@@ -45,7 +45,7 @@ def process_one_message(service, msg_meta, clients, conn):
     db.insert_raw_transaction(conn, row)
     log.info(f"  Inserted raw row | year_month={row['year_month']} | client={client['email_forward']}")
 
-    enriched_row = enricher.enrich_raw(row)
+    enriched_row = enricher.enrich_raw(row, conn=conn, client=client)
     db.insert_enriched_transaction(conn, enriched_row)
     log.info(f"  Inserted enriched row | status={enriched_row['transaction_status']} | bank={enriched_row['bank']}")
 

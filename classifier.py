@@ -176,6 +176,8 @@ def classify_transaction(conn, enriched_row: dict) -> bool:
     """
     raw_id = str(enriched_row["raw_id"])
     individual_id = str(enriched_row["individual_id"])
+    # Use assigned_individual_id so classified/notification rows belong to the actual spender
+    assigned_individual_id = str(enriched_row.get("assigned_individual_id") or individual_id)
     business_id = str(enriched_row["business_id"])
     merchant_guess = enriched_row.get("merchant_guess") or ""
 
@@ -184,12 +186,12 @@ def classify_transaction(conn, enriched_row: dict) -> bool:
     merchant = format_merchant_display(merchant_guess) if merchant_guess else ""
 
     if not merchant_key:
-        log.info(f"  raw_id={raw_id} — no merchant_guess, classifying as Sin Clasificar")
+        log.info(f"  raw_id={raw_id} — no merchant_guess, classifying as Otros")
 
-    log.info(f"  raw_id={raw_id} merchant_key={merchant_key!r}")
+    log.info(f"  raw_id={raw_id} merchant_key={merchant_key!r} assigned_to={assigned_individual_id}")
 
-    # Step 2A: look up rule
-    rule = find_category_rule(conn, business_id, individual_id, merchant_key) if merchant_key else None
+    # Step 2A: look up rule using the assigned individual's context
+    rule = find_category_rule(conn, business_id, assigned_individual_id, merchant_key) if merchant_key else None
 
     if rule:
         category = rule["category"]
@@ -199,19 +201,19 @@ def classify_transaction(conn, enriched_row: dict) -> bool:
     else:
         # Step 2B: AI classification
         log.info(f"  No rule found — calling AI")
-        categories = get_categories(conn, business_id, individual_id)
+        categories = get_categories(conn, business_id, assigned_individual_id)
         result = _classify_with_ai(merchant_key or merchant_guess or "desconocido", categories)
         category = result["category"]
         subcategory = result["subcategory"]
         classified_by = "openai"
         log.info(f"  AI result → {category} / {subcategory}")
 
-    # Step 3: insert into transactions_classified
+    # Step 3: insert into transactions_classified under the assigned individual
     classified_id = str(uuid.uuid4())
     classified_row = {
         "id": classified_id,
         "raw_id": raw_id,
-        "individual_id": individual_id,
+        "individual_id": assigned_individual_id,
         "business_id": business_id,
         "merchant": merchant or None,
         "category": category,
@@ -220,11 +222,11 @@ def classify_transaction(conn, enriched_row: dict) -> bool:
     }
     insert_classified_transaction(conn, classified_row)
 
-    # Step 4: seed transactions_notifications with final category values
+    # Step 4: seed transactions_notifications under the assigned individual
     notification_row = {
         "id": str(uuid.uuid4()),
         "classified_id": classified_id,
-        "individual_id": individual_id,
+        "individual_id": assigned_individual_id,
         "business_id": business_id,
         "final_category": category,
         "final_subcategory": subcategory,

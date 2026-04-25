@@ -11,10 +11,12 @@ import uuid
 
 from openai import OpenAI
 
+import db as _db
 from banks.bac import BacParser
 from banks.bcr import BcrParser
 from banks.davibank import DavibankParser
 from banks.promerica import PromericaParser
+from banks.utils import clean_merchant_key
 
 log = logging.getLogger(__name__)
 
@@ -164,10 +166,56 @@ def _openai_fallback(subject: str, from_email: str, body_condensed: str) -> dict
 
 
 # ---------------------------------------------------------------------------
+# Business member detection
+# ---------------------------------------------------------------------------
+
+_NAME_STOPWORDS = {"de", "la", "el", "los", "las", "del", "al", "y", "e", "o", "en"}
+
+
+def _detect_member(body_text_full: str, members: list) -> dict | None:
+    """
+    Search body_text_full for a business member's name.
+    Returns the best-matching member dict or None.
+
+    Threshold: matches >= 2 AND matches > len(meaningful_words) / 2.
+    Meaningful words = name tokens after removing stopwords and single-char tokens.
+    On a tie between two members, returns None (ambiguous).
+    """
+    body_norm = clean_merchant_key(body_text_full or "")
+    best_member = None
+    best_count = 0
+    tied = False
+
+    for member in members:
+        name_norm = clean_merchant_key(member.get("client_name") or "")
+        words = [
+            w for w in name_norm.split()
+            if w not in _NAME_STOPWORDS and len(w) > 1
+        ]
+        if not words:
+            continue
+
+        matches = sum(
+            1 for w in words
+            if re.search(rf"\b{re.escape(w)}\b", body_norm)
+        )
+
+        if matches >= 2 and matches * 2 > len(words):
+            if matches > best_count:
+                best_count = matches
+                best_member = member
+                tied = False
+            elif matches == best_count:
+                tied = True
+
+    return None if tied else best_member
+
+
+# ---------------------------------------------------------------------------
 # Main enrichment function
 # ---------------------------------------------------------------------------
 
-def enrich_raw(raw_row: dict) -> dict:
+def enrich_raw(raw_row: dict, conn=None, client: dict | None = None) -> dict:
     """
     Takes a transactions_raw row dict and returns a transactions_enriched row dict
     ready for DB insert (without id, inserted_at, created_at — those are set here or by DB).
@@ -176,8 +224,21 @@ def enrich_raw(raw_row: dict) -> dict:
     from_email = raw_row.get("from_email") or ""
     body_text = raw_row.get("body_text_full") or ""
     body_condensed = raw_row.get("body_condensed") or ""
+    individual_id = str(raw_row["individual_id"])
+    business_id = str(raw_row["business_id"])
 
     approval = detect_approval(subject, body_text)
+
+    # Member detection — only for business admins when conn and client are provided
+    member_detected = False
+    assigned_individual_id = individual_id
+    if conn and client and client.get("business_admin"):
+        members = _db.get_business_members(conn, business_id, individual_id)
+        match = _detect_member(body_text, members)
+        if match:
+            assigned_individual_id = str(match["id"])
+            member_detected = True
+            log.info(f"  Member detected: {match['client_name']} → assigned_individual_id={assigned_individual_id}")
 
     # Denied transactions: mark as Procesado and skip all extraction
     if approval == "Denegada":
@@ -185,8 +246,8 @@ def enrich_raw(raw_row: dict) -> dict:
         return {
             "id": str(uuid.uuid4()),
             "raw_id": str(raw_row["id"]),
-            "individual_id": str(raw_row["individual_id"]),
-            "business_id": str(raw_row["business_id"]),
+            "individual_id": individual_id,
+            "business_id": business_id,
             "bank": None,
             "merchant_guess": None,
             "amount_guess": None,
@@ -196,6 +257,8 @@ def enrich_raw(raw_row: dict) -> dict:
             "transaction_approval": "Denegada",
             "transaction_status": "Procesado",
             "ai_assistance": False,
+            "member_detected": member_detected,
+            "assigned_individual_id": assigned_individual_id,
             "errors": None,
         }
 
@@ -239,8 +302,8 @@ def enrich_raw(raw_row: dict) -> dict:
         return {
             "id": str(uuid.uuid4()),
             "raw_id": str(raw_row["id"]),
-            "individual_id": str(raw_row["individual_id"]),
-            "business_id": str(raw_row["business_id"]),
+            "individual_id": individual_id,
+            "business_id": business_id,
             "bank": bank if bank != "unknown" else None,
             "merchant_guess": merchant,
             "amount_guess": amount,
@@ -250,6 +313,8 @@ def enrich_raw(raw_row: dict) -> dict:
             "transaction_approval": approval,
             "transaction_status": status,
             "ai_assistance": False,
+            "member_detected": member_detected,
+            "assigned_individual_id": assigned_individual_id,
             "errors": None,
         }
 
@@ -259,8 +324,8 @@ def enrich_raw(raw_row: dict) -> dict:
     return {
         "id": str(uuid.uuid4()),
         "raw_id": str(raw_row["id"]),
-        "individual_id": str(raw_row["individual_id"]),
-        "business_id": str(raw_row["business_id"]),
+        "individual_id": individual_id,
+        "business_id": business_id,
         "bank": bank if bank != "unknown" else None,
         "merchant_guess": merchant,
         "amount_guess": amount,
@@ -270,5 +335,7 @@ def enrich_raw(raw_row: dict) -> dict:
         "transaction_approval": approval,
         "transaction_status": status,
         "ai_assistance": ai_used,
+        "member_detected": member_detected,
+        "assigned_individual_id": assigned_individual_id,
         "errors": None,
     }

@@ -1,0 +1,161 @@
+{% extends "empresa/base.html" %}
+{% block title %}Categorías — Empowered Investor{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <i class="bi bi-tags"></i>
+  Categorías
+</div>
+
+<div style="display:grid; grid-template-columns:1fr 380px; gap:1.5rem; align-items:start;">
+
+  <!-- ── Left: input methods ──────────────────────────────────────── -->
+  <div style="display:flex; flex-direction:column; gap:1.25rem;">
+
+    <!-- Manual input -->
+    <div class="ei-card">
+      <div class="ei-card-header">
+        <i class="bi bi-pencil-square"></i>Agregar categorías manualmente
+      </div>
+      <div class="ei-card-body">
+        <form method="POST" action="{{ url_for('empresa.categorias') }}">
+          <input type="hidden" name="action" value="manual" />
+
+          <div style="display:grid; grid-template-columns:1fr 1fr 36px; gap:8px; margin-bottom:6px;">
+            <span class="form-label-ei" style="margin:0;">Categoría</span>
+            <span class="form-label-ei" style="margin:0;">Subcategoría</span>
+            <span></span>
+          </div>
+
+          <div id="catRows" style="display:flex; flex-direction:column; gap:8px;">
+            <div class="cat-row" style="display:grid; grid-template-columns:1fr 1fr 36px; gap:8px; align-items:center;">
+              <input type="text" name="category" class="ei-input"
+                     placeholder="Ej: Alimentación" />
+              <input type="text" name="subcategory" class="ei-input"
+                     placeholder="Subcategoría (opcional)" />
+              <button type="button" class="btn-danger-outline" onclick="removeRow(this)" title="Eliminar">
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+          </div>
+
+          <div style="margin-top:0.75rem; display:flex; justify-content:space-between; align-items:center;">
+            <button type="button" class="btn-outline-ei" onclick="addRow()">
+              <i class="bi bi-plus-circle"></i>Agregar fila
+            </button>
+            <button type="submit" class="btn-primary-ei">
+              <i class="bi bi-floppy"></i>Guardar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Excel upload -->
+    <div class="ei-card">
+      <div class="ei-card-header">
+        <i class="bi bi-file-earmark-arrow-up"></i>Importar desde Excel
+      </div>
+      <div class="ei-card-body">
+        <p style="font-size:0.855rem; color:rgba(21,25,30,0.6); margin:0 0 0.9rem;">
+          Descargue la plantilla, complete los datos y súbala aquí.
+        </p>
+
+        <a href="{{ url_for('empresa.categorias_template') }}" class="btn-outline-ei"
+           style="margin-bottom:0.9rem; width:fit-content;">
+          <i class="bi bi-download"></i>Descargar plantilla
+        </a>
+
+        <form method="POST" action="{{ url_for('empresa.categorias') }}" enctype="multipart/form-data">
+          <input type="hidden" name="action" value="upload" />
+          <div style="display:flex; gap:8px; align-items:center;">
+            <input type="file" name="excel_file" class="ei-input" accept=".xlsx,.xls"
+                   style="flex:1;" required />
+            <button type="submit" class="btn-mint-ei" style="white-space:nowrap;">
+              <i class="bi bi-upload"></i>Importar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div><!-- /left -->
+
+  <!-- ── Right: existing categories ──────────────────────────────── -->
+  <div class="ei-card" style="overflow:hidden;">
+    <div class="ei-card-header" style="justify-content:space-between;">
+      <span><i class="bi bi-list-ul"></i>Categorías actuales</span>
+      <span style="background:var(--dark); color:var(--cream); border-radius:20px;
+                   padding:1px 10px; font-size:0.75rem; font-weight:600;">
+        {{ existing|length }}
+      </span>
+    </div>
+
+    {% if existing %}
+    <div style="max-height:480px; overflow-y:auto;">
+      <table class="ei-table">
+        <thead>
+          <tr>
+            <th>Categoría</th>
+            <th>Subcategoría</th>
+            <th style="width:40px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cat in existing %}
+          <tr>
+            <td style="font-weight:600;">{{ cat.category }}</td>
+            <td class="muted">{{ cat.subcategory or '—' }}</td>
+            <td style="text-align:center;">
+              {% if cat.category == 'Otros' and cat.subcategory is none %}
+              <span title="La categoría 'Otros' no puede eliminarse" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px;">
+                <i class="bi bi-lock" style="color:rgba(21,25,30,0.3); font-size:0.9rem;"></i>
+              </span>
+              {% else %}
+              <form method="POST"
+                    action="{{ url_for('empresa.categorias_delete', categoria_id=cat.id) }}"
+                    onsubmit="return confirm('¿Eliminar {{ cat.category }}{% if cat.subcategory %} / {{ cat.subcategory }}{% endif %}?');">
+                <button type="submit" class="btn-danger-outline" title="Eliminar">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <i class="bi bi-tags"></i>
+      <p>No hay categorías registradas aún.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div><!-- /grid -->
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function addRow() {
+    const container = document.getElementById('catRows');
+    const div = document.createElement('div');
+    div.className = 'cat-row';
+    div.style.cssText = 'display:grid; grid-template-columns:1fr 1fr 36px; gap:8px; align-items:center;';
+    div.innerHTML = `
+      <input type="text" name="category" class="ei-input" placeholder="Ej: Alimentación" />
+      <input type="text" name="subcategory" class="ei-input" placeholder="Subcategoría (opcional)" />
+      <button type="button" class="btn-danger-outline" onclick="removeRow(this)" title="Eliminar">
+        <i class="bi bi-trash"></i>
+      </button>`;
+    container.appendChild(div);
+  }
+
+  function removeRow(btn) {
+    const rows = document.querySelectorAll('.cat-row');
+    if (rows.length > 1) btn.closest('.cat-row').remove();
+  }
+</script>
+{% endblock %}

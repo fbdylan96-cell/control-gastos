@@ -1,0 +1,175 @@
+{% extends "empresa/base.html" %}
+{% block title %}Miembros — Empowered Investor{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <i class="bi bi-people"></i>
+  Miembros
+</div>
+
+<!-- ── Members table ──────────────────────────────────────────────── -->
+<div class="ei-card" style="margin-bottom:1.5rem;">
+  <div class="ei-card-header">
+    <i class="bi bi-person-lines-fill"></i>Miembros de la empresa
+    <span style="margin-left:auto; background:var(--dark); color:var(--cream);
+                 border-radius:20px; padding:1px 10px; font-size:0.75rem; font-weight:600;">
+      {{ members|length }}
+    </span>
+  </div>
+
+  {% if members %}
+  <div style="overflow-x:auto;">
+    <table class="ei-table">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Usuario</th>
+          <th>Email</th>
+          <th>Teléfono</th>
+          <th style="text-align:center;">Email notif.</th>
+          <th style="text-align:center;">WhatsApp notif.</th>
+          <th style="text-align:center;">Estado</th>
+          <th style="text-align:center;">Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in members %}
+        <tr>
+          <td style="font-weight:600;">{{ m.client_name }}</td>
+          <td class="muted">{{ m.username or '—' }}</td>
+          <td class="muted" style="font-size:0.82rem;">{{ m.email_address or '—' }}</td>
+          <td class="muted">{{ m.phone_number or '—' }}</td>
+          <td style="text-align:center;">
+            {% if m.email_notification %}
+              <i class="bi bi-check-circle-fill" style="color:var(--mint);"></i>
+            {% else %}
+              <i class="bi bi-dash-circle" style="color:rgba(21,25,30,0.25);"></i>
+            {% endif %}
+          </td>
+          <td style="text-align:center;">
+            {% if m.whatsapp_notification %}
+              <i class="bi bi-check-circle-fill" style="color:var(--mint);"></i>
+            {% else %}
+              <i class="bi bi-dash-circle" style="color:rgba(21,25,30,0.25);"></i>
+            {% endif %}
+          </td>
+          <td style="text-align:center;">
+            {% if m.active %}
+              <span style="background:rgba(101,253,176,0.15); color:#0a7a50;
+                           border:1px solid rgba(101,253,176,0.4); border-radius:20px;
+                           padding:2px 10px; font-size:0.75rem; font-weight:600;">
+                Activo
+              </span>
+            {% else %}
+              <span style="background:rgba(21,25,30,0.06); color:rgba(21,25,30,0.4);
+                           border:1px solid rgba(21,25,30,0.12); border-radius:20px;
+                           padding:2px 10px; font-size:0.75rem; font-weight:600;">
+                Inactivo
+              </span>
+            {% endif %}
+          </td>
+          <td style="text-align:center;">
+            <form method="POST"
+                  action="{{ url_for('empresa.miembros_toggle', member_id=m.id) }}">
+              {% if m.active %}
+                <input type="hidden" name="active" value="0" />
+                <button type="submit" class="btn-danger-outline" title="Desactivar">
+                  <i class="bi bi-person-slash"></i>
+                </button>
+              {% else %}
+                <input type="hidden" name="active" value="1" />
+                <button type="submit"
+                        style="background:transparent; color:#0a7a50;
+                               border:1px solid rgba(101,253,176,0.4);
+                               border-radius:6px; padding:3px 8px;
+                               font-size:0.8rem; cursor:pointer;
+                               transition:background 0.15s;"
+                        title="Activar">
+                  <i class="bi bi-person-check"></i>
+                </button>
+              {% endif %}
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <i class="bi bi-people"></i>
+    <p>No hay miembros registrados en esta empresa.</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Add member form ────────────────────────────────────────────── -->
+<div class="ei-card">
+  <div class="ei-card-header">
+    <i class="bi bi-person-plus"></i>Agregar nuevo miembro
+  </div>
+  <div class="ei-card-body">
+    <form method="POST" action="{{ url_for('empresa.miembros_add') }}">
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+        <div>
+          <label class="form-label-ei">Nombre *</label>
+          <input type="text" name="nombre" class="ei-input"
+                 placeholder="Ej: Ana" required />
+        </div>
+        <div>
+          <label class="form-label-ei">Apellidos *</label>
+          <input type="text" name="apellidos" class="ei-input"
+                 placeholder="Ej: García López" required />
+        </div>
+        <div style="grid-column:1 / -1;">
+          <label class="form-label-ei">Correo electrónico *</label>
+          <input type="email" name="email_address" class="ei-input"
+                 placeholder="ana@empresa.com" required />
+        </div>
+      </div>
+
+      <div style="display:flex; gap:1.5rem; margin-bottom:0.75rem;">
+        <label style="display:flex; align-items:center; gap:0.5rem;
+                      font-size:0.875rem; cursor:pointer;">
+          <input type="checkbox" name="email_notification" value="1"
+                 style="accent-color:var(--blue); width:16px; height:16px;" />
+          Notificación por email
+        </label>
+        <label style="display:flex; align-items:center; gap:0.5rem;
+                      font-size:0.875rem; cursor:pointer;">
+          <input type="checkbox" name="whatsapp_notification" value="1"
+                 id="waCheckbox"
+                 onchange="togglePhoneField(this)"
+                 style="accent-color:var(--blue); width:16px; height:16px;" />
+          Notificación por WhatsApp
+        </label>
+      </div>
+
+      <div id="phoneFieldWrapper" style="display:none; margin-bottom:1rem;">
+        <label class="form-label-ei">Teléfono *</label>
+        <input type="text" name="phone_number" id="phoneInput" class="ei-input"
+               placeholder="+506 8888-8888" />
+      </div>
+
+      <div style="display:flex; justify-content:flex-end;">
+        <button type="submit" class="btn-primary-ei">
+          <i class="bi bi-person-plus"></i>Agregar miembro
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function togglePhoneField(chk) {
+    const wrapper = document.getElementById('phoneFieldWrapper');
+    const input   = document.getElementById('phoneInput');
+    wrapper.style.display = chk.checked ? 'block' : 'none';
+    input.required = chk.checked;
+    if (!chk.checked) input.value = '';
+  }
+</script>
+{% endblock %}

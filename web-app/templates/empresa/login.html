@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Iniciar sesión — Empowered Investor</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet" />
+</head>
+<body>
+<div class="login-page">
+  <div class="login-card">
+
+    <img src="{{ url_for('static', filename='logos/logo-circular.png') }}"
+         alt="Empowered Investor" class="login-logo" />
+
+    <div class="login-divider"></div>
+
+    {% if error %}
+      <div class="ei-alert ei-alert-danger" style="margin-bottom:1rem;">
+        <i class="bi bi-exclamation-triangle-fill"></i>{{ error }}
+      </div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('empresa.login') }}">
+      <label class="form-label-ei">Usuario</label>
+      <div class="login-input-wrap">
+        <i class="bi bi-person login-input-icon"></i>
+        <input type="text" name="username" class="ei-input"
+               placeholder="tu usuario" required autofocus />
+      </div>
+
+      <label class="form-label-ei">Contraseña</label>
+      <div class="login-input-wrap">
+        <i class="bi bi-lock login-input-icon"></i>
+        <input type="password" name="password" class="ei-input"
+               placeholder="••••••••" required />
+      </div>
+
+      <button type="submit" class="login-submit">
+        Ingresar
+      </button>
+    </form>
+
+    <p class="login-footer">Empowered Investor &copy; {{ 2025 }}</p>
+  </div>
+</div>
+</body>
+</html>

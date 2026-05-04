@@ -1,0 +1,112 @@
+{% extends "empresa/base.html" %}
+{% block title %}Transacciones recientes — Empowered Investor{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <i class="bi bi-clock-history"></i>
+  Transacciones recientes
+  <span class="heading-badge">últimas 24 h</span>
+</div>
+
+{% if rows %}
+<div class="ei-card">
+  <div style="overflow-x:auto;">
+    <table class="ei-table">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Comercio</th>
+          <th style="text-align:right;">Monto</th>
+          <th>Moneda</th>
+          <th>Tipo</th>
+          <th>Categoría</th>
+          <th>Subcategoría</th>
+          <th style="width:180px;">Reclasificar</th>
+          <th style="width:60px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="muted">
+            {{ row.local_date.strftime('%d/%m/%Y %H:%M') if row.local_date else '—' }}
+          </td>
+          <td style="font-weight:600;">{{ row.merchant_guess or '—' }}</td>
+          <td class="amount">
+            {% if row.amount_guess is not none %}
+              {{ '{:,.2f}'.format(row.amount_guess) }}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <span class="currency-badge">{{ row.currency_guess or '—' }}</span>
+          </td>
+          <td>{{ row.transaction_type_guess or '—' }}</td>
+          <td>{{ row.final_category or '—' }}</td>
+          <td class="muted">{{ row.final_subcategory or '—' }}</td>
+          <td>
+            {% if row.notification_id %}
+            {% set current = (row.final_category or '') ~ '|' ~ (row.final_subcategory or '') %}
+            <select class="ei-input" style="font-size:0.82rem; padding:4px 6px;"
+                    id="sel_{{ loop.index }}" onchange="markDirty({{ loop.index }})">
+              <option value="">— seleccionar —</option>
+              {% for cat in categories %}
+              {% set opt = cat.category ~ '|' ~ (cat.subcategory or '') %}
+              <option value="{{ opt }}" {% if opt == current %}selected{% endif %}>
+                {{ cat.category }}{% if cat.subcategory %} / {{ cat.subcategory }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+            {% else %}
+            <span class="muted" style="font-size:0.82rem;">Sin notificación</span>
+            {% endif %}
+          </td>
+          <td style="text-align:center;">
+            {% if row.notification_id %}
+            <form method="POST" action="{{ url_for('empresa.transacciones_reclassify') }}"
+                  id="form_{{ loop.index }}"
+                  onsubmit="return confirmReclassify({{ loop.index }}, '{{ row.merchant_guess or '' }}')">
+              <input type="hidden" name="notification_id" value="{{ row.notification_id }}">
+              <input type="hidden" name="category_value" id="val_{{ loop.index }}"
+                     value="{{ (row.final_category or '') ~ '|' ~ (row.final_subcategory or '') }}">
+              <button type="submit" class="btn-primary-ei"
+                      style="padding:4px 10px; font-size:0.8rem; opacity:0.35; pointer-events:none;"
+                      id="btn_{{ loop.index }}" disabled>
+                <i class="bi bi-floppy"></i>
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="empty-state">
+  <i class="bi bi-inbox"></i>
+  <p>No hay transacciones en las últimas 24 horas.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function markDirty(idx) {
+    const sel = document.getElementById('sel_' + idx);
+    const btn = document.getElementById('btn_' + idx);
+    const val = document.getElementById('val_' + idx);
+    val.value = sel.value;
+    const dirty = sel.value !== '';
+    btn.disabled = !dirty;
+    btn.style.opacity = dirty ? '1' : '0.35';
+    btn.style.pointerEvents = dirty ? 'auto' : 'none';
+  }
+
+  function confirmReclassify(idx, merchant) {
+    const sel = document.getElementById('sel_' + idx);
+    const label = sel.options[sel.selectedIndex].text.trim();
+    return confirm('¿Reclasificar "' + (merchant || 'esta transacción') + '" como ' + label + '?');
+  }
+</script>
+{% endblock %}

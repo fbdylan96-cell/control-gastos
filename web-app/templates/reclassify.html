@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reclasificación</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      background: #f5f5f5;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 40px 36px;
+      max-width: 420px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    .icon { font-size: 48px; margin-bottom: 16px; }
+    h1 { font-size: 20px; margin: 0 0 10px; }
+    p  { color: #555; font-size: 15px; margin: 0; }
+    .badge {
+      display: inline-block;
+      margin-top: 18px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: #f0f0f0;
+      font-size: 14px;
+      font-weight: 600;
+      color: #111;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    {% if success %}
+      <div class="icon">✅</div>
+      <h1>Reclasificación guardada</h1>
+      <p>Tu selección fue registrada correctamente.</p>
+      <div class="badge">
+        {{ category }}{% if subcategory %} / {{ subcategory }}{% endif %}
+      </div>
+    {% elif reason == 'invalid' %}
+      <div class="icon">⚠️</div>
+      <h1>Enlace inválido</h1>
+      <p>Este enlace no es válido o ya fue utilizado. Por favor usá el enlace del correo más reciente.</p>
+    {% else %}
+      <div class="icon">❌</div>
+      <h1>Error interno</h1>
+      <p>No se pudo guardar la reclasificación. Intentá de nuevo más tarde.</p>
+    {% endif %}
+  </div>
+</body>
+</html>

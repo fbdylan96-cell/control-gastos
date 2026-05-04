@@ -81,6 +81,20 @@ def get_message_full(service, msg_id):
     ).execute()
 
 
+def send_email(service, to_email: str, subject: str, html_body: str):
+    """Send an HTML email via the Gmail API using the authenticated account."""
+    import base64
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    msg = MIMEMultipart("alternative")
+    msg["to"] = to_email
+    msg["subject"] = subject
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+    service.users().messages().send(userId="me", body={"raw": raw}).execute()
+
+
 def mark_as_read(service, msg_id):
     try:
         service.users().messages().modify(

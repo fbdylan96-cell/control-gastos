@@ -221,6 +221,77 @@ def insert_notification_row(conn, row):
     conn.commit()
 
 
+def get_pending_email_notifications(conn):
+    """
+    Return notification rows that need an email sent.
+    Joins enriched + classified + notifications + clients.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                n.id                AS notification_id,
+                n.classified_id,
+                n.individual_id,
+                n.business_id,
+                n.final_category,
+                n.final_subcategory,
+                c.client_name,
+                c.email_address,
+                cl.merchant,
+                e.amount_guess,
+                e.currency_guess,
+                e.desc_guess,
+                r.local_date
+            FROM core.transactions_notifications n
+            JOIN core.clients              c  ON c.id  = n.individual_id
+            JOIN core.transactions_classified cl ON cl.id = n.classified_id
+            JOIN core.transactions_enriched   e  ON e.raw_id = cl.raw_id
+            JOIN core.transactions_raw        r  ON r.id = cl.raw_id
+            WHERE n.email_notified = FALSE
+              AND c.email_notification = TRUE
+              AND c.active = TRUE
+            ORDER BY n.created_at ASC
+            """
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def mark_email_sent(conn, notification_id):
+    """Mark a notification as emailed."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE core.transactions_notifications
+            SET email_notified = TRUE, email_notified_at = now()
+            WHERE id = %s
+            """,
+            (str(notification_id),),
+        )
+    conn.commit()
+
+
+def update_reclassification(conn, notification_id, category, subcategory):
+    """Record a user reclassification received via email click."""
+    action_value = f"{category} / {subcategory}" if subcategory else category
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE core.transactions_notifications
+            SET final_category    = %s,
+                final_subcategory = %s,
+                reclassified_by   = 'user',
+                reclassified_at   = now(),
+                email_action_at   = now(),
+                email_action_value = %s
+            WHERE id = %s
+            """,
+            (category, subcategory, action_value, str(notification_id)),
+        )
+    conn.commit()
+
+
 def insert_raw_transaction(conn, row):
     """
     Insert one row into core.transactions_raw.

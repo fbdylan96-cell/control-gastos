@@ -7,6 +7,7 @@ import classifier
 import db
 import enricher
 import gmail_client
+import notifier
 import parser as email_parser
 
 load_dotenv()
@@ -72,6 +73,8 @@ def run_once(service, conn):
             process_one_message(service, msg_meta, clients, conn)
         except Exception as e:
             log.error(f"Error processing message {msg_meta['id']}: {e}")
+
+    notifier.run_notifications(conn, service)
 
 
 def main():

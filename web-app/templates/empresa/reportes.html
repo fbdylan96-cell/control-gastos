@@ -1,0 +1,111 @@
+{% extends "empresa/base.html" %}
+{% block title %}Reportes — Empowered Investor{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <i class="bi bi-file-earmark-spreadsheet"></i>
+  Reportes
+</div>
+
+<!-- Filter bar -->
+<form method="GET" action="{{ url_for('empresa.reportes') }}" class="filter-bar">
+  <div>
+    <label class="form-label-ei">Período</label>
+    <select name="filter" id="filterSelect" class="ei-select" onchange="toggleDatePicker()">
+      <option value="mes_actual"   {% if filter_type == 'mes_actual'   %}selected{% endif %}>En lo que va del mes</option>
+      <option value="mes_anterior" {% if filter_type == 'mes_anterior' %}selected{% endif %}>Mes anterior</option>
+      <option value="anio_actual"  {% if filter_type == 'anio_actual'  %}selected{% endif %}>En lo que va del año</option>
+      <option value="especifica"   {% if filter_type == 'especifica'   %}selected{% endif %}>Selección específica</option>
+    </select>
+  </div>
+
+  <div id="dateFromWrapper" style="display:{% if filter_type == 'especifica' %}block{% else %}none{% endif %};">
+    <label class="form-label-ei">Desde</label>
+    <input type="date" name="date_from" class="ei-select"
+           value="{{ date_from if filter_type == 'especifica' else '' }}" />
+  </div>
+
+  <div id="dateToWrapper" style="display:{% if filter_type == 'especifica' %}block{% else %}none{% endif %};">
+    <label class="form-label-ei">Hasta</label>
+    <input type="date" name="date_to" class="ei-select"
+           value="{{ date_to if filter_type == 'especifica' else '' }}" />
+  </div>
+
+  <div style="align-self:flex-end;">
+    <button type="submit" class="btn-primary-ei">
+      <i class="bi bi-funnel"></i>Filtrar
+    </button>
+  </div>
+
+  {% if rows %}
+  <div style="margin-left:auto; align-self:flex-end;">
+    <a href="{{ url_for('empresa.reportes_download', filter=filter_type, date_from=date_from, date_to=date_to) }}"
+       class="btn-mint-ei">
+      <i class="bi bi-file-earmark-excel"></i>Descargar Excel
+    </a>
+  </div>
+  {% endif %}
+</form>
+
+{% if rows %}
+<p style="font-size:0.825rem; color:rgba(21,25,30,0.5); margin-bottom:0.75rem;">
+  <strong style="color:var(--dark);">{{ rows|length }}</strong> transacción(es) ·
+  {{ date_from }} al {{ date_to }}
+</p>
+
+<div class="ei-card">
+  <div style="overflow-x:auto;">
+    <table class="ei-table">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>A Nombre De</th>
+          <th>Comercio</th>
+          <th style="text-align:right;">Monto</th>
+          <th>Moneda</th>
+          <th>Tipo</th>
+          <th>Categoría</th>
+          <th>Subcategoría</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="muted">
+            {{ row.local_date.strftime('%d/%m/%Y %H:%M') if row.local_date else '—' }}
+          </td>
+          <td style="font-size:0.83rem;">{{ row.client_name or '—' }}</td>
+          <td style="font-weight:600;">{{ row.merchant_guess or '—' }}</td>
+          <td class="amount">
+            {% if row.amount_guess is not none %}
+              {{ '{:,.2f}'.format(row.amount_guess) }}
+            {% else %}—{% endif %}
+          </td>
+          <td><span class="currency-badge">{{ row.currency_guess or '—' }}</span></td>
+          <td>{{ row.transaction_type_guess or '—' }}</td>
+          <td>{{ row.final_category or '—' }}</td>
+          <td class="muted">{{ row.final_subcategory or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="empty-state">
+  <i class="bi bi-inbox"></i>
+  <p>No hay transacciones aprobadas para el período seleccionado.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function toggleDatePicker() {
+    const val = document.getElementById('filterSelect').value;
+    const show = val === 'especifica';
+    document.getElementById('dateFromWrapper').style.display = show ? 'block' : 'none';
+    document.getElementById('dateToWrapper').style.display  = show ? 'block' : 'none';
+  }
+</script>
+{% endblock %}

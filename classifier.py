@@ -98,30 +98,29 @@ Given a merchant name (already normalized to lowercase), you must return the bes
 category and subcategory from the provided list.
 
 Rules:
-- ONLY use categories and subcategories from the provided list. NEVER invent new ones.
-- If no subcategory fits, return null for subcategory.
-- If no category fits at all, return "Otros" with null subcategory.
-- Use the global examples catalog only as a hint — the final answer must come from the provided list.
+- The list shows VALID PAIRS in the format "Category / Subcategory" or just "Category" when no subcategory exists.
+- You MUST return a pair exactly as it appears. NEVER combine a category with a subcategory that is not paired with it in the list.
+- If an entry shows "Category / Subcategory", you must return both fields populated.
+- If an entry shows only "Category" (no slash), return that category with null subcategory.
+- If no pair fits, return "Otros" with null subcategory.
+- NEVER invent categories or subcategories not in the list.
+- Use the global examples catalog only as a hint — the final answer must be a valid pair from the list.
 - Return valid JSON only, no markdown.
 """.strip()
 
 
 def _build_taxonomy_text(categories: list[dict]) -> str:
-    """Format categories list as a readable taxonomy string for the AI prompt."""
-    by_cat: dict[str, list] = {}
+    """
+    Format categories as explicit valid pairs so the AI cannot combine
+    a category with a subcategory that doesn't belong to it.
+    e.g. 'Casa / Alquiler', 'Casa / Colaboradores', 'Otros'
+    """
+    lines = set()
     for row in categories:
         cat = row["category"] or "Otros"
         sub = row["subcategory"]
-        by_cat.setdefault(cat, [])
-        if sub:
-            by_cat[cat].append(sub)
-    lines = []
-    for cat, subs in sorted(by_cat.items()):
-        if subs:
-            lines.append(f"- {cat}: {', '.join(sorted(set(subs)))}")
-        else:
-            lines.append(f"- {cat}")
-    return "\n".join(lines)
+        lines.add(f"- {cat} / {sub}" if sub else f"- {cat}")
+    return "\n".join(sorted(lines))
 
 
 def _classify_with_ai(merchant_key: str, categories: list[dict]) -> dict:
@@ -158,6 +157,17 @@ def _classify_with_ai(merchant_key: str, categories: list[dict]) -> dict:
         subcategory = (data.get("subcategory") or None)
         if subcategory:
             subcategory = subcategory.strip() or None
+
+        # Validate the returned pair exists in the taxonomy
+        valid_pairs = {
+            (r["category"], r["subcategory"]) for r in categories
+        }
+        if (category, subcategory) not in valid_pairs:
+            log.warning(
+                f"  AI returned invalid pair ({category!r}, {subcategory!r}) — falling back to Otros"
+            )
+            return {"category": "Otros", "subcategory": None}
+
         return {"category": category, "subcategory": subcategory}
     except Exception as e:
         log.error(f"  AI classification error: {e}")

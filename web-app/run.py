@@ -17,9 +17,11 @@ app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24))
 
 from empresa import empresa_bp
 from administracion import admin_bp
+from persona import persona_bp
 
 app.register_blueprint(empresa_bp, url_prefix='/empresa')
 app.register_blueprint(admin_bp, url_prefix='/administracion')
+app.register_blueprint(persona_bp, url_prefix='/persona')
 
 # Start background scheduler (guard against Werkzeug reloader spawning it twice)
 if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":

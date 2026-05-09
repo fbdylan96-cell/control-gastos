@@ -32,6 +32,10 @@
       background: var(--dark);
       color: var(--cream);
     }
+    .app-btn-persona {
+      background: var(--mint, #2bb673);
+      color: #fff;
+    }
     .app-btn-admin {
       background: var(--blue);
       color: #fff;
@@ -62,6 +66,10 @@
       <a href="{{ url_for('empresa.login') }}" class="app-btn app-btn-empresa">
         <i class="bi bi-bar-chart-line-fill"></i>
         App Empresa
+      </a>
+      <a href="{{ url_for('persona.login') }}" class="app-btn app-btn-persona">
+        <i class="bi bi-person-fill"></i>
+        App Persona
       </a>
       <a href="{{ url_for('administracion.index') }}" class="app-btn app-btn-admin">
         <i class="bi bi-shield-lock-fill"></i>

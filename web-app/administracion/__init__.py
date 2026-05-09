@@ -1,9 +1,11 @@
 import os
 import uuid
+from functools import wraps
 
 import psycopg2
 import psycopg2.extras
-from flask import Blueprint, jsonify, render_template, request
+from flask import (Blueprint, jsonify, redirect, render_template, request,
+                   session, url_for)
 from werkzeug.security import generate_password_hash
 
 from db import get_connection
@@ -14,14 +16,62 @@ admin_bp = Blueprint('administracion', __name__)
 INDIVIDUAL_BIZ_ID = '00000000-0000-0000-0000-000000009999'
 
 
+# ── Auth ─────────────────────────────────────────────────────────────────────
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("admin_authenticated"):
+            return redirect(url_for("administracion.login"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def admin_required_api(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("admin_authenticated"):
+            return jsonify({'error': 'unauthorized'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+@admin_bp.route('/login', methods=['GET', 'POST'])
+def login():
+    if session.get("admin_authenticated"):
+        return redirect(url_for("administracion.index"))
+
+    error = None
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        expected = os.environ.get("ADMIN_PASSWORD", "")
+        if not expected:
+            error = "ADMIN_PASSWORD no está configurado en el servidor."
+        elif password == expected:
+            session["admin_authenticated"] = True
+            return redirect(url_for("administracion.index"))
+        else:
+            error = "Contraseña incorrecta."
+
+    return render_template("administracion/login.html", error=error)
+
+
+@admin_bp.route('/logout')
+def logout():
+    session.pop("admin_authenticated", None)
+    return redirect(url_for("administracion.login"))
+
+
 # ── Static ───────────────────────────────────────────────────────────────────
 
 @admin_bp.route('/')
+@admin_required
 def index():
     return render_template('administracion/admin.html')
 
 
 @admin_bp.route('/api/verify-password', methods=['POST'])
+@admin_required_api
 def verify_password():
     expected = os.environ.get('ADMIN_PASSWORD', '')
     if not expected:
@@ -35,6 +85,7 @@ def verify_password():
 # ── GET /api/clients ──────────────────────────────────────────────────────────
 
 @admin_bp.route('/api/clients', methods=['GET'])
+@admin_required_api
 def get_clients():
     try:
         conn = get_connection()
@@ -61,6 +112,7 @@ def get_clients():
 # ── POST /api/clients ─────────────────────────────────────────────────────────
 
 @admin_bp.route('/api/clients', methods=['POST'])
+@admin_required_api
 def post_client():
     body = request.get_json()
     try:
@@ -111,6 +163,7 @@ def post_client():
 # ── POST /api/businesses ──────────────────────────────────────────────────────
 
 @admin_bp.route('/api/businesses', methods=['POST'])
+@admin_required_api
 def post_business():
     body = request.get_json()
     try:
@@ -131,6 +184,7 @@ def post_business():
 # ── PATCH /api/clients/<id> ───────────────────────────────────────────────────
 
 @admin_bp.route('/api/clients/<client_id>', methods=['PATCH'])
+@admin_required_api
 def patch_client(client_id):
     body = request.get_json()
     try:

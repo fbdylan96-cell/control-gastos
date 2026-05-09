@@ -7,6 +7,8 @@ load_dotenv(find_dotenv())
 
 
 def get_connection():
+    if os.environ.get("IS_PROD_DB", "0").strip() == "1":
+        return psycopg2.connect(os.environ["DB_PROD_URL"])
     return psycopg2.connect(
         host=os.environ["DB_HOST"],
         port=int(os.environ.get("DB_PORT", 5432)),

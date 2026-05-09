@@ -524,7 +524,6 @@
 
 <script>
 const INDIVIDUAL_BIZ_ID = '00000000-0000-0000-0000-000000009999';
-const ADMIN_PWD         = 'admin';
 const API_BASE          = '/administracion';
 
 let pendingAction = null;
@@ -762,7 +761,17 @@ function closePwdModal() {
 
 async function confirmPwd() {
     const pwd = document.getElementById('pwdInput').value;
-    if (pwd !== ADMIN_PWD) {
+    let verified = false;
+    try {
+        const res = await fetch(`${API_BASE}/api/verify-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pwd }),
+        });
+        verified = res.ok;
+    } catch (_) {}
+
+    if (!verified) {
         document.getElementById('pwdErr').classList.add('show');
         document.getElementById('pwdInput').value = '';
         document.getElementById('pwdInput').focus();

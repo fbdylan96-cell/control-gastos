@@ -1,3 +1,4 @@
+import os
 import uuid
 
 import psycopg2
@@ -18,6 +19,17 @@ INDIVIDUAL_BIZ_ID = '00000000-0000-0000-0000-000000009999'
 @admin_bp.route('/')
 def index():
     return render_template('administracion/admin.html')
+
+
+@admin_bp.route('/api/verify-password', methods=['POST'])
+def verify_password():
+    expected = os.environ.get('ADMIN_PASSWORD', '')
+    if not expected:
+        return jsonify({'error': 'ADMIN_PASSWORD not configured'}), 500
+    body = request.get_json(silent=True) or {}
+    if body.get('password') == expected:
+        return jsonify({'ok': True})
+    return jsonify({'ok': False}), 403
 
 
 # ── GET /api/clients ──────────────────────────────────────────────────────────

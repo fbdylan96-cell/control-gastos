@@ -1,10 +1,10 @@
 import logging
 import os
 
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 from flask import Flask, render_template, request
 
-load_dotenv()
+load_dotenv(find_dotenv())
 
 logging.basicConfig(
     level=logging.INFO,

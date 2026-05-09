@@ -1,6 +1,6 @@
---CREATE SCHEMA core;
+CREATE SCHEMA IF NOT EXISTS core;
 
---CREATE SCHEMA audit;
+CREATE SCHEMA IF NOT EXISTS audit;
 
 -- Sentinel business for individual clients (not tied to any organization)
 -- business_id '00000000-0000-0000-0000-000000009999' means "individual"

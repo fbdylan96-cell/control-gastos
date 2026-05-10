@@ -38,7 +38,7 @@ def login():
 
     error = None
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
+        username = request.form.get("username", "").strip().lower()
         password = request.form.get("password", "")
 
         conn = get_connection()

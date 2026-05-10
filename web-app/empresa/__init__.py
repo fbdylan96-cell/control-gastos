@@ -48,7 +48,7 @@ def login():
 
     error = None
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
+        username = request.form.get("username", "").strip().lower()
         password = request.form.get("password", "")
 
         conn = get_connection()
@@ -493,7 +493,7 @@ def miembros_toggle(member_id):
 def miembros_add():
     nombre        = request.form.get("nombre", "").strip()
     apellidos     = request.form.get("apellidos", "").strip()
-    email_address = request.form.get("email_address", "").strip()
+    email_address = request.form.get("email_address", "").strip().lower()
     email_notif   = request.form.get("email_notification") == "1"
     wa_notif      = request.form.get("whatsapp_notification") == "1"
     phone_number  = request.form.get("phone_number", "").strip() or None

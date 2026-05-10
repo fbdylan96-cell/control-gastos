@@ -120,6 +120,8 @@ def post_client():
         cid = str(uuid.uuid4())
         name = body['client_name']
         email_fwd = gen_email_forward(name)
+        email_address = body.get('email_address', '').lower()
+        username = body.get('username', '').lower()
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO core.clients
@@ -131,8 +133,8 @@ def post_client():
                 body['business_id'],
                 body.get('business_admin', False),
                 name,
-                body.get('email_address', ''),
-                body.get('username', ''),
+                email_address,
+                username,
                 generate_password_hash(body.get('password_hash', '')),
                 body.get('phone_number'),
                 email_fwd,

@@ -11,9 +11,14 @@
 
   <!-- ── Top navbar ─────────────────────────────────────────────── -->
   <header class="top-navbar">
-    <div class="navbar-logo-wrap">
-      <img src="{{ url_for('static', filename='logos/logo-horizontal.png') }}"
-           alt="Empowered Investor" />
+    <div style="display:flex; align-items:center;">
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="Abrir menú">
+        <i class="bi bi-list"></i>
+      </button>
+      <div class="navbar-logo-wrap">
+        <img src="{{ url_for('static', filename='logos/logo-horizontal.png') }}"
+             alt="Empowered Investor" />
+      </div>
     </div>
 
     <div style="display:flex; align-items:center; gap:1rem;">
@@ -81,6 +86,26 @@
     </main>
 
   </div>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <script>
+    (function () {
+      const toggle = document.getElementById('sidebarToggle');
+      const overlay = document.getElementById('sidebarOverlay');
+      const sidebar = document.querySelector('.sidebar');
+      if (!toggle || !sidebar || !overlay) return;
+
+      function open()  { sidebar.classList.add('open');  overlay.classList.add('open'); }
+      function close() { sidebar.classList.remove('open'); overlay.classList.remove('open'); }
+
+      toggle.addEventListener('click', () => {
+        sidebar.classList.contains('open') ? close() : open();
+      });
+      overlay.addEventListener('click', close);
+      sidebar.querySelectorAll('a').forEach(a => a.addEventListener('click', close));
+    })();
+  </script>
 
   {% block scripts %}{% endblock %}
 </body>

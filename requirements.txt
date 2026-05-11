@@ -6,3 +6,4 @@ python-dotenv
 pytz
 openai
 openpyxl
+bccr

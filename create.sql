@@ -262,5 +262,25 @@ CREATE INDEX idx_category_rules_merchant_key
     ON core.category_rules (business_id, merchant_key);
 
 
+DROP TABLE IF EXISTS core.exchange_rates CASCADE;
+
+-- Daily snapshot of foreign exchange rates relative to USD.
+-- Populated by rate_scheduler.py every business day at 23:30 (server local time).
+-- rate_date is always the date the scheduler ran (today), regardless of when the
+-- underlying BCCR observation was published — this keeps every currency aligned
+-- on the same row date so lookups by date return a complete cross-section.
+-- rate_vs_usd is "units of `currency` per 1 USD" (e.g. CRC=531.25 means 1 USD = 531.25 CRC).
+-- USD itself is stored with rate_vs_usd = 1.0.
+-- rate_vs_usd is NULL when BCCR has no value within the 15-day lookback window
+-- (or the currency code is absent from the response).
+CREATE TABLE core.exchange_rates (
+    rate_date     DATE NOT NULL,
+    currency      TEXT NOT NULL,
+    rate_vs_usd   NUMERIC(14,6),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (rate_date, currency)
+);
+
+
 -- TRUNCATE core.transactions_raw CASCADE;
 -- ALTER TABLE core.transactions_enriched DROP COLUMN bank_email_adress;

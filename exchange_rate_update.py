@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+
 from bccr import SW
 
 code_list = {
@@ -46,18 +47,29 @@ code_list = {
     'CRC': 318,
 }
 
-today = date.today()
-start = today - timedelta(days=15)
 
-exc_rate_daily = SW(
-    **{code: indicator for code, indicator in code_list.items()},
-    FechaInicio=str(start.strftime("%Y-%m-%d"))
-)
+def get_latest_rates(days_back: int = 15) -> dict:
+    """Fetch the latest non-null BCCR rate for every currency in code_list.
 
-latest_rates = {}
-for code in code_list:
-    if code not in exc_rate_daily.columns:
-        latest_rates[code] = None
-    else:
-        col = exc_rate_daily[code].dropna()
-        latest_rates[code] = col.iloc[-1] if not col.empty else None
+    Returns a dict mapping currency code → rate (units of `currency` per 1 USD).
+    USD is always included with value 1.0. A currency's value is None when its
+    column is absent from the BCCR response or when all observations in the
+    `days_back` window are NaN.
+    """
+    today = date.today()
+    start = today - timedelta(days=days_back)
+
+    exc_rate_daily = SW(
+        **{code: indicator for code, indicator in code_list.items()},
+        FechaInicio=str(start.strftime("%Y-%m-%d"))
+    )
+
+    latest_rates = {'USD': 1.0}
+    for code in code_list:
+        if code not in exc_rate_daily.columns:
+            latest_rates[code] = None
+        else:
+            col = exc_rate_daily[code].dropna()
+            latest_rates[code] = float(col.iloc[-1]) if not col.empty else None
+
+    return latest_rates

@@ -23,7 +23,7 @@ def get_active_clients(conn):
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, business_id, email_forward, business_admin, client_name
+            SELECT id, business_id, email_forward, business_admin, client_name, username
             FROM core.clients
             WHERE active = TRUE
             """

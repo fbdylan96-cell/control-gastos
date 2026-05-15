@@ -198,20 +198,20 @@ def read_headers(full_msg):
 
 def detect_client(headers, clients):
     """
-    Match To: (or Delivered-To:) against core.clients.email_forward values.
+    Match To: (or Delivered-To:) against core.clients.username values.
     Returns matching client dict or None.
-    clients: list of dicts with at least 'email_forward', 'id', 'business_id'.
+    clients: list of dicts with at least 'username', 'id', 'business_id'.
     """
     candidates = [
         (headers.get("to") or "").lower(),
         (headers.get("delivered_to") or "").lower(),
     ]
     for client in clients:
-        fwd = (client.get("email_forward") or "").lower()
-        if not fwd:
+        uname = (client.get("username") or "").lower()
+        if not uname:
             continue
         for c in candidates:
-            if fwd in c:
+            if uname in c:
                 return client
     return None
 

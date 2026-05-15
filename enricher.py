@@ -215,6 +215,18 @@ def _detect_member(body_text_full: str, members: list) -> dict | None:
 # Main enrichment function
 # ---------------------------------------------------------------------------
 
+def _compute_fx(conn, amount, currency):
+    """Return (amount_local, fx_rate, fx_rate_date) for the given amount/currency.
+    amount_local is NULL whenever conversion is not possible — see db.get_fx_conversion.
+    currency_local is set by the caller (always 'CRC')."""
+    if conn is None or amount is None or not currency:
+        return None, None, None
+    fx_rate, fx_rate_date = _db.get_fx_conversion(conn, currency)
+    if fx_rate is None:
+        return None, None, None
+    return round(float(amount) * fx_rate, 2), fx_rate, fx_rate_date
+
+
 def enrich_raw(raw_row: dict, conn=None, client: dict | None = None) -> dict:
     """
     Takes a transactions_raw row dict and returns a transactions_enriched row dict
@@ -259,6 +271,10 @@ def enrich_raw(raw_row: dict, conn=None, client: dict | None = None) -> dict:
             "ai_assistance": False,
             "member_detected": member_detected,
             "assigned_individual_id": assigned_individual_id,
+            "amount_local": None,
+            "currency_local": "CRC",
+            "fx_rate": None,
+            "fx_rate_date": None,
             "errors": None,
         }
 
@@ -299,6 +315,7 @@ def enrich_raw(raw_row: dict, conn=None, client: dict | None = None) -> dict:
         log.info("  AI assistance is OFF — transaction_status will remain 'unknown'")
         status = "unknown"
         log.info(f"  status={status} merchant={merchant!r} amount={amount} currency={currency}")
+        amount_local, fx_rate, fx_rate_date = _compute_fx(conn, amount, currency)
         return {
             "id": str(uuid.uuid4()),
             "raw_id": str(raw_row["id"]),
@@ -315,11 +332,19 @@ def enrich_raw(raw_row: dict, conn=None, client: dict | None = None) -> dict:
             "ai_assistance": False,
             "member_detected": member_detected,
             "assigned_individual_id": assigned_individual_id,
+            "amount_local": amount_local,
+            "currency_local": "CRC",
+            "fx_rate": fx_rate,
+            "fx_rate_date": fx_rate_date,
             "errors": None,
         }
 
     status = determine_status(merchant, amount, currency, desc)
     log.info(f"  status={status} merchant={merchant!r} amount={amount} currency={currency}")
+
+    amount_local, fx_rate, fx_rate_date = _compute_fx(conn, amount, currency)
+    if amount is not None and amount_local is None:
+        log.warning(f"  FX conversion failed for currency={currency!r} — amount_local stored as NULL")
 
     return {
         "id": str(uuid.uuid4()),
@@ -337,5 +362,9 @@ def enrich_raw(raw_row: dict, conn=None, client: dict | None = None) -> dict:
         "ai_assistance": ai_used,
         "member_detected": member_detected,
         "assigned_individual_id": assigned_individual_id,
+        "amount_local": amount_local,
+        "currency_local": "CRC",
+        "fx_rate": fx_rate,
+        "fx_rate_date": fx_rate_date,
         "errors": None,
     }

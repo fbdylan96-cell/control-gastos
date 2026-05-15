@@ -110,12 +110,18 @@ CREATE TABLE core.transactions_enriched (
         CONSTRAINT chk_transaction_type CHECK (transaction_type_guess IN ('debito', 'credito', 'unknown')),
     
     -- FX conversion to local currency (CRC)
-    -- Populated at ingest time via BCCR API.
+    -- Populated at ingest time using core.exchange_rates (latest available rate_date).
     -- If currency_guess is already 'CRC', amount_local = amount_guess and fx_rate = 1.
+    -- amount_local is NULL when conversion is not possible (currency not in exchange_rates,
+    --   missing rate on the latest date, or amount_guess itself is NULL).
+    -- NOTE: enrichment uses the latest available rate_date in core.exchange_rates,
+    --   not the transaction's own date — fine while emails arrive in near-real-time. If we
+    --   ever start backfilling old emails, switch to "latest rate on or before local_date".
     amount_local NUMERIC(14,2),   -- amount_guess converted to CRC
-    currency_local TEXT,          -- always 'CRC' for now
-    fx_rate NUMERIC(10,4),        -- rate used (e.g. 531.2500 means 1 USD = 531.25 CRC)
-    fx_rate_date DATE,            -- date the rate was fetched from BCCR
+    currency_local TEXT NOT NULL DEFAULT 'CRC'
+        CONSTRAINT chk_currency_local CHECK (currency_local = 'CRC'),
+    fx_rate NUMERIC(14,6),        -- composite rate so amount_guess * fx_rate = amount_local
+    fx_rate_date DATE,            -- core.exchange_rates.rate_date used for the lookup
 
     -- Approval state — 'Denegada' when "deneg" is found in subject or body; skips all further steps
     transaction_approval TEXT NOT NULL DEFAULT 'Aprobada'
@@ -216,6 +222,9 @@ CREATE TABLE core.categories (
 
     category TEXT NOT NULL,
     subcategory TEXT,
+
+    -- Optional monthly budget in CRC (NULL = user not tracking a budget for this category)
+    monthly_budget NUMERIC(14,2),
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 

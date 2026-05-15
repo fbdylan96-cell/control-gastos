@@ -7,7 +7,7 @@
   Categorías
 </div>
 
-<div style="display:grid; grid-template-columns:1fr 380px; gap:1.5rem; align-items:start;">
+<div style="display:grid; grid-template-columns:1fr 460px; gap:1.5rem; align-items:start;">
 
   <!-- ── Left: input methods ──────────────────────────────────────── -->
   <div style="display:flex; flex-direction:column; gap:1.25rem;">
@@ -21,18 +21,21 @@
         <form method="POST" action="{{ url_for('empresa.categorias') }}">
           <input type="hidden" name="action" value="manual" />
 
-          <div style="display:grid; grid-template-columns:1fr 1fr 36px; gap:8px; margin-bottom:6px;">
+          <div style="display:grid; grid-template-columns:1fr 1fr 140px 36px; gap:8px; margin-bottom:6px;">
             <span class="form-label-ei" style="margin:0;">Categoría</span>
             <span class="form-label-ei" style="margin:0;">Subcategoría</span>
+            <span class="form-label-ei" style="margin:0;">Presupuesto (CRC)</span>
             <span></span>
           </div>
 
           <div id="catRows" style="display:flex; flex-direction:column; gap:8px;">
-            <div class="cat-row" style="display:grid; grid-template-columns:1fr 1fr 36px; gap:8px; align-items:center;">
+            <div class="cat-row" style="display:grid; grid-template-columns:1fr 1fr 140px 36px; gap:8px; align-items:center;">
               <input type="text" name="category" class="ei-input"
                      placeholder="Ej: Alimentación" />
               <input type="text" name="subcategory" class="ei-input"
                      placeholder="Subcategoría (opcional)" />
+              <input type="number" name="monthly_budget" class="ei-input"
+                     min="0" step="0.01" placeholder="Opcional" />
               <button type="button" class="btn-danger-outline" onclick="removeRow(this)" title="Eliminar">
                 <i class="bi bi-trash"></i>
               </button>
@@ -58,7 +61,8 @@
       </div>
       <div class="ei-card-body">
         <p style="font-size:0.855rem; color:rgba(21,25,30,0.6); margin:0 0 0.9rem;">
-          Descargue la plantilla, complete los datos y súbala aquí.
+          Descargue la plantilla, complete los datos y súbala aquí. La columna
+          de presupuesto es opcional.
         </p>
 
         <a href="{{ url_for('empresa.categorias_template') }}" class="btn-outline-ei"
@@ -98,16 +102,37 @@
           <tr>
             <th>Categoría</th>
             <th>Subcategoría</th>
+            <th style="width:160px;">Presupuesto</th>
             <th style="width:40px;"></th>
           </tr>
         </thead>
         <tbody>
           {% for cat in existing %}
+          {% set is_otros = cat.category == 'Otros' and cat.subcategory is none %}
           <tr>
             <td style="font-weight:600;">{{ cat.category }}</td>
             <td class="muted">{{ cat.subcategory or '—' }}</td>
+            <td>
+              {% if is_otros %}
+              <span class="muted" style="font-size:0.8rem;">—</span>
+              {% else %}
+              <form method="POST"
+                    action="{{ url_for('empresa.categorias_update_budget', categoria_id=cat.id) }}"
+                    style="display:flex; gap:4px; align-items:center;">
+                <input type="number" name="monthly_budget" class="ei-input"
+                       min="0" step="0.01"
+                       value="{{ '%g'|format(cat.monthly_budget) if cat.monthly_budget is not none else '' }}"
+                       placeholder="—"
+                       style="padding:4px 8px; font-size:0.8rem;" />
+                <button type="submit" class="btn-mint-ei"
+                        style="padding:4px 8px; font-size:0.75rem;" title="Guardar presupuesto">
+                  <i class="bi bi-check2"></i>
+                </button>
+              </form>
+              {% endif %}
+            </td>
             <td style="text-align:center;">
-              {% if cat.category == 'Otros' and cat.subcategory is none %}
+              {% if is_otros %}
               <span title="La categoría 'Otros' no puede eliminarse" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px;">
                 <i class="bi bi-lock" style="color:rgba(21,25,30,0.3); font-size:0.9rem;"></i>
               </span>
@@ -143,10 +168,11 @@
     const container = document.getElementById('catRows');
     const div = document.createElement('div');
     div.className = 'cat-row';
-    div.style.cssText = 'display:grid; grid-template-columns:1fr 1fr 36px; gap:8px; align-items:center;';
+    div.style.cssText = 'display:grid; grid-template-columns:1fr 1fr 140px 36px; gap:8px; align-items:center;';
     div.innerHTML = `
       <input type="text" name="category" class="ei-input" placeholder="Ej: Alimentación" />
       <input type="text" name="subcategory" class="ei-input" placeholder="Subcategoría (opcional)" />
+      <input type="number" name="monthly_budget" class="ei-input" min="0" step="0.01" placeholder="Opcional" />
       <button type="button" class="btn-danger-outline" onclick="removeRow(this)" title="Eliminar">
         <i class="bi bi-trash"></i>
       </button>`;

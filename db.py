@@ -99,6 +99,10 @@ def insert_enriched_transaction(conn, row):
             ai_assistance,
             member_detected,
             assigned_individual_id,
+            amount_local,
+            currency_local,
+            fx_rate,
+            fx_rate_date,
             errors
         ) VALUES (
             %(id)s,
@@ -116,6 +120,10 @@ def insert_enriched_transaction(conn, row):
             %(ai_assistance)s,
             %(member_detected)s,
             %(assigned_individual_id)s,
+            %(amount_local)s,
+            %(currency_local)s,
+            %(fx_rate)s,
+            %(fx_rate_date)s,
             %(errors)s
         )
         ON CONFLICT DO NOTHING
@@ -123,6 +131,48 @@ def insert_enriched_transaction(conn, row):
     with conn.cursor() as cur:
         cur.execute(sql, row)
     conn.commit()
+
+
+def get_fx_conversion(conn, currency_guess):
+    """Return (fx_rate, fx_rate_date) for converting amount_guess in `currency_guess` to CRC.
+
+    fx_rate is the composite rate such that amount_local = amount_guess * fx_rate.
+    Uses the latest available rate_date in core.exchange_rates.
+    NOTE: this assumes emails arrive in near-real-time. If backfilling old emails ever
+    becomes a use case, switch to "latest rate on or before transactions_raw.local_date".
+
+    Returns (None, None) when conversion is impossible:
+      - currency_guess is falsy
+      - core.exchange_rates is empty
+      - CRC or currency_guess rate is NULL on the latest rate_date
+      - currency_guess is not present in the table
+    """
+    if not currency_guess:
+        return None, None
+
+    cg = currency_guess.upper()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            WITH latest AS (
+                SELECT MAX(rate_date) AS d FROM core.exchange_rates
+            )
+            SELECT crc.rate_vs_usd, fx.rate_vs_usd, latest.d
+            FROM latest
+            LEFT JOIN core.exchange_rates crc
+              ON crc.rate_date = latest.d AND crc.currency = 'CRC'
+            LEFT JOIN core.exchange_rates fx
+              ON fx.rate_date  = latest.d AND fx.currency  = %s
+            """,
+            (cg,),
+        )
+        row = cur.fetchone()
+        if not row or row[2] is None:
+            return None, None
+        crc_rate, fx_rate_src, rate_date = row
+        if crc_rate is None or fx_rate_src is None or float(fx_rate_src) == 0:
+            return None, None
+        return float(crc_rate) / float(fx_rate_src), rate_date
 
 
 def get_unclassified_enriched(conn):
@@ -240,9 +290,12 @@ def get_pending_email_notifications(conn):
                 n.final_subcategory,
                 c.client_name,
                 c.email_address,
+                c.business_admin,
                 cl.merchant,
                 e.amount_guess,
                 e.currency_guess,
+                e.amount_local,
+                e.currency_local,
                 e.desc_guess,
                 r.local_date
             FROM core.transactions_notifications n
@@ -272,6 +325,92 @@ def mark_email_sent(conn, notification_id):
             (str(notification_id),),
         )
     conn.commit()
+
+
+INDIVIDUAL_BIZ_ID = "00000000-0000-0000-0000-000000009999"
+
+
+def get_budget_and_spending(conn, notif):
+    """Return (monthly_budget, total_month_spending) for the notification's category.
+
+    For individuals: looks up their personal category budget and sums only their spending.
+    For businesses: looks up the business-level category budget and sums all members' spending.
+    Returns (None, None) when no budget is configured for this category.
+    Spending is always in CRC (amount_local). Only 'Aprobada'+'debito' rows are counted.
+    """
+    business_id = str(notif["business_id"])
+    individual_id = str(notif["individual_id"])
+    category = notif.get("final_category") or ""
+    subcategory = notif.get("final_subcategory")
+    is_individual = business_id == INDIVIDUAL_BIZ_ID
+
+    with conn.cursor() as cur:
+        if is_individual:
+            cur.execute(
+                """
+                SELECT monthly_budget FROM core.categories
+                WHERE business_id = %s
+                  AND individual_id = %s
+                  AND category = %s
+                  AND (subcategory = %s OR (subcategory IS NULL AND %s IS NULL))
+                """,
+                (INDIVIDUAL_BIZ_ID, individual_id, category, subcategory, subcategory),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT monthly_budget FROM core.categories
+                WHERE business_id = %s
+                  AND individual_id IS NULL
+                  AND category = %s
+                  AND (subcategory = %s OR (subcategory IS NULL AND %s IS NULL))
+                """,
+                (business_id, category, subcategory, subcategory),
+            )
+
+        row = cur.fetchone()
+        if not row or row[0] is None:
+            return None, None
+
+        monthly_budget = float(row[0])
+
+        if is_individual:
+            cur.execute(
+                """
+                SELECT COALESCE(SUM(e.amount_local), 0)
+                FROM core.transactions_enriched e
+                JOIN core.transactions_raw r ON r.id = e.raw_id
+                JOIN core.transactions_classified cl ON cl.raw_id = e.raw_id
+                JOIN core.transactions_notifications n ON n.classified_id = cl.id
+                WHERE e.individual_id = %s
+                  AND n.final_category = %s
+                  AND (n.final_subcategory = %s OR (n.final_subcategory IS NULL AND %s IS NULL))
+                  AND date_trunc('month', r.local_date) = date_trunc('month', now())
+                  AND e.transaction_approval = 'Aprobada'
+                  AND e.transaction_type_guess = 'debito'
+                """,
+                (individual_id, category, subcategory, subcategory),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT COALESCE(SUM(e.amount_local), 0)
+                FROM core.transactions_enriched e
+                JOIN core.transactions_raw r ON r.id = e.raw_id
+                JOIN core.transactions_classified cl ON cl.raw_id = e.raw_id
+                JOIN core.transactions_notifications n ON n.classified_id = cl.id
+                WHERE e.business_id = %s
+                  AND n.final_category = %s
+                  AND (n.final_subcategory = %s OR (n.final_subcategory IS NULL AND %s IS NULL))
+                  AND date_trunc('month', r.local_date) = date_trunc('month', now())
+                  AND e.transaction_approval = 'Aprobada'
+                  AND e.transaction_type_guess = 'debito'
+                """,
+                (business_id, category, subcategory, subcategory),
+            )
+
+        spending_row = cur.fetchone()
+        return monthly_budget, float(spending_row[0]) if spending_row else 0.0
 
 
 def update_reclassification(conn, notification_id, category, subcategory):

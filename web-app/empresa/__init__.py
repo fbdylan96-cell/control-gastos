@@ -289,15 +289,31 @@ def reportes_download():
 
 # ── Categorias ────────────────────────────────────────────────────────────────
 
-def _upsert_categories(pairs, business_id):
+def _parse_budget(value):
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        n = float(s)
+        return n if n >= 0 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _upsert_categories(triples, business_id):
+    """triples: iterable of (category, subcategory, monthly_budget)."""
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            for category, subcategory in pairs:
+            for category, subcategory, budget in triples:
+                budget_value = None if category == "Otros" and subcategory is None else budget
                 cur.execute(
                     """
-                    INSERT INTO core.categories (id, business_id, individual_id, category, subcategory)
-                    SELECT %s, %s, NULL, %s, %s
+                    INSERT INTO core.categories
+                        (id, business_id, individual_id, category, subcategory, monthly_budget)
+                    SELECT %s, %s, NULL, %s, %s, %s
                     WHERE NOT EXISTS (
                         SELECT 1 FROM core.categories
                         WHERE business_id = %s
@@ -310,7 +326,7 @@ def _upsert_categories(pairs, business_id):
                     )
                     """,
                     (
-                        str(uuid.uuid4()), business_id, category, subcategory,
+                        str(uuid.uuid4()), business_id, category, subcategory, budget_value,
                         business_id, category, subcategory, subcategory,
                     ),
                 )
@@ -328,13 +344,18 @@ def categorias():
         if action == "manual":
             categories = request.form.getlist("category")
             subcategories = request.form.getlist("subcategory")
-            pairs = [
-                (cat.strip(), sub.strip() or None)
-                for cat, sub in zip(categories, subcategories)
+            budgets = request.form.getlist("monthly_budget")
+            triples = [
+                (cat.strip(), sub.strip() or None, _parse_budget(bud))
+                for cat, sub, bud in zip(
+                    categories,
+                    subcategories,
+                    budgets + [None] * (len(categories) - len(budgets)),
+                )
                 if cat.strip()
             ]
-            if pairs:
-                _upsert_categories(pairs, session["business_id"])
+            if triples:
+                _upsert_categories(triples, session["business_id"])
                 flash("Categorías guardadas correctamente.", "success")
             else:
                 flash("No se ingresaron categorías válidas.", "warning")
@@ -347,15 +368,16 @@ def categorias():
                 try:
                     wb = openpyxl.load_workbook(file)
                     ws = wb.active
-                    pairs = []
+                    triples = []
                     for row in ws.iter_rows(min_row=2, values_only=True):
                         cat = str(row[0]).strip() if row[0] is not None else ""
                         sub = str(row[1]).strip() if len(row) > 1 and row[1] is not None else None
+                        bud = _parse_budget(row[2]) if len(row) > 2 else None
                         if cat:
-                            pairs.append((cat, sub or None))
-                    if pairs:
-                        _upsert_categories(pairs, session["business_id"])
-                        flash(f"{len(pairs)} categoría(s) importada(s) correctamente.", "success")
+                            triples.append((cat, sub or None, bud))
+                    if triples:
+                        _upsert_categories(triples, session["business_id"])
+                        flash(f"{len(triples)} categoría(s) importada(s) correctamente.", "success")
                     else:
                         flash("El archivo no contiene categorías válidas.", "warning")
                 except Exception as e:
@@ -368,7 +390,7 @@ def categorias():
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT id, category, subcategory
+                SELECT id, category, subcategory, monthly_budget
                 FROM core.categories
                 WHERE business_id = %s AND individual_id IS NULL
                 ORDER BY category, subcategory NULLS FIRST
@@ -413,20 +435,55 @@ def categorias_delete(categoria_id):
     return redirect(url_for("empresa.categorias"))
 
 
+@empresa_bp.route("/categorias/<categoria_id>/budget", methods=["POST"])
+@admin_required
+def categorias_update_budget(categoria_id):
+    budget = _parse_budget(request.form.get("monthly_budget"))
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT category, subcategory FROM core.categories
+                WHERE id = %s AND business_id = %s AND individual_id IS NULL
+                """,
+                (categoria_id, session["business_id"]),
+            )
+            row = cur.fetchone()
+            if not row:
+                flash("Categoría no encontrada.", "danger")
+                return redirect(url_for("empresa.categorias"))
+            if row[0] == "Otros" and row[1] is None:
+                flash("La categoría 'Otros' no admite presupuesto.", "danger")
+                return redirect(url_for("empresa.categorias"))
+            cur.execute(
+                """
+                UPDATE core.categories SET monthly_budget = %s
+                WHERE id = %s AND business_id = %s AND individual_id IS NULL
+                """,
+                (budget, categoria_id, session["business_id"]),
+            )
+        conn.commit()
+        flash("Presupuesto actualizado.", "success")
+    finally:
+        conn.close()
+    return redirect(url_for("empresa.categorias"))
+
+
 @empresa_bp.route("/categorias/template")
 @admin_required
 def categorias_template():
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Categorías"
-    ws.append(["categoria", "subcategoria"])
-    ws.append(["Alimentación", "Supermercado"])
-    ws.append(["Alimentación", "Restaurantes"])
-    ws.append(["Transporte", "Combustible"])
-    ws.append(["Transporte", ""])
-    ws.append(["Entretenimiento", "Cine"])
+    ws.append(["categoria", "subcategoria", "presupuesto"])
+    ws.append(["Alimentación", "Supermercado", 150000])
+    ws.append(["Alimentación", "Restaurantes", 80000])
+    ws.append(["Transporte", "Combustible", 50000])
+    ws.append(["Transporte", "", ""])
+    ws.append(["Entretenimiento", "Cine", ""])
 
-    for i in [1, 2]:
+    for i in [1, 2, 3]:
         ws.column_dimensions[get_column_letter(i)].width = 25
 
     buf = io.BytesIO()

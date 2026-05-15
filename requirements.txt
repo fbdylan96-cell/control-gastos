@@ -7,3 +7,4 @@ pytz
 openai
 openpyxl
 bccr
+lxml

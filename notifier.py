@@ -16,7 +16,8 @@ import os
 from urllib.parse import urlencode
 
 import gmail_client
-from db import get_categories, get_pending_email_notifications, mark_email_sent
+from db import (get_budget_and_spending, get_categories,
+                get_pending_email_notifications, mark_email_sent)
 
 log = logging.getLogger(__name__)
 
@@ -80,7 +81,12 @@ def _fmt_date(local_date) -> str:
         return str(local_date)
 
 
-def _build_email_html(notif: dict, categories: list[dict]) -> str:
+def _build_email_html(
+    notif: dict,
+    categories: list[dict],
+    monthly_budget: float | None = None,
+    total_month_spending: float | None = None,
+) -> str:
     merchant = html.escape(notif.get("merchant") or "Gasto")
     desc = html.escape(notif.get("desc_guess") or "")
     date_str = html.escape(_fmt_date(notif.get("local_date")))
@@ -88,6 +94,10 @@ def _build_email_html(notif: dict, categories: list[dict]) -> str:
         notif.get("currency_guess") or "",
         notif.get("amount_guess"),
     ))
+    local_amount_str = html.escape(_fmt_amount(
+        notif.get("currency_local") or "CRC",
+        notif.get("amount_local"),
+    )) if notif.get("amount_local") is not None else ""
     cat = html.escape(notif.get("final_category") or "")
     sub = html.escape(notif.get("final_subcategory") or "")
     classification = f"{cat} / {sub}" if sub else cat
@@ -112,6 +122,28 @@ def _build_email_html(notif: dict, categories: list[dict]) -> str:
     if not buttons_html:
         buttons_html = "<i style='color:#888;'>No hay categorías disponibles.</i>"
 
+    # Budget section (Type 2 only)
+    budget_html = ""
+    if monthly_budget is not None and total_month_spending is not None:
+        pct = min(total_month_spending / monthly_budget * 100, 100) if monthly_budget > 0 else 0
+        bar_color = "#e74c3c" if pct >= 100 else "#f39c12" if pct >= 80 else "#65fdb0"
+        budget_html = f"""
+  <div style="padding:12px;border:1px solid #eee;border-radius:12px;margin-bottom:14px;background:#fafafa;">
+    <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Presupuesto — {classification}</div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
+      <span>Gastado este mes</span>
+      <span style="font-weight:700;">CRC {total_month_spending:,.2f}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px;">
+      <span>Presupuesto mensual</span>
+      <span>CRC {monthly_budget:,.2f}</span>
+    </div>
+    <div style="background:#e8e8e8;border-radius:6px;height:8px;overflow:hidden;">
+      <div style="width:{pct:.1f}%;height:100%;background:{bar_color};border-radius:6px;"></div>
+    </div>
+    <div style="text-align:right;font-size:11px;color:#888;margin-top:4px;">{pct:.0f}% utilizado</div>
+  </div>"""
+
     return f"""
 <div style="font-family:Arial,sans-serif;line-height:1.4;color:#111;max-width:560px;">
 
@@ -127,9 +159,11 @@ def _build_email_html(notif: dict, categories: list[dict]) -> str:
 
   <div style="padding:12px;border:1px solid #eee;border-radius:12px;margin-bottom:14px;">
     <div><b>Monto:</b> {amount_str}</div>
+    {"<div style='margin-top:4px;'><b>Monto local:</b> " + local_amount_str + "</div>" if local_amount_str else ""}
     <div style="margin-top:4px;"><b>Clasificación:</b> {classification}</div>
   </div>
 
+{budget_html}
   <div>
     <div style="font-weight:700;margin-bottom:6px;">¿Está bien clasificado?</div>
     <div style="color:#555;font-size:13px;margin-bottom:8px;">
@@ -168,7 +202,15 @@ def run_notifications(conn, service) -> int:
 
         try:
             categories = get_categories(conn, notif["business_id"], notif["individual_id"])
-            html_body = _build_email_html(notif, categories)
+
+            # Budget data only for business admins and individual clients
+            is_individual = str(notif["business_id"]) == "00000000-0000-0000-0000-000000009999"
+            budget_eligible = notif.get("business_admin") or is_individual
+            monthly_budget, total_month_spending = (
+                get_budget_and_spending(conn, notif) if budget_eligible else (None, None)
+            )
+
+            html_body = _build_email_html(notif, categories, monthly_budget, total_month_spending)
 
             merchant = notif.get("merchant") or "Gasto"
             cat = notif.get("final_category") or ""

@@ -306,6 +306,7 @@ def get_pending_email_notifications(conn):
             WHERE n.email_notified = FALSE
               AND c.email_notification = TRUE
               AND c.active = TRUE
+              AND e.transaction_status != 'Descartado'
             ORDER BY n.created_at ASC
             """
         )

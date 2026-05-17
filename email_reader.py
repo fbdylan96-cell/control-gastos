@@ -50,7 +50,10 @@ def process_one_message(service, msg_meta, clients, conn):
     db.insert_enriched_transaction(conn, enriched_row)
     log.info(f"  Inserted enriched row | status={enriched_row['transaction_status']} | bank={enriched_row['bank']}")
 
-    if enriched_row.get("transaction_approval") != "Denegada":
+    if (
+        enriched_row.get("transaction_approval") != "Denegada"
+        and enriched_row.get("transaction_status") != "Descartado"
+    ):
         classifier.classify_transaction(conn, enriched_row)
         log.info(f"  Classification done")
 

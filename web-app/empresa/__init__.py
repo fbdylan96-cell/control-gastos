@@ -108,6 +108,7 @@ def transacciones():
                 LEFT JOIN core.transactions_notifications tn ON tn.classified_id = tc.id
                 WHERE tr.individual_id = %s
                   AND tr.local_date >= NOW() - INTERVAL '24 hours'
+                  AND te.transaction_status != 'Descartado'
                 ORDER BY tr.local_date DESC
                 """,
                 (session["user_id"],),
@@ -211,6 +212,7 @@ def _fetch_reportes(business_id, date_from, date_to):
                 WHERE c.business_id = %s
                   AND te.transaction_approval = 'Aprobada'
                   AND te.transaction_status != 'unknown'
+                  AND te.transaction_status != 'Descartado'
                   AND tr.local_date::date BETWEEN %s AND %s
                 ORDER BY tr.local_date DESC
                 """,

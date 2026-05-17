@@ -40,6 +40,7 @@ def get_notifications_past_window(conn):
               AND n.email_notified_at  < NOW() - INTERVAL '24 hours'
               AND n.rule_processing    = FALSE
               AND n.final_category     IS NOT NULL
+              AND e.transaction_status != 'Descartado'
             ORDER BY n.email_notified_at ASC
             """
         )

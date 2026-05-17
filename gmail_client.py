@@ -7,10 +7,12 @@ from googleapiclient.discovery import build
 
 # gmail.modify is required to mark messages as read
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
-TOKEN_FILE = "token.json"
-CREDENTIALS_FILE = (
+_DIR = os.path.dirname(os.path.abspath(__file__))
+TOKEN_FILE = os.path.join(_DIR, "token.json")
+CREDENTIALS_FILE = os.path.join(
+    _DIR,
     "client_secret_750584625292-osqc8e5jforolk6mcf64choccs408qkn"
-    ".apps.googleusercontent.com.json"
+    ".apps.googleusercontent.com.json",
 )
 AUTH_PORT = 8080
 MAX_PER_RUN = 5

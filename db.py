@@ -328,6 +328,133 @@ def mark_email_sent(conn, notification_id):
     conn.commit()
 
 
+def get_pending_whatsapp_notifications(conn):
+    """Notification rows that need a WhatsApp message sent.
+
+    Mirrors get_pending_email_notifications but gates on whatsapp_notification +
+    phone_number. Also filters Descartado as a safety net.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                n.id                AS notification_id,
+                n.classified_id,
+                n.individual_id,
+                n.business_id,
+                n.final_category,
+                n.final_subcategory,
+                c.client_name,
+                c.phone_number,
+                c.business_admin,
+                cl.merchant,
+                e.amount_guess,
+                e.currency_guess,
+                e.amount_local,
+                e.currency_local,
+                e.desc_guess,
+                e.transaction_type_guess,
+                r.local_date
+            FROM core.transactions_notifications n
+            JOIN core.clients              c  ON c.id  = n.individual_id
+            JOIN core.transactions_classified cl ON cl.id = n.classified_id
+            JOIN core.transactions_enriched   e  ON e.raw_id = cl.raw_id
+            JOIN core.transactions_raw        r  ON r.id = cl.raw_id
+            WHERE n.whatsapp_notified = FALSE
+              AND c.whatsapp_notification = TRUE
+              AND c.phone_number IS NOT NULL
+              AND c.active = TRUE
+              AND e.transaction_status != 'Descartado'
+            ORDER BY n.created_at ASC
+            """
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def mark_whatsapp_sent(conn, notification_id):
+    """Mark a notification as WhatsApp-sent."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE core.transactions_notifications
+            SET whatsapp_notified = TRUE, whatsapp_notified_at = now()
+            WHERE id = %s
+            """,
+            (str(notification_id),),
+        )
+    conn.commit()
+
+
+def update_whatsapp_action(conn, notification_id, action_value):
+    """Record that the user interacted with the WhatsApp notification.
+
+    action_value is the human-readable description of what they did, e.g.
+    'Reclasificar', 'Ir a aplicación', or '{category} / {subcategory}'.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE core.transactions_notifications
+            SET whatsapp_action_at = now(),
+                whatsapp_action_value = %s
+            WHERE id = %s
+            """,
+            (action_value, str(notification_id)),
+        )
+    conn.commit()
+
+
+def get_notification_context(conn, notification_id):
+    """Return everything the webhook needs to act on a notification (reclassify list build).
+
+    Used after the user taps 'Reclasificar' on WhatsApp.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                n.id                AS notification_id,
+                n.individual_id,
+                n.business_id,
+                e.merchant_guess,
+                e.amount_guess,
+                e.currency_guess,
+                e.desc_guess,
+                r.local_date,
+                b.name              AS business_name
+            FROM core.transactions_notifications n
+            JOIN core.transactions_classified cl ON cl.id = n.classified_id
+            JOIN core.transactions_enriched   e  ON e.raw_id = cl.raw_id
+            JOIN core.transactions_raw        r  ON r.id = cl.raw_id
+            JOIN core.businesses              b  ON b.id = n.business_id
+            WHERE n.id = %s
+            """,
+            (str(notification_id),),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+
+
+def get_client_phone_for_notification(conn, notification_id):
+    """Return (phone_number, business_id) for the client owning this notification."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT c.phone_number, c.business_id
+            FROM core.transactions_notifications n
+            JOIN core.clients c ON c.id = n.individual_id
+            WHERE n.id = %s
+            """,
+            (str(notification_id),),
+        )
+        row = cur.fetchone()
+        return (row[0], str(row[1])) if row else (None, None)
+
+
 INDIVIDUAL_BIZ_ID = "00000000-0000-0000-0000-000000009999"
 
 

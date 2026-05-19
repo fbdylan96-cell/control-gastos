@@ -9,6 +9,7 @@ import enricher
 import gmail_client
 import notifier
 import parser as email_parser
+import whatsapp_notifier
 
 load_dotenv()
 
@@ -80,6 +81,7 @@ def run_once(service, conn):
             log.error(f"Error processing message {msg_meta['id']}: {e}")
 
     notifier.run_notifications(conn, service)
+    whatsapp_notifier.run_whatsapp_notifications(conn)
 
 
 def main():

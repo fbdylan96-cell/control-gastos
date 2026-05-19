@@ -8,3 +8,4 @@ openai
 openpyxl
 bccr
 lxml
+requests

@@ -76,7 +76,8 @@ META_WA_APP_SECRET=abcd1234...
 META_WA_VERIFY_TOKEN=pick-a-long-random-string-here
 META_WA_TEMPLATE_SIMPLE=gasto_detectado_simple
 META_WA_TEMPLATE_BUDGET=gasto_detectado_presupuesto
-META_WA_TEMPLATE_LANG=es
+META_WA_TEMPLATE_SIMPLE_LANG=es
+META_WA_TEMPLATE_BUDGET_LANG=es_ES
 ```
 
 > The web-app reads the same `.env` (via `find_dotenv`), so a single file works for both processes.
@@ -120,7 +121,7 @@ Meta calls your webhook from the public internet, so:
 
 Quick verification from your laptop:
 ```bash
-curl -i "https://gastos.empoweredinvestor.trade/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=YOUR_VERIFY_TOKEN&hub.challenge=ping"
+curl -i "https://gastos.empoweredinvestor.trade/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=HoJDs1N60KzDH66&hub.challenge=ping"
 # should return: 200 OK, body = "ping"
 ```
 

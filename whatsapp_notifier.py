@@ -40,8 +40,12 @@ def _template_budget() -> str:
     return os.environ.get("META_WA_TEMPLATE_BUDGET", "gasto_detectado_presupuesto").strip()
 
 
-def _template_lang() -> str:
-    return os.environ.get("META_WA_TEMPLATE_LANG", "es").strip()
+def _template_simple_lang() -> str:
+    return os.environ.get("META_WA_TEMPLATE_SIMPLE_LANG", "es").strip()
+
+
+def _template_budget_lang() -> str:
+    return os.environ.get("META_WA_TEMPLATE_BUDGET_LANG", "es_ES").strip()
 
 
 def _fmt_amount_value(amount) -> str:
@@ -143,16 +147,18 @@ def run_whatsapp_notifications(conn) -> int:
 
             if monthly_budget is not None and total_month_spending is not None:
                 template_name = _template_budget()
+                language_code = _template_budget_lang()
                 body_params = body_params + _build_budget_extra_params(
                     notif, float(monthly_budget), float(total_month_spending)
                 )
             else:
                 template_name = _template_simple()
+                language_code = _template_simple_lang()
 
             whatsapp_client.send_template(
                 to=to,
                 template_name=template_name,
-                language_code=_template_lang(),
+                language_code=language_code,
                 body_params=body_params,
                 button_payloads=payloads,
             )

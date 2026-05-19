@@ -347,7 +347,7 @@ def verify():
 
 @whatsapp_webhook_bp.route("/webhook", methods=["POST"])
 def receive():
-    raw_body = request.get_data(cache=False)
+    raw_body = request.get_data()  # cache=True (default) — body must be readable by get_json() afterwards
     signature = request.headers.get("X-Hub-Signature-256", "")
     log.info(f"WA POST received: {len(raw_body)} bytes, sig={'yes' if signature else 'no'}")
     if not whatsapp_client.verify_webhook_signature(raw_body, signature):

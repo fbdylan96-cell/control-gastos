@@ -349,6 +349,7 @@ def verify():
 def receive():
     raw_body = request.get_data(cache=False)
     signature = request.headers.get("X-Hub-Signature-256", "")
+    log.info(f"WA POST received: {len(raw_body)} bytes, sig={'yes' if signature else 'no'}")
     if not whatsapp_client.verify_webhook_signature(raw_body, signature):
         log.warning("WA webhook: invalid signature, rejecting")
         abort(403)
@@ -372,6 +373,8 @@ def _process_payload(payload: dict) -> None:
         for change in entry.get("changes", []):
             value = change.get("value", {}) or {}
             messages = value.get("messages") or []
+            statuses = value.get("statuses") or []
+            log.info(f"WA payload: {len(messages)} message(s), {len(statuses)} status(es)")
             from_phone = None
             for m in messages:
                 from_phone = m.get("from") or from_phone

@@ -60,9 +60,11 @@
         <tr>
           <th>Fecha</th>
           <th>Comercio</th>
-          <th style="text-align:right;">Monto</th>
-          <th>Moneda</th>
           <th>Tipo</th>
+          <th>Moneda</th>
+          <th style="text-align:right;">Monto</th>
+          <th>Moneda Local</th>
+          <th style="text-align:right;">Monto Local</th>
           <th>Categoría</th>
           <th>Subcategoría</th>
         </tr>
@@ -74,13 +76,19 @@
             {{ row.local_date.strftime('%d/%m/%Y %H:%M') if row.local_date else '—' }}
           </td>
           <td style="font-weight:600;">{{ row.merchant_guess or '—' }}</td>
+          <td>{{ row.transaction_type_guess or '—' }}</td>
+          <td><span class="currency-badge">{{ row.currency_guess or '—' }}</span></td>
           <td class="amount">
             {% if row.amount_guess is not none %}
               {{ '{:,.2f}'.format(row.amount_guess) }}
             {% else %}—{% endif %}
           </td>
-          <td><span class="currency-badge">{{ row.currency_guess or '—' }}</span></td>
-          <td>{{ row.transaction_type_guess or '—' }}</td>
+          <td><span class="currency-badge">{{ row.currency_local or '—' }}</span></td>
+          <td class="amount">
+            {% if row.amount_local is not none %}
+              {{ '{:,.2f}'.format(row.amount_local) }}
+            {% else %}—{% endif %}
+          </td>
           <td>{{ row.final_category or '—' }}</td>
           <td class="muted">{{ row.final_subcategory or '—' }}</td>
         </tr>

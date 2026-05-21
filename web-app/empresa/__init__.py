@@ -201,6 +201,8 @@ def _fetch_reportes(business_id, date_from, date_to):
                        te.merchant_guess,
                        te.amount_guess,
                        te.currency_guess,
+                       te.amount_local,
+                       te.currency_local,
                        te.transaction_type_guess,
                        tn.final_category,
                        tn.final_subcategory
@@ -256,7 +258,7 @@ def reportes_download():
     ws = wb.active
     ws.title = "Transacciones"
 
-    headers = ["A Nombre De", "Message ID", "Fecha", "Comercio", "Monto", "Moneda", "Tipo", "Categoría", "Subcategoría"]
+    headers = ["A Nombre De", "Message ID", "Fecha", "Comercio", "Tipo", "Moneda", "Monto", "Moneda Local", "Monto Local", "Categoría", "Subcategoría"]
     ws.append(headers)
 
     for row in rows:
@@ -265,9 +267,11 @@ def reportes_download():
             row["message_id"],
             row["local_date"].strftime("%Y-%m-%d %H:%M") if row["local_date"] else "",
             row["merchant_guess"] or "",
-            float(row["amount_guess"]) if row["amount_guess"] is not None else "",
-            row["currency_guess"] or "",
             row["transaction_type_guess"] or "",
+            row["currency_guess"] or "",
+            float(row["amount_guess"]) if row["amount_guess"] is not None else "",
+            row["currency_local"] or "",
+            float(row["amount_local"]) if row["amount_local"] is not None else "",
             row["final_category"] or "",
             row["final_subcategory"] or "",
         ])

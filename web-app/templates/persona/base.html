@@ -55,6 +55,12 @@
             <i class="bi bi-tags"></i>Categorías
           </a>
         </li>
+        <li>
+          <a href="{{ url_for('persona.inversion') }}"
+             class="nav-link {% if request.endpoint == 'persona.inversion' %}active{% endif %}">
+            <i class="bi bi-graph-up-arrow"></i>Portafolio de Inversión
+          </a>
+        </li>
       </ul>
     </nav>
 

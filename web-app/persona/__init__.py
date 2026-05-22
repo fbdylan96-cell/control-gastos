@@ -46,7 +46,8 @@ def login():
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     """
-                    SELECT id, password_hash, business_id, client_name
+                    SELECT id, password_hash, business_id, client_name,
+                           data_privacy_approval, messaging_approval
                     FROM core.clients
                     WHERE username = %s
                     """,
@@ -66,6 +67,7 @@ def login():
             session["business_id"] = INDIVIDUAL_BIZ_ID
             session["client_name"] = user["client_name"]
             session["app"] = "persona"
+            session["consent_ok"] = bool(user["data_privacy_approval"] and user["messaging_approval"])
             return redirect(url_for("persona.transacciones"))
 
     return render_template("persona/login.html", error=error)
@@ -75,6 +77,41 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("persona.login"))
+
+
+# ── Consentimiento ────────────────────────────────────────────────────────────
+
+@persona_bp.route("/consentimiento", methods=["POST"])
+@login_required
+def consentimiento():
+    data_privacy = request.form.get("data_privacy") == "on"
+    messaging = request.form.get("messaging") == "on"
+
+    if not (data_privacy and messaging):
+        flash("Debe aceptar ambas condiciones para continuar.", "danger")
+        return redirect(request.referrer or url_for("persona.transacciones"))
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE core.clients
+                SET data_privacy_approval = TRUE,
+                    messaging_approval    = TRUE,
+                    approval_date         = CURRENT_DATE
+                WHERE id = %s
+                """,
+                (session["user_id"],),
+            )
+        conn.commit()
+        session["consent_ok"] = True
+    except Exception as e:
+        flash(f"Error al guardar consentimiento: {e}", "danger")
+    finally:
+        conn.close()
+
+    return redirect(request.referrer or url_for("persona.transacciones"))
 
 
 # ── Transacciones recientes ───────────────────────────────────────────────────

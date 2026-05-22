@@ -37,6 +37,14 @@ CREATE TABLE core.clients (
     whatsapp_notification BOOLEAN NOT NULL DEFAULT FALSE,
     email_notification BOOLEAN NOT NULL DEFAULT FALSE,
 
+    -- Consent (required before the client can use the web app)
+    -- data_privacy_approval: client confirmed reading the data privacy policy
+    -- messaging_approval: client opted in to WhatsApp/email notifications
+    -- approval_date: date both consents were granted (NULL until then)
+    data_privacy_approval BOOLEAN NOT NULL DEFAULT FALSE,
+    messaging_approval BOOLEAN NOT NULL DEFAULT FALSE,
+    approval_date DATE,
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

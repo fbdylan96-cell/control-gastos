@@ -89,6 +89,9 @@
 
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
+  {% set consent_action = url_for('empresa.consentimiento') %}
+  {% include "_consent_modal.html" %}
+
   <script>
     (function () {
       const toggle = document.getElementById('sidebarToggle');

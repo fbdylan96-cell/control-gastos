@@ -1,0 +1,79 @@
+{# Consent gate. Requires `consent_action` (form POST target) to be set before include.
+   Renders only when a user is logged in and has not yet granted both consents. #}
+{% if session.user_id and not session.consent_ok %}
+<div class="consent-overlay">
+  <div class="consent-modal">
+    <div class="consent-modal-head">
+      <i class="bi bi-shield-check"></i>
+      <h2>Antes de continuar</h2>
+    </div>
+
+    <p class="consent-modal-text">
+      Para usar la herramienta necesitamos tu consentimiento. Por favor leé nuestra
+      <a href="{{ url_for('privacidad_datos') }}" target="_blank" rel="noopener">
+        política de privacidad de datos</a>
+      y aceptá las siguientes condiciones.
+    </p>
+
+    <form method="POST" action="{{ consent_action }}" class="consent-form">
+      <label class="consent-check">
+        <input type="checkbox" name="data_privacy" class="consent-cb" />
+        <span>He leído la política de privacidad de datos</span>
+      </label>
+      <label class="consent-check">
+        <input type="checkbox" name="messaging" class="consent-cb" />
+        <span>Acepto notificaciones a través de WhatsApp/email</span>
+      </label>
+
+      <button type="submit" class="btn-mint-ei consent-submit" disabled>
+        Aceptar y continuar
+      </button>
+    </form>
+  </div>
+</div>
+
+<style>
+  .consent-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(21,25,30,0.55);
+    backdrop-filter: blur(2px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 1rem;
+  }
+  .consent-modal {
+    background: #fff; border-radius: 16px;
+    max-width: 460px; width: 100%;
+    padding: 1.6rem 1.5rem;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.25);
+  }
+  .consent-modal-head {
+    display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;
+  }
+  .consent-modal-head i { font-size: 1.6rem; color: var(--mint, #65fdb0); }
+  .consent-modal-head h2 { font-size: 1.2rem; font-weight: 700; color: var(--dark); margin: 0; }
+  .consent-modal-text { font-size: 0.92rem; line-height: 1.55; color: rgba(21,25,30,0.72); margin-bottom: 1.1rem; }
+  .consent-modal-text a { color: var(--blue, #2563eb); font-weight: 600; }
+  .consent-form { display: flex; flex-direction: column; gap: 0.7rem; }
+  .consent-check {
+    display: flex; align-items: flex-start; gap: 0.55rem;
+    font-size: 0.9rem; color: var(--dark); cursor: pointer; line-height: 1.4;
+  }
+  .consent-check input { margin-top: 0.15rem; width: 1.05rem; height: 1.05rem; flex-shrink: 0; }
+  .consent-submit { margin-top: 0.6rem; }
+  .consent-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+</style>
+
+<script>
+  (function () {
+    const overlay = document.querySelector('.consent-overlay');
+    if (!overlay) return;
+    const boxes  = overlay.querySelectorAll('.consent-cb');
+    const submit = overlay.querySelector('.consent-submit');
+    function sync() {
+      submit.disabled = !Array.from(boxes).every(b => b.checked);
+    }
+    boxes.forEach(b => b.addEventListener('change', sync));
+    sync();
+  })();
+</script>
+{% endif %}

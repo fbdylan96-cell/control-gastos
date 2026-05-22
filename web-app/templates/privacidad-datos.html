@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Política de Privacidad de Datos — Empowered Investor</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet" />
+  <style>
+    .privacy-wrap {
+      max-width: 760px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem;
+      color: var(--dark);
+    }
+    .privacy-logo { height: 48px; margin-bottom: 1.5rem; }
+    .privacy-wrap h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 0.25rem; }
+    .privacy-updated { font-size: 0.82rem; color: rgba(21,25,30,0.5); margin-bottom: 2rem; }
+    .privacy-wrap h2 {
+      font-size: 1.1rem; font-weight: 700; margin: 1.8rem 0 0.6rem;
+      padding-bottom: 0.3rem; border-bottom: 2px solid var(--mint, #65fdb0);
+      display: inline-block;
+    }
+    .privacy-wrap p, .privacy-wrap li { font-size: 0.94rem; line-height: 1.65; color: rgba(21,25,30,0.8); }
+    .privacy-wrap ul { padding-left: 1.25rem; }
+    .privacy-note {
+      background: var(--mint-muted, rgba(101,253,176,0.12));
+      border-left: 3px solid var(--mint, #65fdb0);
+      padding: 0.6rem 0.9rem; border-radius: 8px; font-size: 0.85rem;
+      color: rgba(21,25,30,0.65); margin: 0.5rem 0 0;
+    }
+    .privacy-contact { margin-top: 1rem; }
+    .privacy-footer { margin-top: 3rem; font-size: 0.8rem; color: rgba(21,25,30,0.45); }
+  </style>
+</head>
+<body style="background:#f7f8f9;">
+  <div class="privacy-wrap">
+    <img src="{{ url_for('static', filename='logos/logo-horizontal.png') }}"
+         alt="Empowered Investor" class="privacy-logo" />
+
+    <h1>Política de Privacidad de Datos</h1>
+    <p class="privacy-updated">Última actualización: 21 de mayo de 2026</p>
+
+    <p class="privacy-note">
+      [BORRADOR] Este es un esqueleto editable. Reemplazá el texto de cada sección
+      con la redacción legal definitiva antes de publicar la app en Meta.
+    </p>
+
+    <h2>1. Quiénes somos</h2>
+    <p>
+      Empowered Investor (“nosotros”) ofrece una herramienta de control de gastos
+      que procesa notificaciones de transacciones para ayudar a nuestros clientes a
+      organizar y clasificar sus finanzas. [Completar con razón social y datos de contacto.]
+    </p>
+
+    <h2>2. Qué datos recopilamos</h2>
+    <ul>
+      <li>Datos de contacto: nombre, dirección de correo electrónico y número de teléfono.</li>
+      <li>Datos de transacciones: comercio, monto, moneda, fecha y categoría, extraídos de las notificaciones bancarias que el cliente nos reenvía.</li>
+      <li>Datos de uso de la aplicación necesarios para autenticación y operación del servicio.</li>
+    </ul>
+
+    <h2>3. Cómo usamos tus datos</h2>
+    <ul>
+      <li>Clasificar y mostrar tus gastos dentro de la herramienta.</li>
+      <li>Enviarte notificaciones de tus transacciones a través de WhatsApp y/o correo electrónico, según tu consentimiento.</li>
+      <li>Mejorar la precisión de la clasificación de transacciones.</li>
+    </ul>
+
+    <h2>4. Notificaciones por WhatsApp y correo</h2>
+    <p>
+      Las notificaciones se envían únicamente a los clientes que han otorgado su
+      consentimiento expreso. Podés revocar este consentimiento en cualquier momento
+      contactándonos por los medios indicados más abajo. [Completar con detalles de
+      la integración de WhatsApp Business / Meta.]
+    </p>
+
+    <h2>5. Conservación de los datos</h2>
+    <p>
+      Conservamos tus datos mientras tu cuenta esté activa y durante el período que
+      exija la legislación aplicable. [Completar con el plazo de retención definitivo.]
+    </p>
+
+    <h2>6. Eliminación de datos</h2>
+    <p>
+      Podés solicitar la eliminación de tus datos personales en cualquier momento.
+      Para hacerlo, escribinos a [correo de contacto] o al WhatsApp
+      <strong>+506 7055 8296</strong> indicando tu solicitud. Procesaremos la
+      eliminación en un plazo de [X] días.
+    </p>
+
+    <h2>7. Contacto</h2>
+    <p class="privacy-contact">
+      Para consultas sobre esta política o el tratamiento de tus datos:<br />
+      Correo: [correo de contacto]<br />
+      WhatsApp: +506 7055 8296
+    </p>
+
+    <p class="privacy-footer">Empowered Investor &copy; 2026</p>
+  </div>
+</body>
+</html>

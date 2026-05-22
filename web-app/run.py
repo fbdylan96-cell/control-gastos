@@ -37,6 +37,11 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/privacidad-datos')
+def privacidad_datos():
+    return render_template('privacidad-datos.html')
+
+
 @app.route('/reclassify')
 def reclassify():
     from db import get_connection, update_reclassification

@@ -96,7 +96,7 @@
     </div>
 
     {% if existing %}
-    <div style="max-height:480px; overflow-y:auto;">
+    <div style="max-height:672px; overflow-y:auto;">
       <table class="ei-table">
         <thead>
           <tr>
@@ -123,7 +123,7 @@
                     style="display:flex; gap:4px; align-items:center;">
                 <input type="number" name="monthly_budget" class="ei-input"
                        min="0" step="0.01"
-                       value="{{ '%g'|format(cat.monthly_budget) if cat.monthly_budget is not none else '' }}"
+                       value="{{ '%.0f'|format(cat.monthly_budget) if cat.monthly_budget is not none else '' }}"
                        placeholder="—"
                        style="padding:4px 8px; font-size:0.8rem;" />
                 <button type="submit" class="btn-mint-ei"

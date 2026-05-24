@@ -2,7 +2,7 @@ import logging
 import os
 
 from dotenv import find_dotenv, load_dotenv
-from flask import Flask, render_template, request
+from flask import Flask, redirect, render_template, request, url_for
 
 load_dotenv(find_dotenv())
 
@@ -37,9 +37,14 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/terminos')
+def terminos():
+    return render_template('terminos.html')
+
+
 @app.route('/privacidad-datos')
 def privacidad_datos():
-    return render_template('privacidad-datos.html')
+    return redirect(url_for('terminos') + '#privacidad', code=301)
 
 
 @app.route('/reclassify')

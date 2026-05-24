@@ -9,20 +9,20 @@
     </div>
 
     <p class="consent-modal-text">
-      Para usar la herramienta necesitamos tu consentimiento. Por favor leé nuestra
-      <a href="{{ url_for('privacidad_datos') }}" target="_blank" rel="noopener">
-        política de privacidad de datos</a>
-      y aceptá las siguientes condiciones.
+      Para usar la herramienta necesitamos tu consentimiento. Por favor leé nuestros
+      <a href="{{ url_for('terminos') }}" target="_blank" rel="noopener">
+        términos y condiciones</a>
+      y aceptá los siguientes requisitos.
     </p>
 
     <form method="POST" action="{{ consent_action }}" class="consent-form">
       <label class="consent-check">
         <input type="checkbox" name="data_privacy" class="consent-cb" />
-        <span>He leído la política de privacidad de datos</span>
+        <span>He leído y acepto los términos y condiciones</span>
       </label>
       <label class="consent-check">
         <input type="checkbox" name="messaging" class="consent-cb" />
-        <span>Acepto notificaciones a través de WhatsApp/email</span>
+        <span>Acepto recibir notificaciones a través de WhatsApp/Email</span>
       </label>
 
       <button type="submit" class="btn-mint-ei consent-submit" disabled>

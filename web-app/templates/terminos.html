@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Términos y Condiciones — Empowered Investor</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body { display: flex; min-height: 100vh; background: #f7f8f9; }
+
+    /* ── Sidebar ── */
+    .terms-sidebar {
+      width: 240px; flex-shrink: 0;
+      background: var(--dark, #15191e);
+      display: flex; flex-direction: column;
+      padding: 1.5rem 0.9rem 2rem;
+      position: sticky; top: 0; height: 100vh; overflow-y: auto;
+    }
+    .terms-logo { height: 40px; margin-bottom: 2rem; object-fit: contain; }
+    .terms-nav { display: flex; flex-direction: column; gap: 4px; }
+    .terms-nav-btn {
+      display: flex; align-items: center; gap: 9px;
+      width: 100%; padding: 0.65rem 0.75rem;
+      border: none; background: transparent; text-align: left; cursor: pointer;
+      border-radius: 8px; font-size: 0.875rem; line-height: 1.3;
+      color: rgba(255,255,255,0.65); transition: background 0.14s, color 0.14s;
+    }
+    .terms-nav-btn i { font-size: 1rem; flex-shrink: 0; }
+    .terms-nav-btn:hover { background: rgba(255,255,255,0.07); color: #fff; }
+    .terms-nav-btn.active { background: rgba(101,253,176,0.13); color: var(--mint, #65fdb0); }
+
+    /* ── Main content ── */
+    .terms-main { flex: 1; padding: 2.5rem 2.5rem 4rem; overflow-y: auto; }
+    .terms-section { display: none; max-width: 720px; }
+    .terms-section.active { display: block; }
+
+    .terms-section h1 { font-size: 1.55rem; font-weight: 700; color: var(--dark); margin-bottom: 0.2rem; }
+    .terms-updated { font-size: 0.82rem; color: rgba(21,25,30,0.5); margin-bottom: 1.6rem; }
+    .terms-note {
+      background: rgba(101,253,176,0.12); border-left: 3px solid var(--mint, #65fdb0);
+      padding: 0.65rem 0.9rem; border-radius: 8px; font-size: 0.86rem;
+      color: rgba(21,25,30,0.7); margin-bottom: 1.4rem; line-height: 1.5;
+    }
+    .terms-section h2 {
+      font-size: 1.05rem; font-weight: 700; color: var(--dark);
+      margin: 1.7rem 0 0.55rem; padding-bottom: 0.3rem;
+      border-bottom: 2px solid var(--mint, #65fdb0); display: inline-block;
+    }
+    .terms-section p { font-size: 0.93rem; line-height: 1.65; color: rgba(21,25,30,0.8); margin-bottom: 0.6rem; }
+    .terms-section ul { padding-left: 1.25rem; margin-bottom: 0.6rem; }
+    .terms-section li { font-size: 0.93rem; line-height: 1.65; color: rgba(21,25,30,0.8); margin-bottom: 0.2rem; }
+    .terms-footer { margin-top: 3rem; font-size: 0.8rem; color: rgba(21,25,30,0.4); }
+
+    /* ── Mobile ── */
+    @media (max-width: 640px) {
+      body { flex-direction: column; }
+      .terms-sidebar {
+        width: 100%; height: auto; position: static;
+        padding: 1rem 0.75rem 0.75rem; flex-direction: row; flex-wrap: wrap; gap: 6px;
+      }
+      .terms-logo { height: 32px; margin-bottom: 0; margin-right: auto; }
+      .terms-nav { flex-direction: row; flex-wrap: wrap; gap: 4px; }
+      .terms-nav-btn { font-size: 0.78rem; padding: 0.4rem 0.6rem; }
+      .terms-main { padding: 1.5rem 1rem 3rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Sidebar ── -->
+  <aside class="terms-sidebar">
+    <img src="{{ url_for('static', filename='logos/logo-horizontal.png') }}"
+         alt="Empowered Investor" class="terms-logo" />
+    <nav class="terms-nav">
+      <button class="terms-nav-btn active" data-section="privacidad">
+        <i class="bi bi-shield-check"></i>Política de privacidad
+      </button>
+      <button class="terms-nav-btn" data-section="condiciones">
+        <i class="bi bi-file-text"></i>Condiciones del servicio
+      </button>
+      <button class="terms-nav-btn" data-section="eliminacion">
+        <i class="bi bi-trash3"></i>Eliminación de datos
+      </button>
+    </nav>
+  </aside>
+
+  <!-- ── Content ── -->
+  <main class="terms-main">
+
+    <!-- 1. Política de privacidad -->
+    <section id="privacidad" class="terms-section active">
+      <h1>Política de Privacidad de Datos</h1>
+      <p class="terms-updated">Última actualización: 21 de mayo de 2026</p>
+
+      <div class="terms-note">
+        Responsable del tratamiento de datos: Midas Inversiones<br />
+        Domicilio: San José, Costa Rica<br />
+        Correo: jose@empoweredinvestor.trade<br />
+        Sitio web: https://empoweredinvestor.trade/
+      </div>
+
+      <h2>1. Quiénes somos</h2>
+      <p>Empowered Investor ("nosotros") proporciona una herramienta de control de gastos que analiza y organiza información financiera proporcionada por el usuario o derivada de notificaciones de transacciones con el fin de facilitar la clasificación de gastos y la administración financiera personal. Parte de estas interacciones puede realizarse mediante WhatsApp para solicitar confirmaciones o reclasificaciones de transacciones.</p>
+
+      <h2>2. Qué datos recopilamos</h2>
+      <ul>
+        <li>Datos de contacto: nombre, dirección de correo electrónico y número de teléfono.</li>
+        <li>Datos de transacciones: comercio, monto, moneda, fecha y categoría, extraídos de las notificaciones bancarias que el cliente nos reenvía.</li>
+        <li>Datos de uso de la aplicación necesarios para autenticación y operación del servicio.</li>
+      </ul>
+
+      <h2>3. Cómo usamos tus datos</h2>
+      <ul>
+        <li>Clasificar y mostrar tus gastos dentro de la herramienta.</li>
+        <li>Enviarte notificaciones de tus transacciones a través de WhatsApp y/o correo electrónico, según tu consentimiento.</li>
+        <li>Mejorar la precisión de la clasificación de transacciones.</li>
+      </ul>
+
+      <h2>4. Notificaciones por WhatsApp y correo</h2>
+      <p>Algunas comunicaciones relacionadas con la clasificación y administración de gastos podrán enviarse mediante WhatsApp utilizando la plataforma WhatsApp Business. Estas comunicaciones se envían únicamente a usuarios que hayan otorgado previamente su consentimiento expreso para recibir este tipo de mensajes.</p>
+      <p>El consentimiento puede retirarse en cualquier momento mediante los canales de contacto indicados más abajo. La revocación del consentimiento no afecta el tratamiento realizado antes de dicha solicitud, pero puede limitar ciertas funcionalidades del servicio.</p>
+      <p>Al utilizar esta funcionalidad, el usuario reconoce que los mensajes son gestionados mediante proveedores tecnológicos externos, incluyendo Meta para la entrega de comunicaciones por WhatsApp.</p>
+
+      <h2>5. Conservación de los datos</h2>
+      <p>Conservaremos tus datos durante la vigencia de tu cuenta y hasta 5 años después de su cierre, salvo obligación legal distinta.</p>
+
+      <h2>6. Contacto</h2>
+      <p>Para consultas sobre esta política o el tratamiento de tus datos:<br />
+      Correo: jose@empoweredinvestor.trade<br />
+      WhatsApp: +506 7055 8296</p>
+
+      <p class="terms-footer">Empowered Investor &copy; 2026</p>
+    </section>
+
+    <!-- 2. Condiciones del servicio -->
+    <section id="condiciones" class="terms-section">
+      <h1>Condiciones del Servicio</h1>
+      <p class="terms-updated">Última actualización: 21 de mayo de 2026</p>
+
+      <h2>1. Aceptación de los términos</h2>
+      <p>Al acceder y utilizar la herramienta de control de gastos de Empowered Investor, el usuario acepta quedar vinculado por estas Condiciones del Servicio. Si no está de acuerdo con alguna de las condiciones aquí establecidas, debe abstenerse de utilizar el servicio.</p>
+
+      <h2>2. Descripción del servicio</h2>
+      <p>Empowered Investor ofrece una plataforma digital que permite a los usuarios registrar, clasificar y analizar sus gastos a partir de notificaciones de transacciones bancarias. El servicio puede incluir notificaciones por correo electrónico y WhatsApp, así como herramientas de gestión de presupuesto personal o empresarial.</p>
+
+      <h2>3. Uso permitido</h2>
+      <ul>
+        <li>El servicio es para uso personal o empresarial legítimo del usuario registrado.</li>
+        <li>Está prohibido compartir credenciales de acceso con terceros no autorizados.</li>
+        <li>El usuario es responsable de la veracidad de la información que proporciona.</li>
+        <li>Queda prohibido cualquier uso del servicio con fines fraudulentos o contrarios a la ley.</li>
+      </ul>
+
+      <h2>4. Disponibilidad del servicio</h2>
+      <p>Empowered Investor realizará esfuerzos razonables para mantener el servicio disponible de forma continua. Sin embargo, no garantiza disponibilidad ininterrumpida y se reserva el derecho de realizar mantenimientos o actualizaciones que puedan implicar interrupciones temporales.</p>
+
+      <h2>5. Propiedad intelectual</h2>
+      <p>Todos los derechos sobre la plataforma, su diseño, código y contenidos son propiedad de Midas Inversiones. El usuario recibe únicamente una licencia de uso personal, intransferible y no exclusiva para acceder al servicio.</p>
+
+      <h2>6. Limitación de responsabilidad</h2>
+      <p>Empowered Investor no se hace responsable de decisiones financieras tomadas con base en la información presentada en la plataforma. La herramienta es de carácter informativo y de organización; no constituye asesoramiento financiero, legal ni fiscal.</p>
+
+      <h2>7. Modificaciones</h2>
+      <p>Nos reservamos el derecho de modificar estas Condiciones del Servicio en cualquier momento. Los cambios serán notificados a los usuarios y entrarán en vigor al continuar usando el servicio tras la notificación.</p>
+
+      <h2>8. Contacto</h2>
+      <p>Correo: jose@empoweredinvestor.trade<br />
+      WhatsApp: +506 7055 8296</p>
+
+      <p class="terms-footer">Empowered Investor &copy; 2026</p>
+    </section>
+
+    <!-- 3. Eliminación de datos -->
+    <section id="eliminacion" class="terms-section">
+      <h1>Instrucciones para la Eliminación de Datos</h1>
+      <p class="terms-updated">Última actualización: 21 de mayo de 2026</p>
+
+      <h2>Tu derecho a la eliminación</h2>
+      <p>Tenés derecho a solicitar la eliminación de tus datos personales almacenados en nuestra plataforma en cualquier momento, sin necesidad de justificación.</p>
+
+      <h2>Cómo solicitar la eliminación</h2>
+      <p>Enviá tu solicitud por cualquiera de los siguientes medios, indicando tu nombre completo y el correo electrónico asociado a tu cuenta:</p>
+      <ul>
+        <li>Correo electrónico: <strong>jose@empoweredinvestor.trade</strong></li>
+        <li>WhatsApp: <strong>+506 7055 8296</strong></li>
+      </ul>
+
+      <h2>Qué datos se eliminan</h2>
+      <ul>
+        <li>Datos de identificación: nombre, correo electrónico, número de teléfono.</li>
+        <li>Historial de transacciones y clasificaciones asociadas a tu cuenta.</li>
+        <li>Configuración de categorías y presupuestos.</li>
+        <li>Registros de consentimiento y notificaciones.</li>
+      </ul>
+
+      <h2>Plazo de procesamiento</h2>
+      <p>Procesaremos tu solicitud en un plazo máximo de <strong>7 días hábiles</strong> a partir de su recepción. Te confirmaremos la eliminación por el mismo medio en que realizaste la solicitud.</p>
+
+      <h2>Consideraciones importantes</h2>
+      <ul>
+        <li>La eliminación de datos implica la desactivación permanente de tu cuenta; esta acción no es reversible.</li>
+        <li>Podemos conservar ciertos datos por el período que exija la legislación aplicable, aun después de atender tu solicitud.</li>
+        <li>Si tu cuenta forma parte de una empresa, la eliminación afecta únicamente a tus datos personales; los datos compartidos a nivel empresarial pueden requerir gestión adicional por parte del administrador.</li>
+      </ul>
+
+      <h2>Contacto</h2>
+      <p>Correo: jose@empoweredinvestor.trade<br />
+      WhatsApp: +506 7055 8296</p>
+
+      <p class="terms-footer">Empowered Investor &copy; 2026</p>
+    </section>
+
+  </main>
+
+  <script>
+    (function () {
+      const btns = document.querySelectorAll('.terms-nav-btn');
+      const sections = document.querySelectorAll('.terms-section');
+
+      function activate(id) {
+        btns.forEach(b => b.classList.toggle('active', b.dataset.section === id));
+        sections.forEach(s => s.classList.toggle('active', s.id === id));
+        history.replaceState(null, '', '#' + id);
+      }
+
+      btns.forEach(btn => btn.addEventListener('click', () => activate(btn.dataset.section)));
+
+      // honour URL hash on load
+      const hash = location.hash.replace('#', '');
+      if (hash && document.getElementById(hash)) activate(hash);
+    })();
+  </script>
+</body>
+</html>

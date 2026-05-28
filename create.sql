@@ -136,8 +136,11 @@ CREATE TABLE core.transactions_enriched (
         CONSTRAINT chk_transaction_approval CHECK (transaction_approval IN ('Aprobada', 'Denegada')),
 
     -- Pipeline state
+    -- 'Duplicado' = a near-identical transaction (same individual + amount [+ currency]
+    --   within 2 minutes) already arrived and was notified; this row is suppressed and
+    --   never classified/notified. Its data may have been used to backfill the original.
     transaction_status TEXT NOT NULL DEFAULT 'unknown'
-        CONSTRAINT chk_transaction_status CHECK (transaction_status IN ('unknown', 'Procesado', 'Procesado parcialmente', 'Descartado')),
+        CONSTRAINT chk_transaction_status CHECK (transaction_status IN ('unknown', 'Procesado', 'Procesado parcialmente', 'Descartado', 'Duplicado')),
 
     -- Whether OpenAI was invoked to fill missing fields
     ai_assistance BOOLEAN NOT NULL DEFAULT FALSE,

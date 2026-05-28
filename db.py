@@ -133,6 +133,94 @@ def insert_enriched_transaction(conn, row):
     conn.commit()
 
 
+def find_recent_duplicate_original(conn, individual_id, amount_guess, currency_guess,
+                                   exclude_id, window_minutes=2):
+    """Return the earliest enriched row (the already-notified 'original') that looks like
+    the same transaction as a just-inserted row, or None.
+
+    Match: same individual_id, same amount_guess, approved + processed (NOT 'Duplicado'),
+    created within the window, excluding the current row. When both rows carry a currency,
+    it must also match; if either currency is blank, amount alone is used.
+    """
+    if amount_guess is None:
+        return None
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, merchant_guess, currency_guess, desc_guess,
+                   amount_guess, transaction_status
+            FROM core.transactions_enriched
+            WHERE individual_id = %(individual_id)s
+              AND amount_guess = %(amount)s
+              AND id <> %(exclude_id)s
+              AND transaction_approval = 'Aprobada'
+              AND transaction_status IN ('Procesado', 'Procesado parcialmente')
+              AND created_at >= now() - make_interval(mins => %(window)s)
+              AND (
+                    %(currency)s IS NULL
+                 OR NULLIF(currency_guess, '') IS NULL
+                 OR NULLIF(currency_guess, '') = %(currency)s
+              )
+            ORDER BY created_at ASC
+            LIMIT 1
+            """,
+            {
+                "individual_id": str(individual_id),
+                "amount": amount_guess,
+                "exclude_id": str(exclude_id),
+                "currency": (currency_guess or None),
+                "window": window_minutes,
+            },
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+
+
+def mark_enriched_duplicate(conn, enriched_id):
+    """Flag an enriched row as 'Duplicado' so it is never classified or notified."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE core.transactions_enriched SET transaction_status = 'Duplicado' WHERE id = %s",
+            (str(enriched_id),),
+        )
+    conn.commit()
+
+
+def backfill_enriched_original(conn, enriched_id, merchant_guess, currency_guess,
+                               desc_guess, amount_local, fx_rate, fx_rate_date, status):
+    """Overwrite the original row's extracted fields with the merged (backfilled) values.
+    Callers pass already-merged values, so blanks that the original lacked get filled in
+    from the duplicate; existing values are preserved by the caller's merge logic."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE core.transactions_enriched
+            SET merchant_guess     = %(merchant)s,
+                currency_guess     = %(currency)s,
+                desc_guess         = %(desc)s,
+                amount_local       = %(amount_local)s,
+                fx_rate            = %(fx_rate)s,
+                fx_rate_date       = %(fx_rate_date)s,
+                transaction_status = %(status)s
+            WHERE id = %(id)s
+            """,
+            {
+                "id": str(enriched_id),
+                "merchant": merchant_guess,
+                "currency": currency_guess,
+                "desc": desc_guess,
+                "amount_local": amount_local,
+                "fx_rate": fx_rate,
+                "fx_rate_date": fx_rate_date,
+                "status": status,
+            },
+        )
+    conn.commit()
+
+
 def get_fx_conversion(conn, currency_guess):
     """Return (fx_rate, fx_rate_date) for converting amount_guess in `currency_guess` to CRC.
 
@@ -188,7 +276,7 @@ def get_unclassified_enriched(conn):
                 SELECT 1 FROM core.transactions_classified c WHERE c.raw_id = e.raw_id
             )
             AND e.transaction_approval = 'Aprobada'
-            AND e.transaction_status != 'Descartado'
+            AND e.transaction_status NOT IN ('Descartado', 'Duplicado')
             AND e.amount_guess IS NOT NULL
             ORDER BY e.created_at ASC
             """

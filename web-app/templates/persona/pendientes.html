@@ -8,10 +8,15 @@
   {% if rows %}<span class="heading-badge">{{ rows|length }} por revisar</span>{% endif %}
 </div>
 
+{% if rows %}
+<p style="font-size:0.95rem; font-weight:600; color:var(--dark); margin-bottom:0.35rem;">
+  Las siguientes transacciones necesitan tu atención:
+</p>
 <p style="font-size:0.85rem; color:rgba(21,25,30,0.55); margin-bottom:0.9rem;">
-  Estas transacciones no pudieron clasificarse automáticamente como débito o crédito.
+  No pudieron clasificarse automáticamente como débito o crédito.
   Asigná el <strong>tipo</strong> (y la categoría, si querés) para moverlas a tus transacciones.
 </p>
+{% endif %}
 
 {% if rows %}
 <div class="ei-card">

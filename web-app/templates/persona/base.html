@@ -44,6 +44,15 @@
           </a>
         </li>
         <li>
+          <a href="{{ url_for('persona.transacciones_pendientes') }}"
+             class="nav-link {% if request.endpoint == 'persona.transacciones_pendientes' %}active{% endif %}">
+            <i class="bi bi-exclamation-circle"></i>Transacciones pendientes
+            {% if pending_count and pending_count > 0 %}
+            <span class="nav-badge">{{ pending_count }}</span>
+            {% endif %}
+          </a>
+        </li>
+        <li>
           <a href="{{ url_for('persona.reportes') }}"
              class="nav-link {% if request.endpoint in ['persona.reportes', 'persona.reportes_download'] %}active{% endif %}">
             <i class="bi bi-file-earmark-spreadsheet"></i>Reportes

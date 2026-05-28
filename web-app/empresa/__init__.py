@@ -145,7 +145,8 @@ def transacciones():
                 LEFT JOIN core.transactions_notifications tn ON tn.classified_id = tc.id
                 WHERE tr.individual_id = %s
                   AND tr.local_date >= NOW() - INTERVAL '24 hours'
-                  AND te.transaction_status != 'Descartado'
+                  AND te.transaction_status NOT IN ('Descartado', 'Duplicado')
+                  AND te.transaction_type_guess != 'unknown'
                 ORDER BY tr.local_date DESC
                 """,
                 (session["user_id"],),
@@ -203,6 +204,138 @@ def transacciones_reclassify():
         conn.close()
 
     return redirect(url_for("empresa.transacciones"))
+
+
+# ── Transacciones pendientes ──────────────────────────────────────────────────
+
+def _count_pending(conn, individual_id):
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM core.transactions_enriched te
+            JOIN core.transactions_raw tr ON te.raw_id = tr.id
+            WHERE tr.individual_id = %s
+              AND te.transaction_type_guess = 'unknown'
+              AND te.transaction_approval = 'Aprobada'
+              AND te.transaction_status NOT IN ('Descartado', 'Duplicado')
+            """,
+            (str(individual_id),),
+        )
+        return cur.fetchone()[0]
+
+
+@empresa_bp.context_processor
+def _inject_pending_count():
+    if "user_id" not in session:
+        return {}
+    try:
+        conn = get_connection()
+        try:
+            return {"pending_count": _count_pending(conn, session["user_id"])}
+        finally:
+            conn.close()
+    except Exception:
+        return {"pending_count": 0}
+
+
+@empresa_bp.route("/pendientes")
+@login_required
+def transacciones_pendientes():
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT te.id          AS enriched_id,
+                       te.merchant_guess,
+                       te.amount_guess,
+                       te.currency_guess,
+                       te.transaction_type_guess,
+                       tr.local_date,
+                       tn.id          AS notification_id,
+                       tn.final_category,
+                       tn.final_subcategory
+                FROM core.transactions_enriched te
+                JOIN core.transactions_raw tr ON te.raw_id = tr.id
+                LEFT JOIN core.transactions_classified tc ON tc.raw_id = tr.id
+                LEFT JOIN core.transactions_notifications tn ON tn.classified_id = tc.id
+                WHERE tr.individual_id = %s
+                  AND te.transaction_type_guess = 'unknown'
+                  AND te.transaction_approval = 'Aprobada'
+                  AND te.transaction_status NOT IN ('Descartado', 'Duplicado')
+                ORDER BY tr.local_date DESC
+                """,
+                (session["user_id"],),
+            )
+            rows = cur.fetchall()
+
+            cur.execute(
+                """
+                SELECT category, subcategory
+                FROM core.categories
+                WHERE business_id = %s AND individual_id IS NULL
+                ORDER BY category, subcategory NULLS FIRST
+                """,
+                (session["business_id"],),
+            )
+            categories = cur.fetchall()
+    finally:
+        conn.close()
+
+    return render_template("empresa/pendientes.html", rows=rows, categories=categories)
+
+
+@empresa_bp.route("/pendientes/save", methods=["POST"])
+@login_required
+def transacciones_pendientes_save():
+    enriched_id = request.form.get("enriched_id")
+    notification_id = request.form.get("notification_id") or None
+    tipo = request.form.get("tipo", "").strip()
+    raw_value = request.form.get("category_value", "")
+
+    if tipo not in ("debito", "credito"):
+        flash("Debe seleccionar un tipo (débito o crédito).", "danger")
+        return redirect(url_for("empresa.transacciones_pendientes"))
+    if not enriched_id:
+        flash("Datos inválidos.", "danger")
+        return redirect(url_for("empresa.transacciones_pendientes"))
+
+    parts = raw_value.split("|", 1)
+    final_category = parts[0].strip() or None
+    final_subcategory = parts[1].strip() or None if len(parts) > 1 else None
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE core.transactions_enriched
+                SET transaction_type_guess = %s
+                WHERE id = %s AND individual_id = %s
+                """,
+                (tipo, enriched_id, session["user_id"]),
+            )
+            if notification_id and final_category:
+                cur.execute(
+                    """
+                    UPDATE core.transactions_notifications
+                    SET final_category    = %s,
+                        final_subcategory = %s,
+                        reclassified_by   = 'user',
+                        reclassified_at   = NOW()
+                    WHERE id = %s AND individual_id = %s
+                    """,
+                    (final_category, final_subcategory, notification_id, session["user_id"]),
+                )
+        conn.commit()
+        flash("Transacción actualizada.", "success")
+    except Exception as e:
+        flash(f"Error al guardar: {e}", "danger")
+    finally:
+        conn.close()
+
+    return redirect(url_for("empresa.transacciones_pendientes"))
 
 
 # ── Reportes ──────────────────────────────────────────────────────────────────

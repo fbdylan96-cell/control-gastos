@@ -1,0 +1,110 @@
+{% extends "empresa/base.html" %}
+{% block title %}Transacciones pendientes — Empowered Investor{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <i class="bi bi-exclamation-circle"></i>
+  Transacciones pendientes
+  {% if rows %}<span class="heading-badge">{{ rows|length }} por revisar</span>{% endif %}
+</div>
+
+<p style="font-size:0.85rem; color:rgba(21,25,30,0.55); margin-bottom:0.9rem;">
+  Estas transacciones no pudieron clasificarse automáticamente como débito o crédito.
+  Asigná el <strong>tipo</strong> (y la categoría, si querés) para moverlas a tus transacciones.
+</p>
+
+{% if rows %}
+<div class="ei-card">
+  <div style="overflow-x:auto;">
+    <table class="ei-table">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Comercio</th>
+          <th style="text-align:right;">Monto</th>
+          <th>Moneda</th>
+          <th style="width:130px;">Tipo</th>
+          <th style="width:200px;">Categoría</th>
+          <th style="width:60px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        {% set current = (row.final_category or '') ~ '|' ~ (row.final_subcategory or '') %}
+        <tr>
+          <td class="muted">
+            {{ row.local_date.strftime('%d/%m/%Y %H:%M') if row.local_date else '—' }}
+          </td>
+          <td style="font-weight:600;">{{ row.merchant_guess or '—' }}</td>
+          <td class="amount">
+            {% if row.amount_guess is not none %}
+              {{ '{:,.2f}'.format(row.amount_guess) }}
+            {% else %}—{% endif %}
+          </td>
+          <td><span class="currency-badge">{{ row.currency_guess or '—' }}</span></td>
+          <td>
+            <select name="tipo" form="pf_{{ loop.index }}" id="tipo_{{ loop.index }}"
+                    class="ei-input" style="font-size:0.82rem; padding:4px 6px;"
+                    onchange="syncRow({{ loop.index }})">
+              <option value="">— tipo —</option>
+              <option value="debito">débito</option>
+              <option value="credito">crédito</option>
+            </select>
+          </td>
+          <td>
+            <select name="category_value" form="pf_{{ loop.index }}"
+                    class="ei-input" style="font-size:0.82rem; padding:4px 6px;">
+              <option value="">— categoría (opcional) —</option>
+              {% for cat in categories %}
+              {% set opt = cat.category ~ '|' ~ (cat.subcategory or '') %}
+              <option value="{{ opt }}" {% if opt == current %}selected{% endif %}>
+                {{ cat.category }}{% if cat.subcategory %} / {{ cat.subcategory }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </td>
+          <td style="text-align:center;">
+            <form method="POST" id="pf_{{ loop.index }}"
+                  action="{{ url_for('empresa.transacciones_pendientes_save') }}"
+                  onsubmit="return confirmSave({{ loop.index }}, '{{ row.merchant_guess or '' }}')">
+              <input type="hidden" name="enriched_id" value="{{ row.enriched_id }}">
+              <input type="hidden" name="notification_id" value="{{ row.notification_id or '' }}">
+              <button type="submit" class="btn-primary-ei"
+                      style="padding:4px 10px; font-size:0.8rem; opacity:0.35; pointer-events:none;"
+                      id="btn_{{ loop.index }}" disabled title="Guardar">
+                <i class="bi bi-floppy"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="empty-state">
+  <i class="bi bi-check2-circle"></i>
+  <p>No hay transacciones pendientes. ¡Todo al día!</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function syncRow(idx) {
+    const tipo = document.getElementById('tipo_' + idx).value;
+    const btn = document.getElementById('btn_' + idx);
+    const on = tipo !== '';
+    btn.disabled = !on;
+    btn.style.opacity = on ? '1' : '0.35';
+    btn.style.pointerEvents = on ? 'auto' : 'none';
+  }
+
+  function confirmSave(idx, merchant) {
+    const tipo = document.getElementById('tipo_' + idx).value;
+    if (!tipo) return false;
+    return confirm('¿Guardar "' + (merchant || 'esta transacción') + '" como ' + tipo + '?');
+  }
+</script>
+{% endblock %}

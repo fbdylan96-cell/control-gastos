@@ -110,6 +110,22 @@ body {
   padding-left: calc(0.9rem - 3px);
 }
 
+.sidebar .nav-link .nav-badge {
+  margin-left: auto;
+  background: #e74c3c;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
 /* ── Content area ─────────────────────────────────────────────────── */
 .main-content {
   background-color: var(--cream);

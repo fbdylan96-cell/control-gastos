@@ -32,12 +32,12 @@ def clean_merchant_key(name: str) -> str:
 def gen_email_forward(client_name: str) -> str:
     """Generate a unique email forwarding address for a client.
 
-    Format: crgastostesting+{name}{suffix}@gmail.com
+    Format: gastos+{name}.{suffix}@investorcr.com
     where suffix is 4 random lowercase alphanumeric characters.
     """
     suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
     name_slug = client_name.lower().replace(' ', '')
-    return f'crgastostesting+{name_slug}.{suffix}@gmail.com'
+    return f'gastos+{name_slug}.{suffix}@investorcr.com'
 
 
 def gen_password(nombre: str, apellidos: str) -> str:

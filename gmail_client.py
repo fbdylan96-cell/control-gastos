@@ -11,7 +11,7 @@ _DIR = os.path.dirname(os.path.abspath(__file__))
 TOKEN_FILE = os.path.join(_DIR, "token.json")
 CREDENTIALS_FILE = os.path.join(
     _DIR,
-    "client_secret_750584625292-osqc8e5jforolk6mcf64choccs408qkn"
+    "client_secret_925122271245-564ppadkhjetdhjphgjo2g55htnmimqe"
     ".apps.googleusercontent.com.json",
 )
 AUTH_PORT = 8080

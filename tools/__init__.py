@@ -14,6 +14,7 @@ from tools.finance import (  # noqa: F401
     get_income_expense_summary,
     get_monthly_category_spending,
     get_top_spending,
+    last_12_months_range,
     last_full_year_range,
     list_categories,
     month_buckets,

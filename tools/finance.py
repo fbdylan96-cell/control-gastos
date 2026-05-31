@@ -60,6 +60,19 @@ def last_full_year_range(today=None):
     return start, end
 
 
+def last_12_months_range(today=None):
+    """Last 12 months including the current (partial) month.
+
+    e.g. on 2026-05-15 → (2025-06-01, 2026-05-15): June 2025 through today.
+    """
+    today = today or date.today()
+    first_this_month = today.replace(day=1)
+    # Start 11 whole months before the current month's first day.
+    month_index = (first_this_month.year * 12 + (first_this_month.month - 1)) - 11
+    start = date(month_index // 12, month_index % 12 + 1, 1)
+    return start, today
+
+
 def resolve_range(option, today=None):
     """Map a UI option string to a (date_from, date_to) pair.
 

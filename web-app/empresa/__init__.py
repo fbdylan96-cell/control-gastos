@@ -376,7 +376,7 @@ def dashboard_categoria():
     subcategory = request.args.get("sub", "").strip() or None
     if not category:
         return jsonify({"error": "missing category"}), 400
-    date_from, date_to = finance.last_full_year_range(date.today())
+    date_from, date_to = finance.last_12_months_range(date.today())
     conn = get_connection()
     try:
         series = finance.get_monthly_category_spending(

@@ -1,17 +1,18 @@
 import io
 import uuid
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from functools import wraps
 
 import openpyxl
 import psycopg2
 import psycopg2.extras
-from flask import (Blueprint, flash, redirect, render_template, request,
-                   send_file, session, url_for)
+from flask import (Blueprint, flash, jsonify, redirect, render_template,
+                   request, send_file, session, url_for)
 from openpyxl.utils import get_column_letter
 from werkzeug.security import check_password_hash
 
 from db import get_connection
+from tools import finance
 
 persona_bp = Blueprint('persona', __name__)
 
@@ -331,6 +332,61 @@ def transacciones_pendientes_save():
         conn.close()
 
     return redirect(url_for("persona.transacciones_pendientes"))
+
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+
+@persona_bp.route("/dashboard")
+@login_required
+def dashboard():
+    return render_template("persona/dashboard.html")
+
+
+@persona_bp.route("/dashboard/general")
+@login_required
+def dashboard_general():
+    date_from, date_to = finance.resolve_range(request.args.get("range", "ultimo_anio"))
+    conn = get_connection()
+    try:
+        summary = finance.get_income_expense_summary(
+            conn, individual_id=session["user_id"], date_from=date_from, date_to=date_to)
+        top = finance.get_top_spending(
+            conn, individual_id=session["user_id"], date_from=date_from, date_to=date_to, limit=5)
+        categories = finance.list_categories(conn, individual_id=session["user_id"])
+    finally:
+        conn.close()
+    return jsonify({
+        "summary": summary,
+        "top": top,
+        "categories": categories,
+        "date_from": str(date_from),
+        "date_to": str(date_to),
+    })
+
+
+@persona_bp.route("/dashboard/categoria")
+@login_required
+def dashboard_categoria():
+    category = request.args.get("cat", "").strip()
+    subcategory = request.args.get("sub", "").strip() or None
+    if not category:
+        return jsonify({"error": "missing category"}), 400
+    date_from, date_to = finance.last_full_year_range(date.today())
+    conn = get_connection()
+    try:
+        series = finance.get_monthly_category_spending(
+            conn, individual_id=session["user_id"], category=category,
+            subcategory=subcategory, date_from=date_from, date_to=date_to)
+        budget = finance.get_category_budget(
+            conn, individual_id=session["user_id"], category=category, subcategory=subcategory)
+    finally:
+        conn.close()
+    return jsonify({
+        "series": series,
+        "budget": budget,
+        "category": category,
+        "subcategory": subcategory,
+    })
 
 
 # ── Inversión ─────────────────────────────────────────────────────────────────

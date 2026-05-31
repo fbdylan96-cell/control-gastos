@@ -1,0 +1,195 @@
+{% extends "persona/base.html" %}
+{% block title %}Dashboard — Empowered Investor{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <i class="bi bi-bar-chart-line"></i>
+  Dashboard
+</div>
+
+<!-- Trigger -->
+<div id="dashTrigger" style="margin-bottom:1.25rem;">
+  <p style="font-size:0.88rem; color:rgba(21,25,30,0.6); margin-bottom:0.75rem;">
+    Visualizá tendencias y composición de tus finanzas. Generamos los datos sólo
+    cuando lo solicitás.
+  </p>
+  <button id="loadBtn" class="btn-primary-ei" onclick="loadDashboard()">
+    <i class="bi bi-graph-up"></i> Ver dashboard
+  </button>
+</div>
+
+<div id="dashContent" style="display:none;">
+
+  <!-- ── Section 1: General ── -->
+  <div class="ei-card" style="margin-bottom:1.25rem;">
+    <div class="ei-card-header" style="justify-content:space-between; flex-wrap:wrap; gap:8px;">
+      <span><i class="bi bi-pie-chart"></i>General</span>
+      <select id="rangeSelect" class="ei-select" onchange="loadGeneral()"
+              style="max-width:230px;">
+        <option value="ultimo_anio">Último año</option>
+        <option value="anio_actual">En lo que va del año</option>
+        <option value="ultimos_30">Últimos 30 días</option>
+        <option value="mes_actual">En lo que va del mes</option>
+      </select>
+    </div>
+    <div class="ei-card-body">
+      <p id="rangeCaption" style="font-size:0.78rem; color:rgba(21,25,30,0.45); margin:0 0 0.9rem;"></p>
+
+      <!-- Cards -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:1.25rem;">
+        <div class="dash-stat">
+          <div class="dash-stat-label">Ingresos detectados</div>
+          <div class="dash-stat-value" id="cardIngresos">—</div>
+          <div class="dash-stat-unit">miles de colones</div>
+        </div>
+        <div class="dash-stat">
+          <div class="dash-stat-label">Gastos detectados</div>
+          <div class="dash-stat-value" id="cardGastos">—</div>
+          <div class="dash-stat-unit">miles de colones</div>
+        </div>
+        <div class="dash-stat">
+          <div class="dash-stat-label">Tasa de ahorro</div>
+          <div class="dash-stat-value" id="cardTasa">—</div>
+          <div class="dash-stat-unit">del ingreso</div>
+        </div>
+      </div>
+
+      <!-- Top spending table -->
+      <div style="font-weight:700; font-size:0.9rem; margin-bottom:0.5rem;">
+        Principales componentes del gasto
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="ei-table">
+          <thead>
+            <tr>
+              <th>Categoría</th>
+              <th>Subcategoría</th>
+              <th style="text-align:right;">Gasto (miles)</th>
+              <th style="text-align:right;">Participación</th>
+            </tr>
+          </thead>
+          <tbody id="topBody">
+            <tr><td colspan="4" class="muted">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Section 2: By category ── -->
+  <div class="ei-card">
+    <div class="ei-card-header" style="justify-content:space-between; flex-wrap:wrap; gap:8px;">
+      <span><i class="bi bi-bar-chart"></i>Por categoría — último año</span>
+      <select id="catSelect" class="ei-select" onchange="loadCategoria()"
+              style="max-width:280px;"></select>
+    </div>
+    <div class="ei-card-body">
+      <p style="font-size:0.78rem; color:rgba(21,25,30,0.45); margin:0 0 0.9rem;">
+        Gasto mensual en miles de colones. La línea indica el presupuesto mensual, si existe.
+      </p>
+      <div style="position:relative; height:320px;">
+        <canvas id="catChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  const URL_GENERAL  = "{{ url_for('persona.dashboard_general') }}";
+  const URL_CATEGORIA = "{{ url_for('persona.dashboard_categoria') }}";
+  let catChart = null;
+
+  const fmt = (n) => (n / 1000).toLocaleString('es-CR', {maximumFractionDigits: 1});
+
+  function loadDashboard() {
+    document.getElementById('loadBtn').disabled = true;
+    loadGeneral(true).then(() => {
+      document.getElementById('dashContent').style.display = 'block';
+      document.getElementById('dashTrigger').style.display = 'none';
+    }).finally(() => {
+      document.getElementById('loadBtn').disabled = false;
+    });
+  }
+
+  async function loadGeneral(populateCats) {
+    const range = document.getElementById('rangeSelect').value;
+    const res = await fetch(`${URL_GENERAL}?range=${encodeURIComponent(range)}`);
+    const data = await res.json();
+
+    document.getElementById('cardIngresos').textContent = fmt(data.summary.ingresos);
+    document.getElementById('cardGastos').textContent = fmt(data.summary.gastos);
+    document.getElementById('cardTasa').textContent =
+      data.summary.tasa_ahorro === null ? '—' : data.summary.tasa_ahorro.toFixed(1) + '%';
+    document.getElementById('rangeCaption').textContent = `${data.date_from} al ${data.date_to}`;
+
+    const tb = document.getElementById('topBody');
+    if (!data.top.length) {
+      tb.innerHTML = '<tr><td colspan="4" class="muted">Sin gastos en el período.</td></tr>';
+    } else {
+      tb.innerHTML = data.top.map(r => `
+        <tr>
+          <td style="font-weight:600;">${r.category ?? '—'}</td>
+          <td class="muted">${r.subcategory ?? '—'}</td>
+          <td style="text-align:right;">${fmt(r.total)}</td>
+          <td style="text-align:right;">${r.share_pct.toFixed(1)}%</td>
+        </tr>`).join('');
+    }
+
+    if (populateCats) {
+      const sel = document.getElementById('catSelect');
+      sel.innerHTML = data.categories.map(c => {
+        const val = c.category + '|' + (c.subcategory || '');
+        const label = c.subcategory ? `${c.category} / ${c.subcategory}` : c.category;
+        return `<option value="${val}">${label}</option>`;
+      }).join('');
+      if (data.categories.length) await loadCategoria();
+    }
+  }
+
+  async function loadCategoria() {
+    const sel = document.getElementById('catSelect');
+    if (!sel.value) return;
+    const [cat, sub] = sel.value.split('|');
+    const params = new URLSearchParams({cat: cat, sub: sub});
+    const res = await fetch(`${URL_CATEGORIA}?${params}`);
+    const data = await res.json();
+
+    const labels = data.series.map(p => p.month);
+    const values = data.series.map(p => p.total / 1000);
+    const datasets = [{
+      label: 'Gasto (miles)',
+      data: values,
+      backgroundColor: '#65fdb0',
+      borderRadius: 4,
+    }];
+    if (data.budget !== null) {
+      datasets.push({
+        type: 'line',
+        label: 'Presupuesto (miles)',
+        data: labels.map(() => data.budget / 1000),
+        borderColor: '#e74c3c',
+        borderWidth: 2,
+        borderDash: [6, 4],
+        pointRadius: 0,
+        fill: false,
+      });
+    }
+
+    if (catChart) catChart.destroy();
+    catChart = new Chart(document.getElementById('catChart'), {
+      type: 'bar',
+      data: {labels: labels, datasets: datasets},
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {legend: {display: true, position: 'bottom'}},
+        scales: {y: {beginAtZero: true}},
+      },
+    });
+  }
+</script>
+{% endblock %}

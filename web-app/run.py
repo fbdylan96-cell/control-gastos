@@ -1,10 +1,17 @@
 import logging
 import os
+import sys
 
 from dotenv import find_dotenv, load_dotenv
 from flask import Flask, redirect, render_template, request, url_for
 
 load_dotenv(find_dotenv())
+
+# Make the repo-root packages (e.g. tools/) importable from the web app.
+# Appended (not prepended) so web-app's own db.py / utils.py keep priority.
+_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT_DIR not in sys.path:
+    sys.path.append(_ROOT_DIR)
 
 logging.basicConfig(
     level=logging.INFO,

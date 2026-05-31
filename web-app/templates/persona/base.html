@@ -59,6 +59,12 @@
           </a>
         </li>
         <li>
+          <a href="{{ url_for('persona.dashboard') }}"
+             class="nav-link {% if request.endpoint == 'persona.dashboard' %}active{% endif %}">
+            <i class="bi bi-bar-chart-line"></i>Dashboard
+          </a>
+        </li>
+        <li>
           <a href="{{ url_for('persona.categorias') }}"
              class="nav-link {% if request.endpoint in ['persona.categorias', 'persona.categorias_template'] %}active{% endif %}">
             <i class="bi bi-tags"></i>Categorías

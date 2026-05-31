@@ -110,6 +110,30 @@ body {
   padding-left: calc(0.9rem - 3px);
 }
 
+.dash-stat {
+  background: var(--mint-muted);
+  border: 1px solid rgba(101, 253, 176, 0.35);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+}
+.dash-stat-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(21, 25, 30, 0.6);
+  margin-bottom: 0.35rem;
+}
+.dash-stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--dark);
+  line-height: 1.1;
+}
+.dash-stat-unit {
+  font-size: 0.72rem;
+  color: rgba(21, 25, 30, 0.45);
+  margin-top: 0.2rem;
+}
+
 .sidebar .nav-link .nav-badge {
   margin-left: auto;
   background: #e74c3c;

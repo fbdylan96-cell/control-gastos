@@ -585,9 +585,14 @@ def categorias():
 @persona_bp.route("/categorias/delete/<categoria_id>", methods=["POST"])
 @login_required
 def categorias_delete(categoria_id):
+    """Delete a category after reassigning its existing transactions (and learned
+    rules) to either an existing category/subcategory pair or a newly created one.
+    All steps run in a single transaction so a failure leaves nothing half-applied."""
+    mode = request.form.get("mode")
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            # 1. Validate the category being deleted
             cur.execute(
                 """
                 SELECT category, subcategory FROM core.categories
@@ -599,9 +604,72 @@ def categorias_delete(categoria_id):
             if not row:
                 flash("Categoría no encontrada.", "danger")
                 return redirect(url_for("persona.categorias"))
-            if row[0] == "Otros" and row[1] is None:
+            del_cat, del_sub = row[0], row[1]
+            if del_cat == "Otros" and del_sub is None:
                 flash("La categoría 'Otros' no puede ser eliminada.", "danger")
                 return redirect(url_for("persona.categorias"))
+
+            # 2. Resolve the reassignment target
+            if mode == "reassign":
+                parts = request.form.get("reassign_value", "").split("|", 1)
+                tgt_cat = parts[0].strip() or None
+                tgt_sub = (parts[1].strip() or None) if len(parts) > 1 else None
+                if not tgt_cat:
+                    flash("Debe seleccionar una categoría destino.", "danger")
+                    return redirect(url_for("persona.categorias"))
+            elif mode == "new":
+                tgt_cat = (request.form.get("new_category") or "").strip() or None
+                tgt_sub = (request.form.get("new_subcategory") or "").strip() or None
+                if not tgt_cat:
+                    flash("Debe ingresar el nombre de la nueva categoría.", "danger")
+                    return redirect(url_for("persona.categorias"))
+                cur.execute(
+                    """
+                    INSERT INTO core.categories
+                        (id, business_id, individual_id, category, subcategory, monthly_budget)
+                    SELECT %s, %s, %s, %s, %s, NULL
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM core.categories
+                        WHERE business_id = %s AND individual_id = %s AND category = %s
+                          AND ((subcategory = %s) OR (subcategory IS NULL AND %s IS NULL))
+                    )
+                    """,
+                    (str(uuid.uuid4()), INDIVIDUAL_BIZ_ID, session["user_id"], tgt_cat, tgt_sub,
+                     INDIVIDUAL_BIZ_ID, session["user_id"], tgt_cat, tgt_sub, tgt_sub),
+                )
+            else:
+                flash("Debe elegir reasignar o crear una nueva categoría.", "danger")
+                return redirect(url_for("persona.categorias"))
+
+            # Target must differ from the pair being deleted
+            if tgt_cat == del_cat and (tgt_sub or None) == (del_sub or None):
+                flash("La categoría destino debe ser distinta a la que se elimina.", "danger")
+                return redirect(url_for("persona.categorias"))
+
+            # 3. Reassign the user's existing classified transactions
+            cur.execute(
+                """
+                UPDATE core.transactions_notifications
+                SET final_category = %s, final_subcategory = %s,
+                    reclassified_by = 'user', reclassified_at = NOW()
+                WHERE individual_id = %s
+                  AND final_category = %s
+                  AND ((final_subcategory = %s) OR (final_subcategory IS NULL AND %s IS NULL))
+                """,
+                (tgt_cat, tgt_sub, session["user_id"], del_cat, del_sub, del_sub),
+            )
+            # 4. Reassign the user's learned rules so the pair isn't resurrected
+            cur.execute(
+                """
+                UPDATE core.category_rules
+                SET category = %s, subcategory = %s, updated_at = NOW()
+                WHERE business_id = %s AND individual_id = %s
+                  AND category = %s
+                  AND ((subcategory = %s) OR (subcategory IS NULL AND %s IS NULL))
+                """,
+                (tgt_cat, tgt_sub, INDIVIDUAL_BIZ_ID, session["user_id"], del_cat, del_sub, del_sub),
+            )
+            # 5. Delete the category
             cur.execute(
                 """
                 DELETE FROM core.categories
@@ -610,9 +678,12 @@ def categorias_delete(categoria_id):
                 (categoria_id, INDIVIDUAL_BIZ_ID, session["user_id"]),
             )
         conn.commit()
+        flash("Categoría eliminada y transacciones reasignadas.", "success")
+    except Exception as e:
+        conn.rollback()
+        flash(f"Error al eliminar la categoría: {e}", "danger")
     finally:
         conn.close()
-    flash("Categoría eliminada.", "success")
     return redirect(url_for("persona.categorias"))
 
 

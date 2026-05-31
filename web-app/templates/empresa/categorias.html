@@ -137,13 +137,13 @@
                 <i class="bi bi-lock" style="color:rgba(21,25,30,0.3); font-size:0.9rem;"></i>
               </span>
               {% else %}
-              <form method="POST"
-                    action="{{ url_for('empresa.categorias_delete', categoria_id=cat.id) }}"
-                    onsubmit="return confirm('¿Eliminar {{ cat.category }}{% if cat.subcategory %} / {{ cat.subcategory }}{% endif %}?');">
-                <button type="submit" class="btn-danger-outline" title="Eliminar">
-                  <i class="bi bi-trash"></i>
-                </button>
-              </form>
+              <button type="button" class="btn-danger-outline" title="Eliminar"
+                      onclick="openDeleteModal(this)"
+                      data-action="{{ url_for('empresa.categorias_delete', categoria_id=cat.id) }}"
+                      data-cat="{{ cat.category }}"
+                      data-sub="{{ cat.subcategory or '' }}">
+                <i class="bi bi-trash"></i>
+              </button>
               {% endif %}
             </td>
           </tr>
@@ -160,10 +160,122 @@
   </div>
 
 </div><!-- /grid -->
+
+<!-- ── Delete / reassign modal ──────────────────────────────────── -->
+<div class="catdel-overlay" id="catdelOverlay">
+  <div class="catdel-modal">
+    <div class="catdel-head">
+      <i class="bi bi-exclamation-triangle-fill"></i> Advertencia
+    </div>
+    <p class="catdel-text">
+      Para eliminar <strong id="catdelLabel"></strong> debe asignar las transacciones
+      previas a una clasificación existente o crear una nueva:
+    </p>
+
+    <form method="POST" id="catdelForm" onsubmit="return validateDelete()">
+      <label class="catdel-opt">
+        <input type="radio" name="mode" value="reassign" checked onchange="syncMode()" />
+        <span>Reasignar:</span>
+      </label>
+      <select name="reassign_value" id="catdelReassign" class="ei-input" style="margin-bottom:12px;">
+        {% for cat in existing %}
+        <option value="{{ cat.category }}|{{ cat.subcategory or '' }}">
+          {{ cat.category }}{% if cat.subcategory %} / {{ cat.subcategory }}{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+
+      <label class="catdel-opt">
+        <input type="radio" name="mode" value="new" onchange="syncMode()" />
+        <span>Crear nueva:</span>
+      </label>
+      <input type="text" name="new_category" id="catdelNewCat" class="ei-input"
+             placeholder="Categoría" disabled style="margin-bottom:6px;" />
+      <input type="text" name="new_subcategory" id="catdelNewSub" class="ei-input"
+             placeholder="Subcategoría (opcional)" disabled />
+
+      <p class="catdel-warn">Este cambio es irreversible</p>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end;">
+        <button type="button" class="btn-outline-ei" onclick="closeDeleteModal()">Cancelar</button>
+        <button type="submit" class="btn-danger-outline">
+          <i class="bi bi-trash"></i> Eliminar
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+  .catdel-overlay {
+    position: fixed; inset: 0; z-index: 9999; display: none;
+    background: rgba(21,25,30,0.55); backdrop-filter: blur(2px);
+    align-items: center; justify-content: center; padding: 1rem;
+  }
+  .catdel-overlay.open { display: flex; }
+  .catdel-modal {
+    background: #fff; border-radius: 16px; max-width: 440px; width: 100%;
+    padding: 1.5rem; box-shadow: 0 18px 50px rgba(0,0,0,0.25);
+  }
+  .catdel-head {
+    display: flex; align-items: center; gap: 0.5rem; font-weight: 700;
+    font-size: 1.1rem; color: #e67e22; margin-bottom: 0.8rem;
+  }
+  .catdel-text { font-size: 0.9rem; line-height: 1.5; color: rgba(21,25,30,0.75); margin-bottom: 1rem; }
+  .catdel-opt { display: flex; align-items: center; gap: 0.5rem; font-weight: 600;
+                font-size: 0.88rem; color: var(--dark); margin-bottom: 6px; cursor: pointer; }
+  .catdel-warn { font-size: 0.8rem; font-weight: 700; color: #e74c3c; margin: 14px 0; text-align: center; }
+</style>
 {% endblock %}
 
 {% block scripts %}
 <script>
+  function openDeleteModal(btn) {
+    const cat = btn.dataset.cat;
+    const sub = btn.dataset.sub;
+    const label = sub ? cat + ' / ' + sub : cat;
+    document.getElementById('catdelForm').action = btn.dataset.action;
+    document.getElementById('catdelLabel').textContent = label;
+
+    // Reset to default state and exclude the pair being deleted from the dropdown
+    document.querySelector('#catdelForm input[value="reassign"]').checked = true;
+    const sel = document.getElementById('catdelReassign');
+    const deletedVal = cat + '|' + sub;
+    let firstVisible = null;
+    for (const opt of sel.options) {
+      const hide = opt.value === deletedVal;
+      opt.hidden = hide;
+      opt.disabled = hide;
+      if (!hide && firstVisible === null) firstVisible = opt;
+    }
+    if (firstVisible) sel.value = firstVisible.value;
+    document.getElementById('catdelNewCat').value = '';
+    document.getElementById('catdelNewSub').value = '';
+    syncMode();
+    document.getElementById('catdelOverlay').classList.add('open');
+  }
+
+  function closeDeleteModal() {
+    document.getElementById('catdelOverlay').classList.remove('open');
+  }
+
+  function syncMode() {
+    const mode = document.querySelector('#catdelForm input[name="mode"]:checked').value;
+    const isReassign = mode === 'reassign';
+    document.getElementById('catdelReassign').disabled = !isReassign;
+    document.getElementById('catdelNewCat').disabled = isReassign;
+    document.getElementById('catdelNewSub').disabled = isReassign;
+  }
+
+  function validateDelete() {
+    const mode = document.querySelector('#catdelForm input[name="mode"]:checked').value;
+    if (mode === 'new' && !document.getElementById('catdelNewCat').value.trim()) {
+      alert('Ingresá el nombre de la nueva categoría.');
+      return false;
+    }
+    return confirm('Este cambio es irreversible. ¿Continuar?');
+  }
+
   function addRow() {
     const container = document.getElementById('catRows');
     const div = document.createElement('div');

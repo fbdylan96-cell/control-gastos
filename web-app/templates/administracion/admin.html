@@ -316,6 +316,14 @@
         .tbtn-deactivate:hover { background: var(--danger); color: #fff; }
         .tbtn-activate   { background: #c6f6d5; color: #22543d; }
         .tbtn-activate:hover { background: var(--accent); color: #fff; }
+        .tbtn-delete     { background: #1a2e4a; color: #fff; }
+        .tbtn-delete:hover { background: #000; color: #fff; }
+        .modal-impact {
+            background: #fff5f5; border: 1px solid #fed7d7; border-radius: 10px;
+            padding: 12px 14px; margin-bottom: 16px; font-size: 13.5px; line-height: 1.5;
+        }
+        .modal-impact p { margin: 0 0 6px; }
+        .modal-impact p:last-child { margin-bottom: 0; }
 
         .empty-state {
             text-align: center;
@@ -519,6 +527,22 @@
         <div class="modal-actions">
             <button class="btn btn-outline" onclick="closePwdModal()">Cancelar</button>
             <button class="btn btn-primary" onclick="confirmPwd()">Confirmar</button>
+        </div>
+    </div>
+</div>
+
+<!-- ─── Delete Client Modal ─── -->
+<div class="modal-overlay" id="delModal">
+    <div class="modal">
+        <h2>🗑️ Eliminar cliente</h2>
+        <div id="delImpact" class="modal-impact"></div>
+        <p>Introduce la contraseña de administrador para confirmar. <strong>Esta acción es irreversible.</strong></p>
+        <input type="password" id="delPwdInput" placeholder="Contraseña"
+               onkeydown="if(event.key==='Enter') confirmDeleteClient()">
+        <div class="modal-err" id="delErr">Contraseña incorrecta. Inténtalo de nuevo.</div>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeDelModal()">Cancelar</button>
+            <button class="btn btn-danger" id="delConfirmBtn" onclick="confirmDeleteClient()">Eliminar definitivamente</button>
         </div>
     </div>
 </div>
@@ -844,10 +868,16 @@ async function loadClients() {
                 <td><span class="badge ${isActive ? 'badge-on' : 'badge-off'}">${isActive ? 'Activo' : 'Inactivo'}</span></td>
                 <td>${dateStr}</td>
                 <td>
-                    <button class="toggle-btn ${isActive ? 'tbtn-deactivate' : 'tbtn-activate'}"
-                            onclick="toggleClient('${c.id}', ${isActive})">
-                        ${isActive ? 'Desactivar' : 'Activar'}
-                    </button>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <button class="toggle-btn ${isActive ? 'tbtn-deactivate' : 'tbtn-activate'}"
+                                onclick="toggleClient('${c.id}', ${isActive})">
+                            ${isActive ? 'Desactivar' : 'Activar'}
+                        </button>
+                        <button class="toggle-btn tbtn-delete"
+                                onclick="askDeleteClient('${c.id}')" title="Eliminar cliente">
+                            Eliminar
+                        </button>
+                    </div>
                 </td>
                 <td>${escHtml(bizName)}</td>
                 <td>${escHtml(c.email_address  || '—')}</td>
@@ -929,6 +959,76 @@ async function toggleClient(clientId, currentActive) {
         toast('Error: ' + err.message, 'error');
     }
 }
+
+// ════════════ DELETE CLIENT ════════════
+let delClientId = null;
+
+async function askDeleteClient(clientId) {
+    delClientId = clientId;
+    let impact;
+    try {
+        impact = await api('GET', `${API_BASE}/api/clients/${clientId}/delete-impact`);
+    } catch (err) {
+        toast('Error: ' + err.message, 'error');
+        return;
+    }
+    document.getElementById('delImpact').innerHTML = renderDeleteImpact(impact);
+    document.getElementById('delPwdInput').value = '';
+    document.getElementById('delErr').classList.remove('show');
+    document.getElementById('delModal').classList.add('open');
+    document.getElementById('delPwdInput').focus();
+}
+
+function renderDeleteImpact(i) {
+    const name = `<strong>${escHtml(i.client_name)}</strong>`;
+    const n = `<strong>${i.transaction_count}</strong>`;
+    if (i.scenario === 'individual') {
+        return `<p>Cliente individual ${name}.</p>
+                <p>Se eliminarán ${n} transacción(es) y todos sus datos (categorías, reglas, notificaciones).</p>`;
+    }
+    if (i.scenario === 'business_last') {
+        return `<p>${name} es el <strong>último miembro</strong> de la empresa
+                <strong>${escHtml(i.business_name)}</strong>.</p>
+                <p>Se eliminará <strong>toda la empresa</strong>: ${n} transacción(es), categorías,
+                reglas y el registro de la empresa.</p>`;
+    }
+    return `<p>Miembro ${name} de la empresa <strong>${escHtml(i.business_name)}</strong>.</p>
+            <p>Sus ${n} transacción(es) se <strong>reasignarán</strong> a
+            <strong>${escHtml(i.reassign_to)}</strong>. El miembro será eliminado;
+            las transacciones de la empresa se conservan.</p>`;
+}
+
+function closeDelModal() {
+    document.getElementById('delModal').classList.remove('open');
+    delClientId = null;
+}
+
+async function confirmDeleteClient() {
+    if (!delClientId) return;
+    const pwd = document.getElementById('delPwdInput').value;
+    const btn = document.getElementById('delConfirmBtn');
+    btn.disabled = true;
+    try {
+        await api('DELETE', `${API_BASE}/api/clients/${delClientId}`, { password: pwd });
+        closeDelModal();
+        toast('Cliente eliminado correctamente.', 'success');
+        loadClients();
+    } catch (err) {
+        if ((err.message || '').toLowerCase().includes('forbidden')) {
+            document.getElementById('delErr').classList.add('show');
+            document.getElementById('delPwdInput').value = '';
+            document.getElementById('delPwdInput').focus();
+        } else {
+            toast('Error al eliminar: ' + err.message, 'error');
+        }
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+document.getElementById('delModal').addEventListener('click', function(e) {
+    if (e.target === this) closeDelModal();
+});
 
 // ════════════ TOAST ════════════
 let toastTimer;

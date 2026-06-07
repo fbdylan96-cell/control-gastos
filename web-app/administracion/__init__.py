@@ -201,3 +201,185 @@ def patch_client(client_id):
         return jsonify({'ok': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ── DELETE /api/clients/<id> ──────────────────────────────────────────────────
+#
+# Three scenarios:
+#   * individual (sentinel business)  → wipe ALL of the client's data; the
+#       shared sentinel business record is preserved.
+#   * empresa member, others remain   → reassign this member's transactions to a
+#       surviving member (a remaining admin, else the oldest member), delete the
+#       member's own categories/rules and the member row. Transactions stay.
+#   * empresa member, last one        → wipe the whole business: every member's
+#       transactions, categories, rules, the members, and the business record.
+
+def _reassign_target(cur, business_id, exclude_id):
+    """Pick the surviving member that inherits a deleted member's transactions:
+    the oldest remaining business_admin, else the oldest remaining member."""
+    cur.execute(
+        """
+        SELECT id, client_name FROM core.clients
+        WHERE business_id = %s AND id <> %s AND business_admin = TRUE
+        ORDER BY created_at ASC LIMIT 1
+        """,
+        (business_id, exclude_id),
+    )
+    row = cur.fetchone()
+    if row:
+        return row
+    cur.execute(
+        """
+        SELECT id, client_name FROM core.clients
+        WHERE business_id = %s AND id <> %s
+        ORDER BY created_at ASC LIMIT 1
+        """,
+        (business_id, exclude_id),
+    )
+    return cur.fetchone()
+
+
+def _delete_impact(cur, client_id):
+    """Return a dict describing what deleting `client_id` would do, or None."""
+    cur.execute(
+        """
+        SELECT c.id, c.client_name, c.business_id, b.name AS business_name
+        FROM core.clients c JOIN core.businesses b ON b.id = c.business_id
+        WHERE c.id = %s
+        """,
+        (client_id,),
+    )
+    client = cur.fetchone()
+    if not client:
+        return None
+
+    business_id = str(client['business_id'])
+    if business_id == INDIVIDUAL_BIZ_ID:
+        cur.execute("SELECT count(*) AS n FROM core.transactions_raw WHERE individual_id = %s", (client_id,))
+        return {
+            'scenario': 'individual',
+            'client_name': client['client_name'],
+            'business_name': None,
+            'transaction_count': cur.fetchone()['n'],
+            'will_delete_business': False,
+            'reassign_to': None,
+        }
+
+    cur.execute("SELECT count(*) AS n FROM core.clients WHERE business_id = %s AND id <> %s", (business_id, client_id))
+    remaining = cur.fetchone()['n']
+    if remaining == 0:
+        cur.execute("SELECT count(*) AS n FROM core.transactions_raw WHERE business_id = %s", (business_id,))
+        return {
+            'scenario': 'business_last',
+            'client_name': client['client_name'],
+            'business_name': client['business_name'],
+            'transaction_count': cur.fetchone()['n'],
+            'will_delete_business': True,
+            'reassign_to': None,
+        }
+
+    target = _reassign_target(cur, business_id, client_id)
+    cur.execute("SELECT count(*) AS n FROM core.transactions_raw WHERE individual_id = %s", (client_id,))
+    return {
+        'scenario': 'business_member',
+        'client_name': client['client_name'],
+        'business_name': client['business_name'],
+        'transaction_count': cur.fetchone()['n'],
+        'will_delete_business': False,
+        'reassign_to': target['client_name'] if target else None,
+    }
+
+
+def _wipe_individual(cur, client_id):
+    # Child-to-parent order so NOT NULL FKs are never violated mid-delete.
+    cur.execute("DELETE FROM core.transactions_notifications WHERE individual_id = %s", (client_id,))
+    cur.execute("DELETE FROM core.transactions_classified WHERE individual_id = %s", (client_id,))
+    cur.execute("DELETE FROM core.transactions_enriched WHERE individual_id = %s OR assigned_individual_id = %s", (client_id, client_id))
+    cur.execute("DELETE FROM core.transactions_raw WHERE individual_id = %s", (client_id,))
+    cur.execute("DELETE FROM core.category_rules WHERE individual_id = %s", (client_id,))
+    cur.execute("DELETE FROM core.categories WHERE individual_id = %s", (client_id,))
+    cur.execute("DELETE FROM core.clients WHERE id = %s", (client_id,))
+
+
+def _wipe_business(cur, business_id):
+    cur.execute("DELETE FROM core.transactions_notifications WHERE business_id = %s", (business_id,))
+    cur.execute("DELETE FROM core.transactions_classified WHERE business_id = %s", (business_id,))
+    cur.execute("DELETE FROM core.transactions_enriched WHERE business_id = %s", (business_id,))
+    cur.execute("DELETE FROM core.transactions_raw WHERE business_id = %s", (business_id,))
+    cur.execute("DELETE FROM core.category_rules WHERE business_id = %s", (business_id,))
+    cur.execute("DELETE FROM core.categories WHERE business_id = %s", (business_id,))
+    cur.execute("DELETE FROM core.clients WHERE business_id = %s", (business_id,))
+    cur.execute("DELETE FROM core.businesses WHERE id = %s", (business_id,))
+
+
+def _reassign_and_delete_member(cur, client_id, target_id):
+    cur.execute("UPDATE core.transactions_raw SET individual_id = %s WHERE individual_id = %s", (target_id, client_id))
+    cur.execute("UPDATE core.transactions_enriched SET individual_id = %s WHERE individual_id = %s", (target_id, client_id))
+    cur.execute("UPDATE core.transactions_enriched SET assigned_individual_id = %s WHERE assigned_individual_id = %s", (target_id, client_id))
+    cur.execute("UPDATE core.transactions_classified SET individual_id = %s WHERE individual_id = %s", (target_id, client_id))
+    cur.execute("UPDATE core.transactions_notifications SET individual_id = %s WHERE individual_id = %s", (target_id, client_id))
+    # The departing member's own (individual-scoped) categories/rules go away;
+    # business-level ones (individual_id IS NULL) are untouched.
+    cur.execute("DELETE FROM core.category_rules WHERE individual_id = %s", (client_id,))
+    cur.execute("DELETE FROM core.categories WHERE individual_id = %s", (client_id,))
+    cur.execute("DELETE FROM core.clients WHERE id = %s", (client_id,))
+
+
+@admin_bp.route('/api/clients/<client_id>/delete-impact', methods=['GET'])
+@admin_required_api
+def delete_impact(client_id):
+    try:
+        conn = get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                impact = _delete_impact(cur, client_id)
+        finally:
+            conn.close()
+        if impact is None:
+            return jsonify({'error': 'client not found'}), 404
+        return jsonify(impact)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/api/clients/<client_id>', methods=['DELETE'])
+@admin_required_api
+def delete_client(client_id):
+    body = request.get_json(silent=True) or {}
+    expected = os.environ.get('ADMIN_PASSWORD', '')
+    if not expected:
+        return jsonify({'error': 'ADMIN_PASSWORD not configured'}), 500
+    if body.get('password') != expected:
+        return jsonify({'error': 'forbidden'}), 403
+
+    try:
+        conn = get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT id, business_id FROM core.clients WHERE id = %s", (client_id,))
+                client = cur.fetchone()
+                if not client:
+                    return jsonify({'error': 'client not found'}), 404
+
+                business_id = str(client['business_id'])
+                if business_id == INDIVIDUAL_BIZ_ID:
+                    _wipe_individual(cur, client_id)
+                    result = 'individual_deleted'
+                else:
+                    cur.execute(
+                        "SELECT count(*) AS n FROM core.clients WHERE business_id = %s AND id <> %s",
+                        (business_id, client_id),
+                    )
+                    if cur.fetchone()['n'] == 0:
+                        _wipe_business(cur, business_id)
+                        result = 'business_deleted'
+                    else:
+                        target = _reassign_target(cur, business_id, client_id)
+                        _reassign_and_delete_member(cur, client_id, str(target['id']))
+                        result = 'member_deleted'
+            conn.commit()
+        finally:
+            conn.close()
+        return jsonify({'ok': True, 'result': result})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

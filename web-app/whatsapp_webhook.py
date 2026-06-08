@@ -368,6 +368,29 @@ def receive():
     return "ok", 200
 
 
+def _log_status(status: dict) -> None:
+    """Log a Meta delivery-status callback (sent / delivered / read / failed).
+
+    Failures carry an errors[] array — surfacing code/title/details here means a
+    problem like 131042 (payment method) shows up directly in journalctl instead
+    of only in Meta's dashboard.
+    """
+    state = status.get("status")
+    recipient = status.get("recipient_id")
+    wamid = status.get("id")
+    errors = status.get("errors") or []
+    if state == "failed" or errors:
+        for err in errors or [{}]:
+            details = (err.get("error_data") or {}).get("details")
+            log.error(
+                f"  WA status=failed → {recipient} | wamid={wamid} | "
+                f"code={err.get('code')} | title={err.get('title')!r}"
+                + (f" | details={details!r}" if details else "")
+            )
+    else:
+        log.info(f"  WA status={state} → {recipient} | wamid={wamid}")
+
+
 def _process_payload(payload: dict) -> None:
     for entry in payload.get("entry", []):
         for change in entry.get("changes", []):
@@ -375,6 +398,8 @@ def _process_payload(payload: dict) -> None:
             messages = value.get("messages") or []
             statuses = value.get("statuses") or []
             log.info(f"WA payload: {len(messages)} message(s), {len(statuses)} status(es)")
+            for s in statuses:
+                _log_status(s)
             from_phone = None
             for m in messages:
                 from_phone = m.get("from") or from_phone

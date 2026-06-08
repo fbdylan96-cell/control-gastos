@@ -198,20 +198,28 @@ def read_headers(full_msg):
 
 def detect_client(headers, clients):
     """
-    Match To: (or Delivered-To:) against core.clients.username values.
-    Returns matching client dict or None.
-    clients: list of dicts with at least 'username', 'id', 'business_id'.
+    Match a (possibly forwarded) bank email to a client by checking To: and
+    Delivered-To: against BOTH the client's username and their unique
+    email_forward alias. Covers the two forwarding styles we see:
+      - Gmail auto-forward: original recipient kept in To: (matches username);
+        the gastos+alias destination appears in Delivered-To: (matches email_forward).
+      - Outlook 'FW': To: becomes the gastos+alias address (matches email_forward),
+        while the username only appears in From:/body.
+    Both keys are unique full strings, so substring matching is safe.
+    Returns the matching client dict or None.
+    clients: list of dicts with at least 'username', 'email_forward', 'id', 'business_id'.
     """
     candidates = [
         (headers.get("to") or "").lower(),
         (headers.get("delivered_to") or "").lower(),
     ]
     for client in clients:
-        uname = (client.get("username") or "").lower()
-        if not uname:
-            continue
-        for c in candidates:
-            if uname in c:
+        keys = [
+            (client.get("username") or "").lower(),
+            (client.get("email_forward") or "").lower(),
+        ]
+        for key in keys:
+            if key and any(key in c for c in candidates):
                 return client
     return None
 

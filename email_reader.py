@@ -80,6 +80,28 @@ def _handle_possible_duplicate(conn, enriched_row):
     return True
 
 
+def _enrich_and_classify(conn, raw_row, client):
+    """Run enrichment → duplicate check → classification for one raw row.
+
+    Shared by the normal per-message path and the stranded-row recovery paths,
+    so a raw row that was committed but never enriched can be resumed here.
+    """
+    enriched_row = enricher.enrich_raw(raw_row, conn=conn, client=client)
+    db.insert_enriched_transaction(conn, enriched_row)
+    log.info(f"  Inserted enriched row | status={enriched_row['transaction_status']} | bank={enriched_row['bank']}")
+
+    if enriched_row["transaction_status"] == "Descartado":
+        log.info("  Status=Descartado — pipeline stopped, no classification or notification")
+        return
+
+    if _handle_possible_duplicate(conn, enriched_row):
+        return
+
+    if enriched_row.get("transaction_approval") != "Denegada":
+        classifier.classify_transaction(conn, enriched_row)
+        log.info(f"  Classification done")
+
+
 def process_one_message(service, msg_meta, clients, conn):
     msg_id = msg_meta["id"]
     full_msg = gmail_client.get_message_full(service, msg_id)
@@ -93,33 +115,58 @@ def process_one_message(service, msg_meta, clients, conn):
         gmail_client.mark_as_read(service, msg_id)
         return
 
-    if db.message_exists(conn, client["id"], headers["message_id"]):
-        log.info(f"  Duplicate {msg_id} — skipping")
-        gmail_client.mark_as_read(service, msg_id)
-        return
+    raw_row = db.get_raw_transaction(conn, client["id"], headers["message_id"])
+    if raw_row is not None:
+        # A raw row without its enriched counterpart means a previous run failed
+        # mid-pipeline — resume from enrichment instead of dropping the message.
+        if db.enriched_exists(conn, raw_row["id"]):
+            log.info(f"  Duplicate {msg_id} — skipping")
+            gmail_client.mark_as_read(service, msg_id)
+            return
+        log.warning(f"  Raw row {raw_row['id']} has no enriched row — resuming pipeline")
+    else:
+        raw_row = email_parser.build_raw_row(full_msg, client, GMAIL_LABEL)
+        db.insert_raw_transaction(conn, raw_row)
+        log.info(f"  Inserted raw row | year_month={raw_row['year_month']} | client={client['email_forward']}")
 
-    row = email_parser.build_raw_row(full_msg, client, GMAIL_LABEL)
-    db.insert_raw_transaction(conn, row)
-    log.info(f"  Inserted raw row | year_month={row['year_month']} | client={client['email_forward']}")
-
-    enriched_row = enricher.enrich_raw(row, conn=conn, client=client)
-    db.insert_enriched_transaction(conn, enriched_row)
-    log.info(f"  Inserted enriched row | status={enriched_row['transaction_status']} | bank={enriched_row['bank']}")
-
-    if enriched_row["transaction_status"] == "Descartado":
-        log.info("  Status=Descartado — pipeline stopped, no classification or notification")
-        gmail_client.mark_as_read(service, msg_id)
-        return
-
-    if _handle_possible_duplicate(conn, enriched_row):
-        gmail_client.mark_as_read(service, msg_id)
-        return
-
-    if enriched_row.get("transaction_approval") != "Denegada":
-        classifier.classify_transaction(conn, enriched_row)
-        log.info(f"  Classification done")
-
+    _enrich_and_classify(conn, raw_row, client)
     gmail_client.mark_as_read(service, msg_id)
+
+
+def sweep_stranded(conn, clients):
+    """Rescue rows stranded by past mid-pipeline failures. Returns rows processed.
+
+    Covers the two gaps a crash can leave behind:
+      - raw rows that never got an enriched row (resumed from enrichment)
+      - enriched rows that never got classified (resumed from classification)
+    Both lookups are NOT EXISTS probes, so healthy cycles cost two cheap queries.
+    """
+    processed = 0
+    clients_by_id = {str(c["id"]): c for c in clients}
+
+    stranded_raws = db.get_unenriched_raws(conn)
+    if stranded_raws:
+        log.warning(f"Sweep: {len(stranded_raws)} raw row(s) without enriched row — resuming")
+        for raw_row in stranded_raws:
+            try:
+                _enrich_and_classify(conn, raw_row, clients_by_id.get(str(raw_row["individual_id"])))
+                processed += 1
+            except Exception as e:
+                log.error(f"  Sweep failed for raw_id={raw_row['id']}: {e}")
+                conn.rollback()
+
+    stranded_enriched = db.get_unclassified_enriched(conn)
+    if stranded_enriched:
+        log.warning(f"Sweep: {len(stranded_enriched)} enriched row(s) without classification — resuming")
+        for enriched_row in stranded_enriched:
+            try:
+                classifier.classify_transaction(conn, enriched_row)
+                processed += 1
+            except Exception as e:
+                log.error(f"  Sweep failed for enriched id={enriched_row['id']}: {e}")
+                conn.rollback()
+
+    return processed
 
 
 def run_once(service, conn):
@@ -129,18 +176,47 @@ def run_once(service, conn):
         return
 
     messages = gmail_client.find_unread_label_messages(service, GMAIL_LABEL, MAX_PER_RUN)
-    if not messages:
-        return
+    if messages:
+        log.info(f"Found {len(messages)} unread message(s) to process.")
+        for msg_meta in messages:
+            try:
+                process_one_message(service, msg_meta, clients, conn)
+            except Exception as e:
+                log.error(f"Error processing message {msg_meta['id']}: {e}")
+                # Clear any aborted transaction so this failure can't poison the
+                # rest of the cycle. If rollback itself fails the connection is
+                # broken — let it propagate so main() reconnects.
+                conn.rollback()
 
-    log.info(f"Found {len(messages)} unread message(s) to process.")
-    for msg_meta in messages:
-        try:
-            process_one_message(service, msg_meta, clients, conn)
-        except Exception as e:
-            log.error(f"Error processing message {msg_meta['id']}: {e}")
+    swept = sweep_stranded(conn, clients)
 
-    notifier.run_notifications(conn, service)
-    whatsapp_notifier.run_whatsapp_notifications(conn)
+    if messages or swept:
+        notifier.run_notifications(conn, service)
+        whatsapp_notifier.run_whatsapp_notifications(conn)
+
+
+def _recover_connection(conn):
+    """Return a usable connection after a cycle failed.
+
+    First try rollback (clears an aborted transaction on a live connection);
+    if that fails the connection itself is broken, so open a fresh one.
+    """
+    try:
+        conn.rollback()
+        return conn
+    except Exception:
+        pass
+    try:
+        conn.close()
+    except Exception:
+        pass
+    try:
+        new_conn = db.get_connection()
+        log.warning("DB connection was broken — reconnected.")
+        return new_conn
+    except Exception as e:
+        log.error(f"DB reconnect failed (will retry next cycle): {e}")
+        return conn
 
 
 def main():
@@ -156,6 +232,7 @@ def main():
             run_once(service, conn)
         except Exception as e:
             log.error(f"Poller error: {e}")
+            conn = _recover_connection(conn)
         time.sleep(POLL_INTERVAL)
 
 

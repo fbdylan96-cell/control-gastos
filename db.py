@@ -49,6 +49,39 @@ def get_business_members(conn, business_id, exclude_id):
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
+def get_raw_transaction(conn, individual_id, message_id):
+    """Return the raw row for (individual_id, message_id) as a dict, or None.
+
+    Selects the columns enricher.enrich_raw needs so a stranded raw row
+    (inserted but never enriched) can be resumed from this dict alone.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, individual_id, business_id, subject,
+                   from_email, body_text_full, body_condensed
+            FROM core.transactions_raw
+            WHERE individual_id = %s AND message_id = %s
+            """,
+            (str(individual_id), message_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+
+
+def enriched_exists(conn, raw_id):
+    """True when the raw row already has its enriched counterpart."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM core.transactions_enriched WHERE raw_id = %s LIMIT 1",
+            (str(raw_id),),
+        )
+        return cur.fetchone() is not None
+
+
 def message_exists(conn, individual_id, message_id):
     with conn.cursor() as cur:
         cur.execute(

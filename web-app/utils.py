@@ -34,9 +34,15 @@ def gen_email_forward(client_name: str) -> str:
 
     Format: gastos+{name}.{suffix}@investorcr.com
     where suffix is 4 random lowercase alphanumeric characters.
+
+    The name slug is reduced to ASCII a-z0-9 (accents decomposed and dropped,
+    punctuation removed) so the alias is always a valid email local part —
+    client_name itself keeps its accents everywhere else in the system.
     """
     suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
-    name_slug = client_name.lower().replace(' ', '')
+    nfkd = unicodedata.normalize('NFKD', client_name)
+    ascii_name = nfkd.encode('ascii', 'ignore').decode('ascii')
+    name_slug = re.sub(r'[^a-z0-9]', '', ascii_name.lower()) or 'cliente'
     return f'gastos+{name_slug}.{suffix}@investorcr.com'
 
 

@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from bccr import SW
 
 code_list = {
+    'EUR': 333,
     'JPY': 325,
     'CHF': 326,
     'CAD': 328,
@@ -47,6 +48,11 @@ code_list = {
     'CRC': 318,
 }
 
+# BCCR quotes these indicators as USD per unit of currency (e.g. EUR 333 ≈ 1.16
+# USD per EUR), the inverse of our rate_vs_usd convention (units per 1 USD), so
+# their fetched values must be inverted before storing.
+inverted_codes = {'EUR'}
+
 
 def get_latest_rates(days_back: int = 15) -> dict:
     """Fetch the latest non-null BCCR rate for every currency in code_list.
@@ -70,6 +76,9 @@ def get_latest_rates(days_back: int = 15) -> dict:
             latest_rates[code] = None
         else:
             col = exc_rate_daily[code].dropna()
-            latest_rates[code] = float(col.iloc[-1]) if not col.empty else None
+            value = float(col.iloc[-1]) if not col.empty else None
+            if value is not None and code in inverted_codes:
+                value = (1.0 / value) if value != 0 else None
+            latest_rates[code] = value
 
     return latest_rates

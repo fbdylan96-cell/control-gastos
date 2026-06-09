@@ -418,6 +418,7 @@ def get_pending_email_notifications(conn):
                 e.amount_local,
                 e.currency_local,
                 e.desc_guess,
+                e.transaction_type_guess,
                 r.local_date
             FROM core.transactions_notifications n
             JOIN core.clients              c  ON c.id  = n.individual_id

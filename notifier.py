@@ -21,6 +21,14 @@ from db import (get_budget_and_spending, get_categories,
 
 log = logging.getLogger(__name__)
 
+# Wording per transaction direction — emails previously said "gasto" even for credits.
+_TYPE_WORD = {"debito": "gasto", "credito": "ingreso"}
+_TYPE_WORD_DEFAULT = "movimiento"
+
+
+def _type_word(notif: dict) -> str:
+    return _TYPE_WORD.get(notif.get("transaction_type_guess"), _TYPE_WORD_DEFAULT)
+
 # ---------------------------------------------------------------------------
 # Signed URL helpers
 # ---------------------------------------------------------------------------
@@ -87,7 +95,8 @@ def _build_email_html(
     monthly_budget: float | None = None,
     total_month_spending: float | None = None,
 ) -> str:
-    merchant = html.escape(notif.get("merchant") or "Gasto")
+    tipo_word = _type_word(notif)
+    merchant = html.escape(notif.get("merchant") or tipo_word.capitalize())
     desc = html.escape(notif.get("desc_guess") or "")
     date_str = html.escape(_fmt_date(notif.get("local_date")))
     amount_str = html.escape(_fmt_amount(
@@ -148,7 +157,7 @@ def _build_email_html(
 <div style="font-family:Arial,sans-serif;line-height:1.4;color:#111;max-width:560px;">
 
   <div style="font-size:17px;font-weight:700;margin-bottom:6px;">
-    Se registró un gasto
+    Se registró un {tipo_word}
   </div>
 
   <div style="margin-bottom:12px;">
@@ -212,11 +221,12 @@ def run_notifications(conn, service) -> int:
 
             html_body = _build_email_html(notif, categories, monthly_budget, total_month_spending)
 
-            merchant = notif.get("merchant") or "Gasto"
+            tipo_word = _type_word(notif).capitalize()
+            merchant = notif.get("merchant") or tipo_word
             cat = notif.get("final_category") or ""
             currency = notif.get("currency_guess") or ""
             amount = notif.get("amount_guess") or ""
-            subject = f"Gasto: {currency} {amount} | {cat} | {merchant}"[:140]
+            subject = f"{tipo_word}: {currency} {amount} | {cat} | {merchant}"[:140]
 
             gmail_client.send_email(service, to_email, subject, html_body)
             mark_email_sent(conn, notification_id)

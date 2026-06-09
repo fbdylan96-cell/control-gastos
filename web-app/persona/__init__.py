@@ -191,8 +191,12 @@ def transacciones_reclassify():
                 """,
                 (final_category, final_subcategory, notification_id, session["user_id"]),
             )
+            updated = cur.rowcount
         conn.commit()
-        flash("Reclasificación guardada.", "success")
+        if updated:
+            flash("Reclasificación guardada.", "success")
+        else:
+            flash("No se encontró la transacción para actualizar.", "warning")
     except Exception as e:
         flash(f"Error al guardar: {e}", "danger")
     finally:
@@ -312,6 +316,7 @@ def transacciones_pendientes_save():
                 """,
                 (tipo, enriched_id, session["user_id"]),
             )
+            updated = cur.rowcount
             if notification_id and final_category:
                 cur.execute(
                     """
@@ -325,7 +330,10 @@ def transacciones_pendientes_save():
                     (final_category, final_subcategory, notification_id, session["user_id"]),
                 )
         conn.commit()
-        flash("Transacción actualizada.", "success")
+        if updated:
+            flash("Transacción actualizada.", "success")
+        else:
+            flash("No se encontró la transacción para actualizar.", "warning")
     except Exception as e:
         flash(f"Error al guardar: {e}", "danger")
     finally:

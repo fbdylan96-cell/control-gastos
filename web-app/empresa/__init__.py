@@ -144,7 +144,7 @@ def transacciones():
                 JOIN core.transactions_raw tr ON te.raw_id = tr.id
                 LEFT JOIN core.transactions_classified tc ON tc.raw_id = tr.id
                 LEFT JOIN core.transactions_notifications tn ON tn.classified_id = tc.id
-                WHERE tr.individual_id = %s
+                WHERE te.assigned_individual_id = %s
                   AND tr.local_date >= NOW() - INTERVAL '24 hours'
                   AND te.transaction_status NOT IN ('Descartado', 'Duplicado')
                   AND te.transaction_type_guess != 'unknown'
@@ -197,8 +197,12 @@ def transacciones_reclassify():
                 """,
                 (final_category, final_subcategory, notification_id, session["user_id"]),
             )
+            updated = cur.rowcount
         conn.commit()
-        flash("Reclasificación guardada.", "success")
+        if updated:
+            flash("Reclasificación guardada.", "success")
+        else:
+            flash("No se encontró la transacción para actualizar.", "warning")
     except Exception as e:
         flash(f"Error al guardar: {e}", "danger")
     finally:
@@ -216,7 +220,7 @@ def _count_pending(conn, individual_id):
             SELECT COUNT(*)
             FROM core.transactions_enriched te
             JOIN core.transactions_raw tr ON te.raw_id = tr.id
-            WHERE tr.individual_id = %s
+            WHERE te.assigned_individual_id = %s
               AND te.transaction_type_guess = 'unknown'
               AND te.transaction_approval = 'Aprobada'
               AND te.transaction_status NOT IN ('Descartado', 'Duplicado')
@@ -261,7 +265,7 @@ def transacciones_pendientes():
                 JOIN core.transactions_raw tr ON te.raw_id = tr.id
                 LEFT JOIN core.transactions_classified tc ON tc.raw_id = tr.id
                 LEFT JOIN core.transactions_notifications tn ON tn.classified_id = tc.id
-                WHERE tr.individual_id = %s
+                WHERE te.assigned_individual_id = %s
                   AND te.transaction_type_guess = 'unknown'
                   AND te.transaction_approval = 'Aprobada'
                   AND te.transaction_status NOT IN ('Descartado', 'Duplicado')
@@ -313,10 +317,11 @@ def transacciones_pendientes_save():
                 """
                 UPDATE core.transactions_enriched
                 SET transaction_type_guess = %s
-                WHERE id = %s AND individual_id = %s
+                WHERE id = %s AND assigned_individual_id = %s
                 """,
                 (tipo, enriched_id, session["user_id"]),
             )
+            updated = cur.rowcount
             if notification_id and final_category:
                 cur.execute(
                     """
@@ -330,7 +335,10 @@ def transacciones_pendientes_save():
                     (final_category, final_subcategory, notification_id, session["user_id"]),
                 )
         conn.commit()
-        flash("Transacción actualizada.", "success")
+        if updated:
+            flash("Transacción actualizada.", "success")
+        else:
+            flash("No se encontró la transacción para actualizar.", "warning")
     except Exception as e:
         flash(f"Error al guardar: {e}", "danger")
     finally:

@@ -9,11 +9,24 @@ from utils import clean_merchant_key
 
 log = logging.getLogger(__name__)
 
+# Arbitrary constant identifying the rule-ingestion job across all processes.
+_RULE_INGESTION_LOCK_KEY = 815001
+
 
 def run_rule_ingestion():
-    log.info("Rule ingestion: starting")
     conn = get_connection()
     try:
+        # Each gunicorn worker runs its own scheduler, so this job fires once
+        # per worker at the same instant. A session-level advisory lock lets
+        # only one of them do the work; the lock is released automatically
+        # when this connection closes (the finally below).
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (_RULE_INGESTION_LOCK_KEY,))
+            if not cur.fetchone()[0]:
+                log.info("Rule ingestion: another worker is already running it — skipping")
+                return
+
+        log.info("Rule ingestion: starting")
         rows = get_notifications_past_window(conn)
         log.info(f"Rule ingestion: {len(rows)} notification(s) to process")
         ingested = 0

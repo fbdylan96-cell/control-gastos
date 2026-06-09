@@ -1,9 +1,14 @@
 import os
+import uuid
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 import psycopg2
 from dotenv import find_dotenv, load_dotenv
 
 load_dotenv(find_dotenv())
+
+_CR_TZ = ZoneInfo("America/Costa_Rica")
 
 
 def get_connection():
@@ -102,5 +107,100 @@ def update_reclassification(conn, notification_id: str, category: str, subcatego
             WHERE id = %s
             """,
             (category, subcategory or None, action_value, notification_id),
+        )
+    conn.commit()
+
+
+def compute_amount_local(conn, amount, currency):
+    """Convert `amount` in `currency` to CRC. Returns (amount_local, fx_rate, fx_rate_date).
+
+    CRC is identity (fx_rate=1). For USD/EUR uses the latest core.exchange_rates
+    cross-section (amount_local = amount * rate_vs_usd[CRC] / rate_vs_usd[currency]).
+    Returns (None, None, None) when conversion isn't possible.
+    """
+    if amount is None or not currency:
+        return None, None, None
+    cg = currency.upper()
+    if cg == "CRC":
+        return round(float(amount), 2), 1.0, date.today()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            WITH latest AS (SELECT MAX(rate_date) AS d FROM core.exchange_rates)
+            SELECT crc.rate_vs_usd, fx.rate_vs_usd, latest.d
+            FROM latest
+            LEFT JOIN core.exchange_rates crc ON crc.rate_date = latest.d AND crc.currency = 'CRC'
+            LEFT JOIN core.exchange_rates fx  ON fx.rate_date  = latest.d AND fx.currency  = %s
+            """,
+            (cg,),
+        )
+        row = cur.fetchone()
+    if not row or row[2] is None:
+        return None, None, None
+    crc_rate, fx_src, rate_date = row
+    if crc_rate is None or fx_src is None or float(fx_src) == 0:
+        return None, None, None
+    fx_rate = float(crc_rate) / float(fx_src)
+    return round(float(amount) * fx_rate, 2), fx_rate, rate_date
+
+
+def insert_manual_transaction(conn, *, individual_id, business_id, merchant, amount,
+                              currency, txn_type, category, subcategory):
+    """Insert a user-entered transaction across all four pipeline tables so it behaves
+    like any ingested one. The notification row is pre-marked notified (email + WhatsApp)
+    so the notifiers never send anything for it.
+    """
+    now_cr = datetime.now(_CR_TZ)
+    raw_id = str(uuid.uuid4())
+    enriched_id = str(uuid.uuid4())
+    classified_id = str(uuid.uuid4())
+    notif_id = str(uuid.uuid4())
+    message_id = f"manual-{uuid.uuid4()}"
+    body = f"Transacción manual: {merchant or ''} {currency} {amount}".strip()
+
+    amount_local, fx_rate, fx_rate_date = compute_amount_local(conn, amount, currency)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO core.transactions_raw
+                (id, individual_id, business_id, message_id, subject, body_text_full,
+                 ms_date, local_date, label_source, month, year, year_month)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'manual', %s, %s, %s)
+            """,
+            (raw_id, individual_id, business_id, message_id, "Transacción manual", body,
+             int(now_cr.timestamp() * 1000), now_cr,
+             now_cr.month, now_cr.year, now_cr.strftime("%Y-%m")),
+        )
+        cur.execute(
+            """
+            INSERT INTO core.transactions_enriched
+                (id, raw_id, individual_id, business_id, merchant_guess, amount_guess,
+                 currency_guess, desc_guess, transaction_type_guess, transaction_approval,
+                 transaction_status, ai_assistance, member_detected, assigned_individual_id,
+                 amount_local, currency_local, fx_rate, fx_rate_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'Aprobada',
+                    'Procesado', FALSE, FALSE, %s, %s, 'CRC', %s, %s)
+            """,
+            (enriched_id, raw_id, individual_id, business_id, merchant, amount,
+             currency, merchant, txn_type, individual_id,
+             amount_local, fx_rate, fx_rate_date),
+        )
+        cur.execute(
+            """
+            INSERT INTO core.transactions_classified
+                (id, raw_id, individual_id, business_id, merchant, category, subcategory, classified_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, NULL)
+            """,
+            (classified_id, raw_id, individual_id, business_id, merchant, category, subcategory),
+        )
+        cur.execute(
+            """
+            INSERT INTO core.transactions_notifications
+                (id, classified_id, individual_id, business_id, final_category, final_subcategory,
+                 email_notified, email_notified_at, whatsapp_notified, whatsapp_notified_at)
+            VALUES (%s, %s, %s, %s, %s, %s, TRUE, now(), TRUE, now())
+            """,
+            (notif_id, classified_id, individual_id, business_id, category, subcategory),
         )
     conn.commit()

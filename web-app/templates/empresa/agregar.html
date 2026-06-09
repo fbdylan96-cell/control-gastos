@@ -1,0 +1,63 @@
+{% extends "empresa/base.html" %}
+{% block title %}Añadir transacción — Empowered Investor{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <i class="bi bi-plus-circle"></i>
+  Añadir transacción
+</div>
+
+<p style="font-size:0.85rem; color:rgba(21,25,30,0.55); margin-bottom:1rem;">
+  Registrá manualmente un gasto o ingreso. Quedará a tu nombre y aparecerá en tus
+  transacciones como cualquier otra, sin enviar notificaciones.
+</p>
+
+<div class="ei-card" style="max-width:560px;">
+  <div class="ei-card-body">
+    <form method="POST" action="{{ url_for('empresa.agregar_transaccion') }}">
+
+      <label class="form-label-ei">Comercio</label>
+      <input type="text" name="merchant" class="ei-input" placeholder="Ej: Auto Mercado" required autofocus />
+
+      <div style="display:grid; grid-template-columns:1fr 120px; gap:10px; margin-top:0.85rem;">
+        <div>
+          <label class="form-label-ei">Monto</label>
+          <input type="number" name="amount" class="ei-input" min="0" step="0.01"
+                 placeholder="0.00" required />
+        </div>
+        <div>
+          <label class="form-label-ei">Moneda</label>
+          <select name="currency" class="ei-select">
+            <option value="CRC" selected>CRC</option>
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+          </select>
+        </div>
+      </div>
+
+      <label class="form-label-ei" style="margin-top:0.85rem;">Tipo</label>
+      <select name="tipo" class="ei-select" required>
+        <option value="">— seleccionar —</option>
+        <option value="debito">Débito (gasto)</option>
+        <option value="credito">Crédito (ingreso)</option>
+      </select>
+
+      <label class="form-label-ei" style="margin-top:0.85rem;">Clasificación</label>
+      <select name="category_value" class="ei-select" required>
+        <option value="">— seleccionar —</option>
+        {% for cat in categories %}
+        <option value="{{ cat.category }}|{{ cat.subcategory or '' }}">
+          {{ cat.category }}{% if cat.subcategory %} / {{ cat.subcategory }}{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+
+      <div style="margin-top:1.25rem;">
+        <button type="submit" class="btn-primary-ei">
+          <i class="bi bi-floppy"></i> Guardar
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -66,6 +66,12 @@
           </a>
         </li>
         <li>
+          <a href="{{ url_for('empresa.agregar_transaccion') }}"
+             class="nav-link {% if request.endpoint == 'empresa.agregar_transaccion' %}active{% endif %}">
+            <i class="bi bi-plus-circle"></i>Añadir transacciones
+          </a>
+        </li>
+        <li>
           <a href="{{ url_for('empresa.categorias') }}"
              class="nav-link {% if request.endpoint in ['empresa.categorias', 'empresa.categorias_template'] %}active{% endif %}">
             <i class="bi bi-tags"></i>Categorías

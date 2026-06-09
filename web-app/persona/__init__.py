@@ -11,7 +11,7 @@ from flask import (Blueprint, flash, jsonify, redirect, render_template,
 from openpyxl.utils import get_column_letter
 from werkzeug.security import check_password_hash
 
-from db import get_connection
+from db import get_connection, insert_manual_transaction
 from tools import finance
 
 persona_bp = Blueprint('persona', __name__)
@@ -332,6 +332,77 @@ def transacciones_pendientes_save():
         conn.close()
 
     return redirect(url_for("persona.transacciones_pendientes"))
+
+
+# ── Añadir transacciones ──────────────────────────────────────────────────────
+
+_VALID_CURRENCIES = ("CRC", "USD", "EUR")
+
+
+def _load_categories_persona(user_id):
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT category, subcategory
+                FROM core.categories
+                WHERE business_id = %s AND (individual_id = %s OR individual_id IS NULL)
+                ORDER BY category, subcategory NULLS FIRST
+                """,
+                (INDIVIDUAL_BIZ_ID, user_id),
+            )
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+@persona_bp.route("/agregar", methods=["GET", "POST"])
+@login_required
+def agregar_transaccion():
+    if request.method == "POST":
+        merchant = (request.form.get("merchant") or "").strip()
+        amount_raw = (request.form.get("amount") or "").strip()
+        currency = (request.form.get("currency") or "").strip().upper()
+        txn_type = (request.form.get("tipo") or "").strip()
+        parts = (request.form.get("category_value") or "").split("|", 1)
+        category = parts[0].strip() or None
+        subcategory = (parts[1].strip() or None) if len(parts) > 1 else None
+
+        try:
+            amount = round(float(amount_raw), 2)
+        except (TypeError, ValueError):
+            amount = None
+
+        if not merchant:
+            flash("Ingrese el comercio.", "danger")
+        elif amount is None or amount <= 0:
+            flash("Ingrese un monto válido mayor a cero.", "danger")
+        elif currency not in _VALID_CURRENCIES:
+            flash("Seleccione una moneda válida.", "danger")
+        elif txn_type not in ("debito", "credito"):
+            flash("Seleccione el tipo (débito o crédito).", "danger")
+        elif not category:
+            flash("Seleccione una clasificación.", "danger")
+        else:
+            conn = get_connection()
+            try:
+                insert_manual_transaction(
+                    conn,
+                    individual_id=session["user_id"],
+                    business_id=INDIVIDUAL_BIZ_ID,
+                    merchant=merchant, amount=amount, currency=currency,
+                    txn_type=txn_type, category=category, subcategory=subcategory,
+                )
+                flash("Transacción agregada correctamente.", "success")
+                return redirect(url_for("persona.transacciones"))
+            except Exception as e:
+                flash(f"Error al agregar la transacción: {e}", "danger")
+            finally:
+                conn.close()
+
+    return render_template("persona/agregar.html",
+                           categories=_load_categories_persona(session["user_id"]))
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────

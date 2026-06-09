@@ -113,7 +113,7 @@ def send_list_message(
     """Send an interactive List Message.
 
     sections: list of {"title": "...", "rows": [{"id": "...", "title": "...", "description": "..."}, ...]}
-    Meta hard limits: 10 sections, 10 rows per section, 100 rows total.
+    Meta hard limits: 10 sections, 10 rows per section, 10 rows total.
     Field caps: header 60, body 1024, footer 60, button 20, section title 24,
                 row title 24, row description 72, row id 200.
     """

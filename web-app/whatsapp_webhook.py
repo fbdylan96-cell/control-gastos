@@ -41,7 +41,11 @@ URL_EMPRESA = f"{WEBAPP_BASE_URL}/empresa/"
 ROW_TITLE_MAX = 20  # per PROMPT_requests.md
 SECTION_TITLE_MAX = 24
 ROW_DESCRIPTION_MAX = 72
-MAX_ROWS_TOTAL = 100
+# Meta caps an interactive list at 10 rows TOTAL across all sections (not 100).
+# Sending more returns (#131009) "Total row count exceed max allowed count: 10"
+# and the whole list fails, so the user gets nothing back. Businesses with more
+# than 10 category rows have their list truncated to the first 10.
+MAX_ROWS_TOTAL = 10
 MAX_ROWS_PER_SECTION = 10
 MAX_SECTIONS = 10
 

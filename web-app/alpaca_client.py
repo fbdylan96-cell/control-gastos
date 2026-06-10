@@ -69,6 +69,8 @@ def callback_url(blueprint: str) -> str:
     — OAuth requires the token exchange to repeat the authorize redirect_uri.
     """
     base = _require("WEBAPP_URL").rstrip("/")
+    if not base.startswith(("https://", "http://")):
+        base = f"https://{base}"  # tolerate a scheme-less WEBAPP_URL in .env
     return f"{base}/{blueprint}/inversion/callback"
 
 

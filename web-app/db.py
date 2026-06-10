@@ -164,14 +164,26 @@ def get_investment(conn, client_id):
 
 
 def set_investment_enabled(conn, client_id, enabled):
-    """Upsert the investment gate flag for a client (idempotent)."""
+    """Upsert the investment gate flag for a client (idempotent).
+
+    Disabling also wipes any stored broker token so a stale credential never
+    outlives the service it belongs to.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO core.client_investment (client_id, enabled)
             VALUES (%s, %s)
             ON CONFLICT (client_id) DO UPDATE
-                SET enabled = EXCLUDED.enabled, updated_at = now()
+                SET enabled      = EXCLUDED.enabled,
+                    token_cipher = CASE WHEN EXCLUDED.enabled
+                                        THEN core.client_investment.token_cipher END,
+                    token_nonce  = CASE WHEN EXCLUDED.enabled
+                                        THEN core.client_investment.token_nonce END,
+                    revoked_at   = CASE WHEN EXCLUDED.enabled
+                                        THEN core.client_investment.revoked_at
+                                        ELSE now() END,
+                    updated_at   = now()
             """,
             (str(client_id), bool(enabled)),
         )
@@ -179,18 +191,25 @@ def set_investment_enabled(conn, client_id, enabled):
 
 
 def store_broker_token(conn, client_id, token_cipher, token_nonce):
-    """Persist an encrypted broker token; clears any prior revocation."""
+    """Persist an encrypted broker token; clears any prior revocation.
+
+    Only stores when the client's investment row exists AND is enabled —
+    guards against the admin disabling the service mid-OAuth-flow. Returns
+    True when the token was actually stored.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
             UPDATE core.client_investment
             SET token_cipher = %s, token_nonce = %s,
                 connected_at = now(), revoked_at = NULL, updated_at = now()
-            WHERE client_id = %s
+            WHERE client_id = %s AND enabled = TRUE
             """,
             (psycopg2.Binary(token_cipher), psycopg2.Binary(token_nonce), str(client_id)),
         )
+        stored = cur.rowcount
     conn.commit()
+    return bool(stored)
 
 
 def revoke_broker_token(conn, client_id):

@@ -1,4 +1,5 @@
 import io
+import logging
 import secrets
 import uuid
 from datetime import date, datetime, timedelta
@@ -19,6 +20,8 @@ from db import (get_connection, get_investment, insert_manual_transaction,
 from tools import finance
 
 persona_bp = Blueprint('persona', __name__)
+
+log = logging.getLogger(__name__)
 
 INDIVIDUAL_BIZ_ID = '00000000-0000-0000-0000-000000009999'
 
@@ -499,9 +502,12 @@ def inversion():
             touch_broker_token_used(conn, session["user_id"])
             return render_template(
                 "persona/inversion.html", state="connected", portfolio=portfolio)
-        except Exception as e:  # noqa: BLE001 - show a recoverable error state
-            return render_template(
-                "persona/inversion.html", state="error", error=str(e))
+        except Exception:  # noqa: BLE001 - show a recoverable error state
+            log.exception(
+                "Error consultando el portafolio de Alpaca (client %s)",
+                session["user_id"],
+            )
+            return render_template("persona/inversion.html", state="error")
     finally:
         conn.close()
 
@@ -551,10 +557,13 @@ def inversion_callback():
         cipher, nonce = encrypt_token(token, aad=str(session["user_id"]))
         conn = get_connection()
         try:
-            store_broker_token(conn, session["user_id"], cipher, nonce)
+            stored = store_broker_token(conn, session["user_id"], cipher, nonce)
         finally:
             conn.close()
-        flash("Cuenta de Alpaca conectada correctamente.", "success")
+        if stored:
+            flash("Cuenta de Alpaca conectada correctamente.", "success")
+        else:
+            flash("El servicio de inversión no está habilitado para tu cuenta.", "warning")
     except Exception as e:  # noqa: BLE001
         flash(f"Error al conectar con Alpaca: {e}", "danger")
     return redirect(url_for("persona.inversion"))
@@ -568,7 +577,11 @@ def inversion_desconectar():
         revoke_broker_token(conn, session["user_id"])
     finally:
         conn.close()
-    flash("Cuenta de Alpaca desconectada.", "success")
+    flash(
+        "Cuenta de Alpaca desconectada. Si querés revocar también la autorización, "
+        "podés hacerlo desde tu cuenta de Alpaca.",
+        "success",
+    )
     return redirect(url_for("persona.inversion"))
 
 

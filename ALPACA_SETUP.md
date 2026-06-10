@@ -122,7 +122,11 @@ The two things that genuinely must be blinded are the **`CLIENT_SECRET`** and
    API keys), then return to the app.
 4. The tab shows portfolio value, positions, and the weekly / monthly / yearly
    percentage change — all read-only.
-5. They can **Desconectar** at any time (clears and revokes the stored token).
+5. They can **Desconectar** at any time. This deletes the stored token from our
+   database, so the app can no longer read anything. The OAuth *grant* itself
+   stays listed in the client's Alpaca account until they also revoke it there
+   (Alpaca dashboard → connected apps) — the disconnect flash message tells
+   them so.
 
 The consent is long-lived: Alpaca OAuth tokens do not auto-expire — they remain
-valid until the client revokes access (from Alpaca or via Desconectar).
+valid until the client revokes access from their Alpaca account.

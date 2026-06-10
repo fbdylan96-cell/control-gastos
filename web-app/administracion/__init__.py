@@ -210,12 +210,22 @@ def patch_client(client_id):
                     (body['active'], client_id)
                 )
             if 'investment_client' in body:
+                # Disabling also wipes any stored broker token so a stale
+                # credential never outlives the service it belongs to.
                 cur.execute(
                     """
                     INSERT INTO core.client_investment (client_id, enabled)
                     VALUES (%s, %s)
                     ON CONFLICT (client_id) DO UPDATE
-                        SET enabled = EXCLUDED.enabled, updated_at = now()
+                        SET enabled      = EXCLUDED.enabled,
+                            token_cipher = CASE WHEN EXCLUDED.enabled
+                                                THEN core.client_investment.token_cipher END,
+                            token_nonce  = CASE WHEN EXCLUDED.enabled
+                                                THEN core.client_investment.token_nonce END,
+                            revoked_at   = CASE WHEN EXCLUDED.enabled
+                                                THEN core.client_investment.revoked_at
+                                                ELSE now() END,
+                            updated_at   = now()
                     """,
                     (client_id, bool(body['investment_client'])),
                 )

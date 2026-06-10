@@ -1034,7 +1034,8 @@ def inversion():
                 bytes(inv["token_cipher"]), bytes(inv["token_nonce"]),
                 aad=str(session["user_id"]),
             )
-            portfolio = alpaca_client.get_portfolio_summary(token)
+            portfolio = alpaca_client.get_portfolio_summary_cached(
+                token, str(session["user_id"]))
             touch_broker_token_used(conn, session["user_id"])
             return render_template(
                 "empresa/inversion.html", state="connected", portfolio=portfolio)
@@ -1096,6 +1097,7 @@ def inversion_callback():
             stored = store_broker_token(conn, session["user_id"], cipher, nonce)
         finally:
             conn.close()
+        alpaca_client.invalidate_portfolio_cache(str(session["user_id"]))
         if stored:
             flash("Cuenta de Alpaca conectada correctamente.", "success")
         else:
@@ -1113,6 +1115,7 @@ def inversion_desconectar():
         revoke_broker_token(conn, session["user_id"])
     finally:
         conn.close()
+    alpaca_client.invalidate_portfolio_cache(str(session["user_id"]))
     flash(
         "Cuenta de Alpaca desconectada. Si querés revocar también la autorización, "
         "podés hacerlo desde tu cuenta de Alpaca.",

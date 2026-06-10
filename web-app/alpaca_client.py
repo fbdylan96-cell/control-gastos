@@ -18,6 +18,8 @@ as redirect URIs in the Alpaca OAuth app.
 """
 
 import os
+import threading
+import time
 from urllib.parse import urlencode
 
 import requests
@@ -25,7 +27,9 @@ import requests
 AUTHORIZE_URL = "https://app.alpaca.markets/oauth/authorize"
 TOKEN_URL = "https://api.alpaca.markets/oauth/token"
 
-_TIMEOUT = 15
+# Short timeout: with 2 sync gunicorn workers, a slow Alpaca must fail fast
+# rather than hold a worker (and with it the whole web app) for 15s per call.
+_TIMEOUT = 5
 
 
 class AlpacaConfigError(RuntimeError):
@@ -161,3 +165,34 @@ def get_portfolio_summary(token: str) -> dict:
         ],
         "changes": changes,
     }
+
+
+# ── Per-client cache ──────────────────────────────────────────────────────────
+#
+# get_portfolio_summary makes 5 serial Alpaca calls. The cache keeps page
+# refreshes from re-hitting Alpaca and, more importantly, keeps a slow Alpaca
+# from tying up a gunicorn worker on every view. Per-process (each worker has
+# its own copy), bounded by the number of connected investment clients.
+
+_CACHE_TTL_SECONDS = int(os.environ.get("ALPACA_CACHE_TTL_SECONDS", "180"))
+_cache_lock = threading.Lock()
+_portfolio_cache: dict[str, tuple[float, dict]] = {}
+
+
+def get_portfolio_summary_cached(token: str, cache_key: str) -> dict:
+    """get_portfolio_summary with a short TTL cache, keyed by client id."""
+    now = time.monotonic()
+    with _cache_lock:
+        hit = _portfolio_cache.get(cache_key)
+        if hit and now - hit[0] < _CACHE_TTL_SECONDS:
+            return hit[1]
+    summary = get_portfolio_summary(token)
+    with _cache_lock:
+        _portfolio_cache[cache_key] = (time.monotonic(), summary)
+    return summary
+
+
+def invalidate_portfolio_cache(cache_key: str) -> None:
+    """Drop a client's cached summary (call on connect/disconnect)."""
+    with _cache_lock:
+        _portfolio_cache.pop(cache_key, None)

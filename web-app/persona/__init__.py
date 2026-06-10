@@ -540,15 +540,20 @@ def inversion_conectar():
 def inversion_callback():
     expected = session.pop("alpaca_oauth_state", None)
     if not expected or request.args.get("state") != expected:
+        log.warning("Alpaca callback (persona): state mismatch | client=%s | args=%s",
+                    session.get("user_id"), dict(request.args))
         flash("Validación de seguridad fallida. Intentá conectar de nuevo.", "danger")
         return redirect(url_for("persona.inversion"))
 
     if request.args.get("error"):
+        log.warning("Alpaca callback (persona): provider error=%r desc=%r",
+                    request.args.get("error"), request.args.get("error_description"))
         flash(f"Alpaca rechazó la conexión: {request.args.get('error')}", "danger")
         return redirect(url_for("persona.inversion"))
 
     code = request.args.get("code", "").strip()
     if not code:
+        log.warning("Alpaca callback (persona): no authorization code received")
         flash("No se recibió el código de autorización de Alpaca.", "danger")
         return redirect(url_for("persona.inversion"))
 
@@ -566,8 +571,10 @@ def inversion_callback():
             flash("Cuenta de Alpaca conectada correctamente.", "success")
         else:
             flash("El servicio de inversión no está habilitado para tu cuenta.", "warning")
-    except Exception as e:  # noqa: BLE001
-        flash(f"Error al conectar con Alpaca: {e}", "danger")
+    except Exception:  # noqa: BLE001
+        log.exception("Alpaca callback (persona): token exchange failed | client=%s",
+                      session.get("user_id"))
+        flash("Error al conectar con Alpaca. Intentá de nuevo en unos minutos.", "danger")
     return redirect(url_for("persona.inversion"))
 
 

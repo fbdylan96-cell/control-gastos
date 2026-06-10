@@ -52,11 +52,21 @@
       <h2 style="font-size:1.35rem; font-weight:700; color:var(--dark); margin-bottom:0.8rem;">
         Conectá tu cuenta de Alpaca
       </h2>
-      <p style="font-size:0.95rem; line-height:1.6; color:rgba(21,25,30,0.7); margin-bottom:1.4rem;">
+      <p style="font-size:0.95rem; line-height:1.6; color:rgba(21,25,30,0.7); margin-bottom:1.1rem;">
         Autorizá el acceso de <strong>solo lectura</strong> para ver y seguir tu
         portafolio desde acá. No podemos operar ni mover dinero en tu cuenta:
         únicamente leemos el estado de tus inversiones.
       </p>
+      {# Alpaca-required disclosure language, shown at the time of connection. #}
+      <div style="background:rgba(21,25,30,0.04); border:1px solid rgba(21,25,30,0.12);
+                  border-radius:10px; padding:0.85rem 1rem; margin-bottom:1.4rem;
+                  text-align:left; font-size:0.8rem; line-height:1.55; color:rgba(21,25,30,0.65);">
+        <strong>Authorize Empowered Investor.</strong> By allowing Empowered Investor to access
+        your Alpaca account, you are granting Empowered Investor access to your account
+        information and authorization to place transactions in your account at your direction.
+        Alpaca does not warrant or guarantee that Empowered Investor will work as advertised
+        or expected. Before authorizing, learn more about Empowered Investor.
+      </div>
       <a href="{{ url_for(bp ~ '.inversion_conectar') }}"
          class="btn-mint-ei"
          style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">

@@ -407,6 +407,7 @@
         <button class="tab-btn active" onclick="switchTab('individuos', this)">Individuos</button>
         <button class="tab-btn"        onclick="switchTab('empresas',   this)">Empresas</button>
         <button class="tab-btn"        onclick="switchTab('clientes',   this)">Clientes Existentes</button>
+        <button class="tab-btn"        onclick="switchTab('modificar',  this)">Modificar Datos</button>
     </div>
 
     <!-- ══ Tab: Individuos ══ -->
@@ -522,6 +523,23 @@
         </div>
     </div>
 
+    <!-- ══ Tab: Modificar Datos ══ -->
+    <div class="tab-content" id="tab-modificar">
+        <div class="card">
+            <div class="table-top">
+                <div class="card-title" style="margin:0;padding:0;border:none">Modificar Datos de Clientes</div>
+                <button class="btn btn-outline btn-sm" onclick="loadEditClients()">↻ Actualizar</button>
+            </div>
+            <div style="margin-bottom:16px;">
+                <input type="text" id="editSearch" placeholder="Buscar por nombre..."
+                       oninput="filterEditClients()" style="max-width:300px;">
+            </div>
+            <div id="editWrap">
+                <div class="empty-state">Selecciona esta pestaña para cargar los clientes.</div>
+            </div>
+        </div>
+    </div>
+
 </div><!-- /container -->
 
 <!-- ─── Password Modal ─── -->
@@ -583,6 +601,7 @@ function switchTab(name, btn) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.getElementById('tab-' + name).classList.add('active');
     if (name === 'clientes') loadClients();
+    if (name === 'modificar') loadEditClients();
 }
 
 // ════════════ HELPERS ════════════
@@ -997,6 +1016,87 @@ async function toggleInvestment(clientId, current) {
         loadClients();
     } catch (err) {
         toast('Error: ' + err.message, 'error');
+    }
+}
+
+// ════════════ MODIFICAR DATOS ════════════
+async function loadEditClients() {
+    const wrap = document.getElementById('editWrap');
+    wrap.innerHTML = '<div class="empty-state">Cargando clientes...</div>';
+    try {
+        const data = await api('GET', API_BASE + '/api/clients');
+        if (!data || data.length === 0) {
+            wrap.innerHTML = '<div class="empty-state">No hay clientes registrados aún.</div>';
+            return;
+        }
+        wrap.innerHTML = data.map(editCard).join('');
+    } catch (err) {
+        wrap.innerHTML = `<div class="empty-state" style="color:var(--danger)">Error al cargar clientes: ${escHtml(err.message)}</div>`;
+    }
+}
+
+function editCard(c) {
+    const bizName = (!c.business_name || c.business_name === '__individual__') ? 'Individuo' : c.business_name;
+    return `<div class="member-card" data-name="${escHtml((c.client_name || '').toLowerCase())}">
+        <div class="member-card-top">
+            <span class="member-num">${escHtml(c.client_name)}</span>
+            <span style="font-size:12px;color:var(--gray-500)">${escHtml(bizName)} · ${escHtml(c.email_address || '')}</span>
+        </div>
+
+        <div class="form-group">
+            <label for="ed_phone_${c.id}">Número de teléfono</label>
+            <input type="tel" id="ed_phone_${c.id}" value="${escHtml(c.phone_number || '')}" placeholder="+506 0000 0000">
+        </div>
+
+        <div class="notif-section">
+            <div class="notif-title">Notificaciones / Servicios</div>
+            <div class="check-row">
+                <input type="checkbox" id="ed_email_${c.id}" ${c.email_notification ? 'checked' : ''}>
+                <label for="ed_email_${c.id}">Notificar por correo electrónico</label>
+            </div>
+            <div class="check-row">
+                <input type="checkbox" id="ed_wa_${c.id}" ${c.whatsapp_notification ? 'checked' : ''}>
+                <label for="ed_wa_${c.id}">Notificar por WhatsApp</label>
+            </div>
+            <div class="check-row">
+                <input type="checkbox" id="ed_inv_${c.id}" ${c.investment_enabled ? 'checked' : ''}>
+                <label for="ed_inv_${c.id}">Cliente de inversión (Alpaca)</label>
+            </div>
+        </div>
+
+        <div class="action-bar">
+            <button class="btn btn-primary btn-sm" onclick="saveEditClient('${c.id}')">💾 Guardar cambios</button>
+        </div>
+    </div>`;
+}
+
+function filterEditClients() {
+    const term = document.getElementById('editSearch').value.toLowerCase().trim();
+    document.querySelectorAll('#editWrap .member-card').forEach(card => {
+        card.style.display = (card.dataset.name || '').includes(term) ? '' : 'none';
+    });
+}
+
+async function saveEditClient(id) {
+    const phone = document.getElementById(`ed_phone_${id}`).value.trim();
+    const email = document.getElementById(`ed_email_${id}`).checked;
+    const wa    = document.getElementById(`ed_wa_${id}`).checked;
+    const inv   = document.getElementById(`ed_inv_${id}`).checked;
+
+    if (wa && !phone) {
+        return toast('Para notificar por WhatsApp se requiere un número de teléfono.', 'error');
+    }
+
+    try {
+        await api('PATCH', `${API_BASE}/api/clients/${id}`, {
+            phone_number:          phone || null,
+            email_notification:    email,
+            whatsapp_notification: wa,
+            investment_client:     inv,
+        });
+        toast('Datos actualizados correctamente.', 'success');
+    } catch (err) {
+        toast('Error al guardar: ' + err.message, 'error');
     }
 }
 

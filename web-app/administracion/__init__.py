@@ -204,10 +204,27 @@ def patch_client(client_id):
     try:
         conn = get_connection()
         with conn.cursor() as cur:
-            if 'active' in body:
+            # Editable core.clients columns. Keys map to fixed column names
+            # (never user-supplied), so the dynamic SET is injection-safe.
+            editable = {
+                'active': 'active',
+                'phone_number': 'phone_number',
+                'email_notification': 'email_notification',
+                'whatsapp_notification': 'whatsapp_notification',
+            }
+            sets, params = [], []
+            for key, col in editable.items():
+                if key in body:
+                    value = body[key]
+                    if key == 'phone_number':
+                        value = (str(value).strip() or None) if value is not None else None
+                    sets.append(f"{col} = %s")
+                    params.append(value)
+            if sets:
+                params.append(client_id)
                 cur.execute(
-                    "UPDATE core.clients SET active = %s WHERE id = %s",
-                    (body['active'], client_id)
+                    f"UPDATE core.clients SET {', '.join(sets)} WHERE id = %s",
+                    params,
                 )
             if 'investment_client' in body:
                 # Disabling also wipes any stored broker token so a stale

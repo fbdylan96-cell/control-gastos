@@ -1,0 +1,185 @@
+{# Investment panel shared by persona and empresa.
+   Expects:
+     state: 'disabled' | 'connect' | 'connected' | 'error'
+     bp:    blueprint name ('persona' or 'empresa') for url_for
+     portfolio: dict (when state == 'connected')
+     error: str (when state == 'error')
+#}
+<div class="page-heading">
+  <i class="bi bi-graph-up-arrow"></i>
+  Portafolio de Inversión
+</div>
+
+{% if state == 'disabled' %}
+  {# Not an investment client → original marketing placeholder. #}
+  <div class="ei-card" style="max-width:620px;">
+    <div style="padding:2rem 1.6rem; text-align:center;">
+      <div style="font-size:2.4rem; color:var(--mint); margin-bottom:0.6rem;">
+        <i class="bi bi-graph-up-arrow"></i>
+      </div>
+      <h2 style="font-size:1.35rem; font-weight:700; color:var(--dark); margin-bottom:0.8rem;">
+        Hacé que tu dinero trabaje por vos
+      </h2>
+      <p style="font-size:0.95rem; line-height:1.6; color:rgba(21,25,30,0.7); margin-bottom:0.9rem;">
+        En <strong>Empowered Investor</strong> nuestra especialidad es la gestión de
+        portafolios de inversión. Ya estás dando el primer paso al controlar tus gastos;
+        el siguiente es poner a crecer tus ahorros con una estrategia pensada para vos.
+      </p>
+      <p style="font-size:0.95rem; line-height:1.6; color:rgba(21,25,30,0.7); margin-bottom:1.4rem;">
+        Pronto vas a poder conectar y seguir tus inversiones directamente desde acá.
+        Mientras tanto, si querés empezar a invertir con nosotros, conversemos.
+      </p>
+      <a href="https://wa.me/50670558296" target="_blank" rel="noopener"
+         class="btn-mint-ei"
+         style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
+        <i class="bi bi-whatsapp"></i>
+        Quiero empezar a invertir
+      </a>
+      <p style="font-size:0.85rem; color:rgba(21,25,30,0.55); margin-top:1rem;">
+        O escribinos / llamanos al
+        <strong style="color:var(--dark);">+506 7055 8296</strong>
+      </p>
+    </div>
+  </div>
+
+{% elif state == 'connect' %}
+  {# Investment client, not yet connected to Alpaca. #}
+  <div class="ei-card" style="max-width:620px;">
+    <div style="padding:2rem 1.6rem; text-align:center;">
+      <div style="font-size:2.4rem; color:var(--mint); margin-bottom:0.6rem;">
+        <i class="bi bi-link-45deg"></i>
+      </div>
+      <h2 style="font-size:1.35rem; font-weight:700; color:var(--dark); margin-bottom:0.8rem;">
+        Conectá tu cuenta de Alpaca
+      </h2>
+      <p style="font-size:0.95rem; line-height:1.6; color:rgba(21,25,30,0.7); margin-bottom:1.4rem;">
+        Autorizá el acceso de <strong>solo lectura</strong> para ver y seguir tu
+        portafolio desde acá. No podemos operar ni mover dinero en tu cuenta:
+        únicamente leemos el estado de tus inversiones.
+      </p>
+      <a href="{{ url_for(bp ~ '.inversion_conectar') }}"
+         class="btn-mint-ei"
+         style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
+        <i class="bi bi-box-arrow-in-right"></i>
+        Conectar con Alpaca
+      </a>
+    </div>
+  </div>
+
+{% elif state == 'connected' %}
+  {% set ch = portfolio.changes %}
+  <div class="ei-card" style="max-width:760px;">
+    <div style="padding:1.6rem;">
+
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap;">
+        <div>
+          <div style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:rgba(21,25,30,0.55);">
+            Valor del portafolio
+          </div>
+          <div style="font-size:2rem; font-weight:700; color:var(--dark);">
+            {{ '%.2f'|format(portfolio.equity) }}
+            <span style="font-size:1rem; font-weight:600; color:rgba(21,25,30,0.5);">{{ portfolio.currency }}</span>
+          </div>
+        </div>
+        <span style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.8rem; color:#2f9e44; background:#ebfbee; border:1px solid #b2f2bb; border-radius:20px; padding:3px 11px;">
+          <i class="bi bi-shield-check"></i> Solo lectura
+        </span>
+      </div>
+
+      {# ── Cambio porcentual: semana / mes / año ── #}
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:0.8rem; margin-top:1.4rem;">
+        {% for label, key in [('Semana','week'), ('Mes','month'), ('Año','year')] %}
+          {% set val = ch[key] %}
+          <div style="border:1px solid rgba(21,25,30,0.1); border-radius:10px; padding:0.9rem; text-align:center;">
+            <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.5px; color:rgba(21,25,30,0.55); margin-bottom:0.3rem;">
+              {{ label }}
+            </div>
+            {% if val is none %}
+              <div style="font-size:1.2rem; font-weight:700; color:rgba(21,25,30,0.4);">—</div>
+            {% else %}
+              {% set positive = val >= 0 %}
+              <div style="font-size:1.2rem; font-weight:700; color:{{ '#2f9e44' if positive else '#e03131' }};">
+                <i class="bi bi-arrow-{{ 'up' if positive else 'down' }}-short"></i>{{ '%+.2f'|format(val) }}%
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+
+      {# ── Posiciones ── #}
+      <div style="margin-top:1.6rem;">
+        <div style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.5px; color:rgba(21,25,30,0.55); margin-bottom:0.6rem;">
+          Posiciones
+        </div>
+        {% if portfolio.positions %}
+          <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+              <thead>
+                <tr style="text-align:left; color:rgba(21,25,30,0.55); font-size:0.78rem; text-transform:uppercase;">
+                  <th style="padding:6px 8px;">Símbolo</th>
+                  <th style="padding:6px 8px;">Cantidad</th>
+                  <th style="padding:6px 8px; text-align:right;">Valor</th>
+                  <th style="padding:6px 8px; text-align:right;">Rend.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for p in portfolio.positions %}
+                  {% set ppos = p.unrealized_plpc >= 0 %}
+                  <tr style="border-top:1px solid rgba(21,25,30,0.08);">
+                    <td style="padding:8px; font-weight:700; color:var(--dark);">{{ p.symbol }}</td>
+                    <td style="padding:8px;">{{ p.qty }}</td>
+                    <td style="padding:8px; text-align:right;">{{ '%.2f'|format(p.market_value) }}</td>
+                    <td style="padding:8px; text-align:right; color:{{ '#2f9e44' if ppos else '#e03131' }};">
+                      {{ '%+.2f'|format(p.unrealized_plpc) }}%
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p style="font-size:0.9rem; color:rgba(21,25,30,0.6);">No hay posiciones abiertas.</p>
+        {% endif %}
+      </div>
+
+      <form method="POST" action="{{ url_for(bp ~ '.inversion_desconectar') }}"
+            style="margin-top:1.6rem; text-align:right;"
+            onsubmit="return confirm('¿Desconectar tu cuenta de Alpaca? Dejaremos de mostrar tu portafolio.');">
+        <button type="submit"
+                style="background:none; border:1px solid rgba(224,49,49,0.4); color:#e03131; border-radius:8px; padding:0.5rem 1rem; font-size:0.85rem; cursor:pointer;">
+          <i class="bi bi-x-circle"></i> Desconectar Alpaca
+        </button>
+      </form>
+
+    </div>
+  </div>
+
+{% else %}
+  {# state == 'error' #}
+  <div class="ei-card" style="max-width:620px;">
+    <div style="padding:2rem 1.6rem; text-align:center;">
+      <div style="font-size:2.4rem; color:#e03131; margin-bottom:0.6rem;">
+        <i class="bi bi-exclamation-triangle"></i>
+      </div>
+      <h2 style="font-size:1.2rem; font-weight:700; color:var(--dark); margin-bottom:0.8rem;">
+        No pudimos cargar tu portafolio
+      </h2>
+      <p style="font-size:0.9rem; line-height:1.6; color:rgba(21,25,30,0.7); margin-bottom:1.2rem;">
+        Hubo un problema al consultar Alpaca. Podés intentar de nuevo o reconectar tu cuenta.
+        {% if error %}<br><span style="font-size:0.8rem; color:rgba(21,25,30,0.45);">{{ error }}</span>{% endif %}
+      </p>
+      <div style="display:flex; gap:0.6rem; justify-content:center; flex-wrap:wrap;">
+        <a href="{{ url_for(bp ~ '.inversion') }}" class="btn-mint-ei"
+           style="display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none;">
+          <i class="bi bi-arrow-clockwise"></i> Reintentar
+        </a>
+        <form method="POST" action="{{ url_for(bp ~ '.inversion_desconectar') }}">
+          <button type="submit"
+                  style="background:none; border:1px solid rgba(224,49,49,0.4); color:#e03131; border-radius:8px; padding:0.55rem 1rem; font-size:0.9rem; cursor:pointer;">
+            Desconectar
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endif %}

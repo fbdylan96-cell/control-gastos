@@ -30,6 +30,13 @@ One row per person. Key fields:
 - `active` — only active clients are processed. **Clients are created with `active = FALSE`.** Activation is done explicitly by the administrator (via `administracion`) or by the business admin (via `empresa`). Categories being present in `core.categories` does **not** trigger activation.
 - `business_id` — links to `core.businesses` (or sentinel for individuals)
 
+### `core.client_investment`
+One row per client who has the **investment service** (Alpaca). Created/toggled from `administracion` (the "Cliente de inversión" checkbox / the "Inversión" column toggle).
+- `enabled` — gate that makes the `persona` / `empresa` **Portafolio de Inversión** tab show real Alpaca data. When `FALSE` or no row, the tab keeps its marketing placeholder. In `empresa` the tab itself is hidden unless `enabled` (injected via `investment_enabled` context processor); in `persona` the tab is always visible and the route decides the state.
+- `token_cipher` / `token_nonce` — the client's Alpaca **OAuth access token, encrypted at rest** with AES-256-GCM (`web-app/crypto.py`). The master key is `ENCRYPTION_KEY` in `.env`, **never stored in the DB**. `NULL` until the client connects their account.
+- **Read-only by design:** tokens are requested without the `trading` scope (`web-app/alpaca_client.py`), so they can read portfolio data but can never place orders.
+- **FK to `core.clients`:** any client-delete path in `administracion` must delete the matching `core.client_investment` row first (already handled in `_wipe_individual`, `_wipe_business`, `_reassign_and_delete_member`).
+
 ### `core.categories`
 Stores the category/subcategory taxonomy used by the classification engine (Step 5).
 

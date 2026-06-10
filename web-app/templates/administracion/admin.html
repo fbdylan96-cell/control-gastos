@@ -459,6 +459,14 @@
                 </div>
             </div>
 
+            <div class="notif-section">
+                <div class="notif-title">Servicios</div>
+                <div class="check-row">
+                    <input type="checkbox" id="iInvChk">
+                    <label for="iInvChk">Cliente de inversión (Alpaca)</label>
+                </div>
+            </div>
+
             <div class="action-bar">
                 <button class="btn btn-primary" onclick="submitIndividuo()">💾 Guardar</button>
             </div>
@@ -683,6 +691,14 @@ function addMember() {
             </div>
         </div>
 
+        <div class="notif-section">
+            <div class="notif-title">Servicios</div>
+            <div class="check-row">
+                <input type="checkbox" id="m${idx}InvChk">
+                <label for="m${idx}InvChk">Cliente de inversión (Alpaca)</label>
+            </div>
+        </div>
+
         <div class="check-row" style="margin-top:4px; padding:10px 12px; background:#fff3cd; border-radius:6px; border:1px solid #ffc107;">
             <input type="checkbox" id="m${idx}AdminChk">
             <label for="m${idx}AdminChk" style="font-weight:600; color:#856404;">Administrador de empresa</label>
@@ -706,6 +722,7 @@ function submitIndividuo() {
     const email     = document.getElementById('iEmail').value.trim();
     const emailChk  = document.getElementById('iEmailChk').checked;
     const waChk     = document.getElementById('iWaChk').checked;
+    const invChk    = document.getElementById('iInvChk').checked;
     const phone     = document.getElementById('iPhone').value.trim();
 
     if (!nombre)    return toast('Por favor ingresa el Nombre.', 'error');
@@ -722,6 +739,7 @@ function submitIndividuo() {
         phone_number:          waChk ? phone : null,
         email_notification:    emailChk,
         whatsapp_notification: waChk,
+        investment_client:     invChk,
         business_admin:        false,
     });
 
@@ -744,6 +762,7 @@ function submitEmpresa() {
         const emailChk   = document.getElementById(`m${idx}EmailChk`).checked;
         const waChk      = document.getElementById(`m${idx}WaChk`).checked;
         const adminChk   = document.getElementById(`m${idx}AdminChk`).checked;
+        const invChk     = document.getElementById(`m${idx}InvChk`).checked;
         const email      = document.getElementById(`m${idx}Email`).value.trim();
         const phone      = document.getElementById(`m${idx}Phone`).value.trim();
 
@@ -752,7 +771,7 @@ function submitEmpresa() {
         if (!email)         return toast(`Miembro #${idx}: ingresa el correo electrónico.`, 'error');
         if (waChk && !phone) return toast(`Miembro #${idx}: ingresa el número de teléfono.`, 'error');
 
-        members.push({ nombre, apellidos, emailChk, waChk, adminChk, email, phone });
+        members.push({ nombre, apellidos, emailChk, waChk, adminChk, invChk, email, phone });
     }
 
     pendingAction = async () => {
@@ -767,6 +786,7 @@ function submitEmpresa() {
                 phone_number:          m.waChk    ? m.phone : null,
                 email_notification:    m.emailChk,
                 whatsapp_notification: m.waChk,
+                investment_client:     m.invChk,
                 business_admin:        m.adminChk,
             });
         }
@@ -836,6 +856,7 @@ function resetForms() {
     });
     document.getElementById('iEmailChk').checked = false;
     document.getElementById('iWaChk').checked    = false;
+    document.getElementById('iInvChk').checked   = false;
     document.getElementById('iWaFld').classList.remove('show');
     document.getElementById('iPreviewWrap').style.display = 'none';
 
@@ -884,6 +905,13 @@ async function loadClients() {
                 <td>${escHtml(c.email_forward  || '—')}</td>
                 <td>${escHtml(c.username       || '—')}</td>
                 <td>${escHtml(c.phone_number   || '—')}</td>
+                <td>
+                    <button class="toggle-btn ${c.investment_enabled ? 'tbtn-deactivate' : 'tbtn-activate'}"
+                            onclick="toggleInvestment('${c.id}', ${c.investment_enabled})"
+                            title="${c.investment_enabled ? 'Quitar cliente de inversión' : 'Marcar como cliente de inversión'}">
+                        ${c.investment_enabled ? 'Sí' : 'No'}
+                    </button>
+                </td>
             </tr>`;
         }).join('');
 
@@ -900,6 +928,7 @@ async function loadClients() {
                         <th>Email Forward</th>
                         <th>Username</th>
                         <th>Teléfono</th>
+                        <th>Inversión</th>
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>
@@ -954,6 +983,17 @@ async function toggleClient(clientId, currentActive) {
     try {
         await api('PATCH', `${API_BASE}/api/clients/${clientId}`, { active: !currentActive });
         toast(currentActive ? 'Cliente desactivado.' : 'Cliente activado.', 'success');
+        loadClients();
+    } catch (err) {
+        toast('Error: ' + err.message, 'error');
+    }
+}
+
+// ════════════ TOGGLE INVESTMENT CLIENT ════════════
+async function toggleInvestment(clientId, current) {
+    try {
+        await api('PATCH', `${API_BASE}/api/clients/${clientId}`, { investment_client: !current });
+        toast(current ? 'Cliente de inversión desmarcado.' : 'Cliente de inversión marcado.', 'success');
         loadClients();
     } catch (err) {
         toast('Error: ' + err.message, 'error');

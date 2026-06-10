@@ -521,7 +521,8 @@ def inversion_conectar():
     state = secrets.token_urlsafe(24)
     session["alpaca_oauth_state"] = state
     try:
-        return redirect(alpaca_client.build_authorize_url(state))
+        return redirect(alpaca_client.build_authorize_url(
+            state, alpaca_client.callback_url("persona")))
     except Exception as e:  # noqa: BLE001 - missing config etc.
         flash(f"No se pudo iniciar la conexión con Alpaca: {e}", "danger")
         return redirect(url_for("persona.inversion"))
@@ -545,7 +546,8 @@ def inversion_callback():
         return redirect(url_for("persona.inversion"))
 
     try:
-        token = alpaca_client.exchange_code(code)
+        token = alpaca_client.exchange_code(
+            code, alpaca_client.callback_url("persona"))
         cipher, nonce = encrypt_token(token, aad=str(session["user_id"]))
         conn = get_connection()
         try:

@@ -60,10 +60,12 @@ by apps that execute trades. Because this app is **read-only** (no `trading`
 scope), it is not subject to that review — only the standard registration plus
 the commercial disclosure.
 
-⚠️ Confirm the exact **read-only scope string** in Alpaca's docs before going
-live: <https://docs.alpaca.markets/docs/using-oauth2-and-trading-api>. The code
-defaults to `account:write` (which grants read access without `trading`) and is
-overridable via `ALPACA_SCOPE`.
+⚠️ **Scope:** the app requests **no scope at all** — in Alpaca's OAuth, an
+empty scope grants read-only access to account/positions/portfolio. Do not set
+`ALPACA_SCOPE` unless you have a specific reason: `trading` allows order
+execution and `account:write` allows writing account configurations and
+watchlists — neither is read-only.
+Docs: <https://docs.alpaca.markets/docs/using-oauth2-and-trading-api>
 
 ---
 
@@ -76,8 +78,8 @@ Add to `.env` on the server (see `.env.example`):
 | Encryption master key | `ENCRYPTION_KEY` | Generate once: `python -c "import base64,os;print(base64.urlsafe_b64encode(os.urandom(32)).decode())"`. **Never** commit it or store it in the DB. |
 | OAuth client id | `ALPACA_CLIENT_ID` | From the registration |
 | OAuth client secret | `ALPACA_CLIENT_SECRET` | The crown jewel — protect it (see §5) |
-| Callback URL | `ALPACA_REDIRECT_URI` | Must match a registered redirect URI exactly |
-| OAuth scope | `ALPACA_SCOPE` | Default `account:write` (read-only). Do **not** add `trading`. |
+| Public app base URL | `WEBAPP_URL` | Already set for reclassify links. Callback URLs are derived from it per blueprint: `{WEBAPP_URL}/persona/inversion/callback` and `{WEBAPP_URL}/empresa/inversion/callback` — register **both** in Alpaca. |
+| OAuth scope | `ALPACA_SCOPE` | **Leave empty** (read-only). `trading` = order execution; `account:write` = config/watchlist writes. Neither is read-only. |
 | API base | `ALPACA_API_BASE` | Default `https://api.alpaca.markets` |
 
 ---

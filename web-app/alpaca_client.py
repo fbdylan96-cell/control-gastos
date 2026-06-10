@@ -1,19 +1,20 @@
 """Minimal Alpaca OAuth + read-only Trading API client.
 
-Scope is intentionally read-only: the authorize URL does NOT request the
-`trading` scope, so tokens issued through this flow can read account and
-portfolio data but can never place, cancel, or modify orders.
+Scope is intentionally read-only: by default NO scope is requested, which in
+Alpaca's OAuth grants read access to account/positions/portfolio. We never
+request `trading` (order execution) nor `account:write` (write access to
+account configurations and watchlists) — see
+https://docs.alpaca.markets/docs/using-oauth2-and-trading-api
 
 All credentials come from the environment (see .env.example):
-    ALPACA_CLIENT_ID, ALPACA_CLIENT_SECRET, ALPACA_REDIRECT_URI
-    ALPACA_SCOPE       (default: 'account:write' — read access, no trading)
+    ALPACA_CLIENT_ID, ALPACA_CLIENT_SECRET
+    ALPACA_SCOPE       (default: '' — read-only; leave empty)
     ALPACA_API_BASE    (default: https://api.alpaca.markets)
 
-NOTE: Alpaca's OAuth scopes are coarse. `account:write` is what grants access
-to read account/positions/portfolio; `trading` (deliberately omitted here) is
-what would allow order execution. Confirm the exact read-only scope string
-against the current docs:
-https://docs.alpaca.markets/docs/using-oauth2-and-trading-api
+Callback URLs are built per blueprint from WEBAPP_URL via `callback_url()`
+(e.g. https://host/persona/inversion/callback), so persona and empresa each
+return to their own /inversion/callback route. BOTH URLs must be registered
+as redirect URIs in the Alpaca OAuth app.
 """
 
 import os
@@ -42,8 +43,11 @@ def _require(name: str) -> str:
 
 
 def _scope() -> str:
-    # Read-only by default: no 'trading' scope -> token cannot execute orders.
-    return os.environ.get("ALPACA_SCOPE", "account:write").strip()
+    # Read-only by default: an EMPTY scope grants read access in Alpaca's OAuth.
+    # 'trading' would allow order execution; 'account:write' would allow writing
+    # account configurations/watchlists — neither is read-only, so neither is
+    # requested unless deliberately set via ALPACA_SCOPE.
+    return os.environ.get("ALPACA_SCOPE", "").strip()
 
 
 def _api_base() -> str:
@@ -52,19 +56,33 @@ def _api_base() -> str:
 
 # ── OAuth ─────────────────────────────────────────────────────────────────────
 
-def build_authorize_url(state: str) -> str:
+def callback_url(blueprint: str) -> str:
+    """Exact redirect URI for a blueprint ('persona' or 'empresa').
+
+    Built from WEBAPP_URL (the public HTTPS base) instead of request headers,
+    so it always matches the URLs registered in Alpaca even behind a proxy.
+    The same value must be passed to build_authorize_url() and exchange_code()
+    — OAuth requires the token exchange to repeat the authorize redirect_uri.
+    """
+    base = _require("WEBAPP_URL").rstrip("/")
+    return f"{base}/{blueprint}/inversion/callback"
+
+
+def build_authorize_url(state: str, redirect_uri: str) -> str:
     """URL to redirect the client to for Alpaca login + consent."""
     params = {
         "response_type": "code",
         "client_id": _require("ALPACA_CLIENT_ID"),
-        "redirect_uri": _require("ALPACA_REDIRECT_URI"),
-        "scope": _scope(),
+        "redirect_uri": redirect_uri,
         "state": state,
     }
+    scope = _scope()
+    if scope:  # omit the parameter entirely for the read-only default
+        params["scope"] = scope
     return f"{AUTHORIZE_URL}?{urlencode(params)}"
 
 
-def exchange_code(code: str) -> str:
+def exchange_code(code: str, redirect_uri: str) -> str:
     """Exchange an authorization code for an access token. Returns the token."""
     resp = requests.post(
         TOKEN_URL,
@@ -73,7 +91,7 @@ def exchange_code(code: str) -> str:
             "code": code,
             "client_id": _require("ALPACA_CLIENT_ID"),
             "client_secret": _require("ALPACA_CLIENT_SECRET"),
-            "redirect_uri": _require("ALPACA_REDIRECT_URI"),
+            "redirect_uri": redirect_uri,
         },
         timeout=_TIMEOUT,
     )

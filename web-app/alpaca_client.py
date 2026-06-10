@@ -17,12 +17,15 @@ return to their own /inversion/callback route. BOTH URLs must be registered
 as redirect URIs in the Alpaca OAuth app.
 """
 
+import logging
 import os
 import threading
 import time
 from urllib.parse import urlencode
 
 import requests
+
+log = logging.getLogger(__name__)
 
 AUTHORIZE_URL = "https://app.alpaca.markets/oauth/authorize"
 TOKEN_URL = "https://api.alpaca.markets/oauth/token"
@@ -102,9 +105,18 @@ def exchange_code(code: str, redirect_uri: str) -> str:
         timeout=_TIMEOUT,
     )
     resp.raise_for_status()
-    token = (resp.json() or {}).get("access_token")
+    body = resp.json() or {}
+    token = body.get("access_token")
     if not token:
         raise RuntimeError("Alpaca no devolvió un access_token.")
+    # Log the scope Alpaca actually granted (NOT the token) so we can verify
+    # empirically whether a read-only connection is truly read-only. Tokens with
+    # no 'trading' scope cannot place orders. Safe to keep: logs only the scope
+    # string and token type, never the access token itself.
+    log.info(
+        "Alpaca token granted | scope=%r | token_type=%r",
+        body.get("scope"), body.get("token_type"),
+    )
     return token
 
 

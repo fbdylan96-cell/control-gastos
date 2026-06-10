@@ -4,6 +4,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import psycopg2
+import psycopg2.extras
 from dotenv import find_dotenv, load_dotenv
 
 load_dotenv(find_dotenv())
@@ -142,6 +143,79 @@ def compute_amount_local(conn, amount, currency):
         return None, None, None
     fx_rate = float(crc_rate) / float(fx_src)
     return round(float(amount) * fx_rate, 2), fx_rate, rate_date
+
+
+# ── Investment / brokerage access (core.client_investment) ────────────────────
+
+def get_investment(conn, client_id):
+    """Return the client's investment row as a dict, or None if absent."""
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT client_id, enabled, provider,
+                   token_cipher, token_nonce, key_version,
+                   connected_at, revoked_at, last_used_at
+            FROM core.client_investment
+            WHERE client_id = %s
+            """,
+            (str(client_id),),
+        )
+        return cur.fetchone()
+
+
+def set_investment_enabled(conn, client_id, enabled):
+    """Upsert the investment gate flag for a client (idempotent)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO core.client_investment (client_id, enabled)
+            VALUES (%s, %s)
+            ON CONFLICT (client_id) DO UPDATE
+                SET enabled = EXCLUDED.enabled, updated_at = now()
+            """,
+            (str(client_id), bool(enabled)),
+        )
+    conn.commit()
+
+
+def store_broker_token(conn, client_id, token_cipher, token_nonce):
+    """Persist an encrypted broker token; clears any prior revocation."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE core.client_investment
+            SET token_cipher = %s, token_nonce = %s,
+                connected_at = now(), revoked_at = NULL, updated_at = now()
+            WHERE client_id = %s
+            """,
+            (psycopg2.Binary(token_cipher), psycopg2.Binary(token_nonce), str(client_id)),
+        )
+    conn.commit()
+
+
+def revoke_broker_token(conn, client_id):
+    """Drop the stored token and mark the connection revoked."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE core.client_investment
+            SET token_cipher = NULL, token_nonce = NULL,
+                revoked_at = now(), updated_at = now()
+            WHERE client_id = %s
+            """,
+            (str(client_id),),
+        )
+    conn.commit()
+
+
+def touch_broker_token_used(conn, client_id):
+    """Record that the stored token was just used to read Alpaca data."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE core.client_investment SET last_used_at = now() WHERE client_id = %s",
+            (str(client_id),),
+        )
+    conn.commit()
 
 
 def insert_manual_transaction(conn, *, individual_id, business_id, merchant, amount,

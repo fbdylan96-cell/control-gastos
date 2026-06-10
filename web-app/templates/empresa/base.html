@@ -52,6 +52,14 @@
             {% endif %}
           </a>
         </li>
+        {% if investment_enabled %}
+        <li>
+          <a href="{{ url_for('empresa.inversion') }}"
+             class="nav-link {% if request.endpoint == 'empresa.inversion' %}active{% endif %}">
+            <i class="bi bi-graph-up-arrow"></i>Portafolio de Inversión
+          </a>
+        </li>
+        {% endif %}
         {% if session.business_admin %}
         <li>
           <a href="{{ url_for('empresa.reportes') }}"

@@ -48,6 +48,37 @@ CREATE TABLE core.clients (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Investment / brokerage (Alpaca) access, one row per client.
+-- A row is created only for clients flagged as investment clients.
+--   * enabled       — the gate that makes the web app show Alpaca info.
+--                     When FALSE / no row, the Inversión tab keeps its
+--                     marketing placeholder.
+--   * token_cipher  — the client's Alpaca OAuth access token, encrypted at
+--                     rest with AES-256-GCM. The master key lives OUTSIDE the
+--                     database (env ENCRYPTION_KEY / KMS) and is NEVER stored
+--                     here. NULL until the client connects their account.
+--   * token_nonce   — per-record GCM nonce (the row id is bound as AAD).
+-- The token is requested with a read-only scope (no `trading`), so it can
+-- never place orders — only read account/portfolio data.
+DROP TABLE IF EXISTS core.client_investment CASCADE;
+
+CREATE TABLE core.client_investment (
+    client_id     UUID PRIMARY KEY REFERENCES core.clients(id),
+
+    enabled       BOOLEAN NOT NULL DEFAULT FALSE,
+    provider      TEXT NOT NULL DEFAULT 'alpaca',
+
+    token_cipher  BYTEA,
+    token_nonce   BYTEA,
+    key_version   INT NOT NULL DEFAULT 1,
+
+    connected_at  TIMESTAMPTZ,
+    revoked_at    TIMESTAMPTZ,
+    last_used_at  TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 DROP TABLE IF EXISTS core.transactions_raw CASCADE;
  
 CREATE TABLE core.transactions_raw (

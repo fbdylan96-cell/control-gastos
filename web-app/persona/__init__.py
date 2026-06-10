@@ -1,4 +1,5 @@
 import io
+import secrets
 import uuid
 from datetime import date, datetime, timedelta
 from functools import wraps
@@ -11,7 +12,10 @@ from flask import (Blueprint, flash, jsonify, redirect, render_template,
 from openpyxl.utils import get_column_letter
 from werkzeug.security import check_password_hash
 
-from db import get_connection, insert_manual_transaction
+import alpaca_client
+from crypto import decrypt_token, encrypt_token
+from db import (get_connection, get_investment, insert_manual_transaction,
+                revoke_broker_token, store_broker_token, touch_broker_token_used)
 from tools import finance
 
 persona_bp = Blueprint('persona', __name__)
@@ -473,7 +477,97 @@ def dashboard_categoria():
 @persona_bp.route("/inversion")
 @login_required
 def inversion():
-    return render_template("persona/inversion.html")
+    conn = get_connection()
+    try:
+        inv = get_investment(conn, session["user_id"])
+
+        # Not an investment client → keep the marketing placeholder.
+        if not inv or not inv["enabled"]:
+            return render_template("persona/inversion.html", state="disabled")
+
+        # Enabled but no Alpaca account connected yet.
+        if not inv["token_cipher"]:
+            return render_template("persona/inversion.html", state="connect")
+
+        # Connected → read-only portfolio snapshot.
+        try:
+            token = decrypt_token(
+                bytes(inv["token_cipher"]), bytes(inv["token_nonce"]),
+                aad=str(session["user_id"]),
+            )
+            portfolio = alpaca_client.get_portfolio_summary(token)
+            touch_broker_token_used(conn, session["user_id"])
+            return render_template(
+                "persona/inversion.html", state="connected", portfolio=portfolio)
+        except Exception as e:  # noqa: BLE001 - show a recoverable error state
+            return render_template(
+                "persona/inversion.html", state="error", error=str(e))
+    finally:
+        conn.close()
+
+
+@persona_bp.route("/inversion/conectar")
+@login_required
+def inversion_conectar():
+    conn = get_connection()
+    try:
+        inv = get_investment(conn, session["user_id"])
+    finally:
+        conn.close()
+    if not inv or not inv["enabled"]:
+        flash("El servicio de inversión no está habilitado para tu cuenta.", "warning")
+        return redirect(url_for("persona.inversion"))
+
+    state = secrets.token_urlsafe(24)
+    session["alpaca_oauth_state"] = state
+    try:
+        return redirect(alpaca_client.build_authorize_url(state))
+    except Exception as e:  # noqa: BLE001 - missing config etc.
+        flash(f"No se pudo iniciar la conexión con Alpaca: {e}", "danger")
+        return redirect(url_for("persona.inversion"))
+
+
+@persona_bp.route("/inversion/callback")
+@login_required
+def inversion_callback():
+    expected = session.pop("alpaca_oauth_state", None)
+    if not expected or request.args.get("state") != expected:
+        flash("Validación de seguridad fallida. Intentá conectar de nuevo.", "danger")
+        return redirect(url_for("persona.inversion"))
+
+    if request.args.get("error"):
+        flash(f"Alpaca rechazó la conexión: {request.args.get('error')}", "danger")
+        return redirect(url_for("persona.inversion"))
+
+    code = request.args.get("code", "").strip()
+    if not code:
+        flash("No se recibió el código de autorización de Alpaca.", "danger")
+        return redirect(url_for("persona.inversion"))
+
+    try:
+        token = alpaca_client.exchange_code(code)
+        cipher, nonce = encrypt_token(token, aad=str(session["user_id"]))
+        conn = get_connection()
+        try:
+            store_broker_token(conn, session["user_id"], cipher, nonce)
+        finally:
+            conn.close()
+        flash("Cuenta de Alpaca conectada correctamente.", "success")
+    except Exception as e:  # noqa: BLE001
+        flash(f"Error al conectar con Alpaca: {e}", "danger")
+    return redirect(url_for("persona.inversion"))
+
+
+@persona_bp.route("/inversion/desconectar", methods=["POST"])
+@login_required
+def inversion_desconectar():
+    conn = get_connection()
+    try:
+        revoke_broker_token(conn, session["user_id"])
+    finally:
+        conn.close()
+    flash("Cuenta de Alpaca desconectada.", "success")
+    return redirect(url_for("persona.inversion"))
 
 
 # ── Reportes ──────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import io
+import secrets
 import uuid
 from datetime import date, datetime, timedelta
 from functools import wraps
@@ -11,7 +12,10 @@ from flask import (Blueprint, flash, jsonify, redirect, render_template,
 from openpyxl.utils import get_column_letter
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from db import get_connection, insert_manual_transaction
+import alpaca_client
+from crypto import decrypt_token, encrypt_token
+from db import (get_connection, get_investment, insert_manual_transaction,
+                revoke_broker_token, store_broker_token, touch_broker_token_used)
 from tools import finance
 from utils import gen_email_forward, gen_password
 
@@ -242,6 +246,22 @@ def _inject_pending_count():
             conn.close()
     except Exception:
         return {"pending_count": 0}
+
+
+@empresa_bp.context_processor
+def _inject_investment_enabled():
+    """Controls whether the Inversión tab is shown for this member."""
+    if "user_id" not in session:
+        return {}
+    try:
+        conn = get_connection()
+        try:
+            inv = get_investment(conn, session["user_id"])
+            return {"investment_enabled": bool(inv and inv["enabled"])}
+        finally:
+            conn.close()
+    except Exception:
+        return {"investment_enabled": False}
 
 
 @empresa_bp.route("/pendientes")
@@ -987,3 +1007,102 @@ def miembros_add():
         conn.close()
 
     return redirect(url_for("empresa.miembros"))
+
+
+# ── Inversión ─────────────────────────────────────────────────────────────────
+#
+# Available to every business member (admin and non-admin), gated per member by
+# core.client_investment.enabled. Read-only: tokens are requested without the
+# `trading` scope, so they can never execute orders.
+
+@empresa_bp.route("/inversion")
+@login_required
+def inversion():
+    conn = get_connection()
+    try:
+        inv = get_investment(conn, session["user_id"])
+
+        if not inv or not inv["enabled"]:
+            return render_template("empresa/inversion.html", state="disabled")
+
+        if not inv["token_cipher"]:
+            return render_template("empresa/inversion.html", state="connect")
+
+        try:
+            token = decrypt_token(
+                bytes(inv["token_cipher"]), bytes(inv["token_nonce"]),
+                aad=str(session["user_id"]),
+            )
+            portfolio = alpaca_client.get_portfolio_summary(token)
+            touch_broker_token_used(conn, session["user_id"])
+            return render_template(
+                "empresa/inversion.html", state="connected", portfolio=portfolio)
+        except Exception as e:  # noqa: BLE001
+            return render_template(
+                "empresa/inversion.html", state="error", error=str(e))
+    finally:
+        conn.close()
+
+
+@empresa_bp.route("/inversion/conectar")
+@login_required
+def inversion_conectar():
+    conn = get_connection()
+    try:
+        inv = get_investment(conn, session["user_id"])
+    finally:
+        conn.close()
+    if not inv or not inv["enabled"]:
+        flash("El servicio de inversión no está habilitado para tu cuenta.", "warning")
+        return redirect(url_for("empresa.inversion"))
+
+    state = secrets.token_urlsafe(24)
+    session["alpaca_oauth_state"] = state
+    try:
+        return redirect(alpaca_client.build_authorize_url(state))
+    except Exception as e:  # noqa: BLE001
+        flash(f"No se pudo iniciar la conexión con Alpaca: {e}", "danger")
+        return redirect(url_for("empresa.inversion"))
+
+
+@empresa_bp.route("/inversion/callback")
+@login_required
+def inversion_callback():
+    expected = session.pop("alpaca_oauth_state", None)
+    if not expected or request.args.get("state") != expected:
+        flash("Validación de seguridad fallida. Intentá conectar de nuevo.", "danger")
+        return redirect(url_for("empresa.inversion"))
+
+    if request.args.get("error"):
+        flash(f"Alpaca rechazó la conexión: {request.args.get('error')}", "danger")
+        return redirect(url_for("empresa.inversion"))
+
+    code = request.args.get("code", "").strip()
+    if not code:
+        flash("No se recibió el código de autorización de Alpaca.", "danger")
+        return redirect(url_for("empresa.inversion"))
+
+    try:
+        token = alpaca_client.exchange_code(code)
+        cipher, nonce = encrypt_token(token, aad=str(session["user_id"]))
+        conn = get_connection()
+        try:
+            store_broker_token(conn, session["user_id"], cipher, nonce)
+        finally:
+            conn.close()
+        flash("Cuenta de Alpaca conectada correctamente.", "success")
+    except Exception as e:  # noqa: BLE001
+        flash(f"Error al conectar con Alpaca: {e}", "danger")
+    return redirect(url_for("empresa.inversion"))
+
+
+@empresa_bp.route("/inversion/desconectar", methods=["POST"])
+@login_required
+def inversion_desconectar():
+    conn = get_connection()
+    try:
+        revoke_broker_token(conn, session["user_id"])
+    finally:
+        conn.close()
+    flash("Cuenta de Alpaca desconectada.", "success")
+    return redirect(url_for("empresa.inversion"))

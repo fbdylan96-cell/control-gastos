@@ -94,9 +94,11 @@ def get_clients():
                 SELECT c.id, c.client_name, c.email_address, c.phone_number,
                        c.active, c.email_notification, c.whatsapp_notification,
                        c.created_at, b.name AS business_name,
-                       c.email_forward, c.username, c.password_hash
+                       c.email_forward, c.username, c.password_hash,
+                       COALESCE(ci.enabled, FALSE) AS investment_enabled
                 FROM   core.clients c
                 JOIN   core.businesses b ON b.id = c.business_id
+                LEFT   JOIN core.client_investment ci ON ci.client_id = c.id
                 ORDER  BY c.created_at DESC
             """)
             rows = [dict(r) for r in cur.fetchall()]
@@ -155,6 +157,16 @@ def post_client():
                 """,
                 (str(uuid.uuid4()), body['business_id'], body['business_id']),
             )
+            if body.get('investment_client'):
+                cur.execute(
+                    """
+                    INSERT INTO core.client_investment (client_id, enabled)
+                    VALUES (%s, TRUE)
+                    ON CONFLICT (client_id) DO UPDATE
+                        SET enabled = TRUE, updated_at = now()
+                    """,
+                    (cid,),
+                )
         conn.commit()
         conn.close()
         return jsonify({'id': cid}), 201
@@ -188,14 +200,25 @@ def post_business():
 @admin_bp.route('/api/clients/<client_id>', methods=['PATCH'])
 @admin_required_api
 def patch_client(client_id):
-    body = request.get_json()
+    body = request.get_json() or {}
     try:
         conn = get_connection()
         with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE core.clients SET active = %s WHERE id = %s",
-                (body['active'], client_id)
-            )
+            if 'active' in body:
+                cur.execute(
+                    "UPDATE core.clients SET active = %s WHERE id = %s",
+                    (body['active'], client_id)
+                )
+            if 'investment_client' in body:
+                cur.execute(
+                    """
+                    INSERT INTO core.client_investment (client_id, enabled)
+                    VALUES (%s, %s)
+                    ON CONFLICT (client_id) DO UPDATE
+                        SET enabled = EXCLUDED.enabled, updated_at = now()
+                    """,
+                    (client_id, bool(body['investment_client'])),
+                )
         conn.commit()
         conn.close()
         return jsonify({'ok': True})
@@ -298,6 +321,7 @@ def _wipe_individual(cur, client_id):
     cur.execute("DELETE FROM core.transactions_raw WHERE individual_id = %s", (client_id,))
     cur.execute("DELETE FROM core.category_rules WHERE individual_id = %s", (client_id,))
     cur.execute("DELETE FROM core.categories WHERE individual_id = %s", (client_id,))
+    cur.execute("DELETE FROM core.client_investment WHERE client_id = %s", (client_id,))
     cur.execute("DELETE FROM core.clients WHERE id = %s", (client_id,))
 
 
@@ -308,6 +332,13 @@ def _wipe_business(cur, business_id):
     cur.execute("DELETE FROM core.transactions_raw WHERE business_id = %s", (business_id,))
     cur.execute("DELETE FROM core.category_rules WHERE business_id = %s", (business_id,))
     cur.execute("DELETE FROM core.categories WHERE business_id = %s", (business_id,))
+    cur.execute(
+        """
+        DELETE FROM core.client_investment
+        WHERE client_id IN (SELECT id FROM core.clients WHERE business_id = %s)
+        """,
+        (business_id,),
+    )
     cur.execute("DELETE FROM core.clients WHERE business_id = %s", (business_id,))
     cur.execute("DELETE FROM core.businesses WHERE id = %s", (business_id,))
 
@@ -322,6 +353,7 @@ def _reassign_and_delete_member(cur, client_id, target_id):
     # business-level ones (individual_id IS NULL) are untouched.
     cur.execute("DELETE FROM core.category_rules WHERE individual_id = %s", (client_id,))
     cur.execute("DELETE FROM core.categories WHERE individual_id = %s", (client_id,))
+    cur.execute("DELETE FROM core.client_investment WHERE client_id = %s", (client_id,))
     cur.execute("DELETE FROM core.clients WHERE id = %s", (client_id,))
 
 

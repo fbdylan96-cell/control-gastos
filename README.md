@@ -2,7 +2,7 @@
 
 ## Descripción
 
-Plataforma multi-tenant de seguimiento de gastos que procesa notificaciones bancarias recibidas por correo electrónico. El sistema lee correos de Gmail, extrae la información de cada transacción, la almacena en PostgreSQL, la enriquece con parsers por banco (BAC, BCR, Promérica, DAVIbank) o con IA como respaldo, la clasifica en categorías, y notifica al cliente por correo y/o WhatsApp para que confirme o reclasifique. Incluye además aplicaciones web para personas, empresas y administración, con un módulo opcional de portafolio de inversión (Alpaca, solo lectura).
+Plataforma multi-tenant de seguimiento de gastos que procesa notificaciones bancarias recibidas por correo electrónico. El sistema lee correos de Gmail, extrae la información de cada transacción, la almacena en PostgreSQL, la enriquece con parsers por banco (BAC, BCR, Promérica, DAVIbank) o con IA como respaldo, la clasifica en categorías, y notifica al cliente por correo y/o WhatsApp para que confirme o reclasifique. Incluye además un chat de consulta por WhatsApp con un agente de IA (Claude) que responde preguntas en lenguaje natural sobre los gastos del cliente, aplicaciones web para personas, empresas y administración, y un módulo opcional de portafolio de inversión (Alpaca, solo lectura).
 
 ## Pipeline de procesamiento
 
@@ -15,7 +15,7 @@ Gmail (label: 'Finanzas Personales')
                           └── 7. Reclasificación por el cliente (email, web o WhatsApp)
 ```
 
-1. **Ingesta** — `email_reader.py` lee correos no leídos del label `Finanzas Personales` en un loop de 60 s (máx. 5 por ciclo) y enruta cada correo al cliente según su alias de reenvío (`email_forward`).
+1. **Ingesta** — `email_reader.py` lee correos no leídos del label `Finanzas Personales` y enruta cada correo al cliente según su alias de reenvío (`email_forward`). Despierta cada 60 s y drena la bandeja en lotes de 5 hasta vaciarla (con tope de lotes y guarda contra mensajes que fallan repetidamente).
 2. **Parseo** — `parser.py` extrae el cuerpo del correo (HTML → texto plano).
 3. **Almacenamiento RAW** — Inserción en `core.transactions_raw`.
 4. **Enriquecimiento** — `enricher.py` detecta el banco por palabras clave y extrae monto/comercio/moneda/tipo con el parser correspondiente (`banks/`); usa OpenAI como respaldo cuando `AI_ASSISTANCE=1`. Convierte a colones (`amount_local`) usando `core.exchange_rates` y detecta duplicados (misma persona, mismo monto, ventana de 2 minutos → marcado `Duplicado`).
@@ -37,7 +37,9 @@ Gmail (label: 'Finanzas Personales')
 | `whatsapp_client.py` | Wrapper de Meta WhatsApp Cloud API: plantillas, mensajes de lista, texto libre, verificación de firma de webhooks |
 | `whatsapp_notifier.py` | Envío de notificaciones de transacción por WhatsApp |
 | `db.py` | Helpers de acceso a PostgreSQL del pipeline |
-| `tools/` | Portafolio de funciones de consulta financiera parametrizadas (resúmenes de ingresos/gastos, top de gastos, gasto mensual por categoría, presupuestos). Sin efectos secundarios; alimentan los dashboards web y están pensadas para ser invocadas por un agente de IA vía WhatsApp |
+| `tools/finance.py` | Portafolio de funciones de consulta financiera parametrizadas (resúmenes de ingresos/gastos, top de gastos, gasto mensual por categoría, presupuestos). Sin efectos secundarios; alimentan los dashboards web y el agente de WhatsApp |
+| `tools/agent.py` | Agente de IA (Claude, tool-use sobre `tools/finance.py`) que responde consultas financieras en lenguaje natural. El scope se inyecta server-side: el modelo nunca puede consultar datos de otro cliente |
+| `whatsapp_agent_worker.py` | Proceso worker (systemd) del chat de consulta: reclama mensajes encolados por el webhook (`FOR UPDATE SKIP LOCKED`), corre el agente y responde por WhatsApp. Ver `WHATSAPP_AI_CHAT_SETUP.md` |
 | `rate_scheduler.py` / `exchange_rate_update.py` | Actualización diaria (L-V 23:30) de tipos de cambio desde el BCCR → `core.exchange_rates` |
 | `create.sql` | Esquema completo de la base de datos (fuente de verdad de nombres de columnas) |
 | `web-app/` | Aplicación Flask (ver abajo) |
@@ -53,7 +55,7 @@ Flask app única (`run.py`) con blueprints:
 | `/persona` | `persona/` | Cliente individual: dashboards de gastos y portafolio de inversión |
 | `/empresa` | `empresa/` | Cliente empresarial: miembros, categorías, reportes, reclasificación |
 | `/administracion` | `administracion/` | Administrador: alta de negocios/clientes, activación, edición de datos |
-| `/whatsapp/webhook` | `whatsapp_webhook.py` | Webhook de Meta: verificación (GET) y callbacks de mensajes entrantes — taps de botones y selecciones de lista (POST, firma verificada) |
+| `/whatsapp/webhook` | `whatsapp_webhook.py` | Webhook de Meta: verificación (GET) y callbacks de mensajes entrantes — taps de botones, selecciones de lista, y texto libre del chat de consulta, que se encola para el worker sin bloquear el request (POST, firma verificada) |
 | `/reclassify` | `run.py` | Reclasificación desde enlaces firmados en el email |
 
 Componentes adicionales:
@@ -75,6 +77,7 @@ Componentes adicionales:
 | `transactions_enriched` | Campos extraídos: monto, moneda, comercio, tipo, monto en colones |
 | `transactions_classified` | Categoría/subcategoría asignada y método (`rules` / `openai`) |
 | `transactions_notifications` | Ciclo de notificación y la determinación final del cliente (`final_category` / `final_subcategory`), incluyendo acciones vía WhatsApp |
+| `whatsapp_chat_messages` | Chat de consulta por WhatsApp: cola de mensajes entrantes (`pending`/`processing`/`done`/`failed`) e historial de conversación para contexto multi-turno |
 
 ## Tecnologías
 
@@ -128,6 +131,9 @@ DB_PASSWORD=tu_password
 OPENAI_API_KEY=sk-...
 AI_ASSISTANCE=0
 
+# IA (chat de consulta por WhatsApp — ver WHATSAPP_AI_CHAT_SETUP.md)
+ANTHROPIC_API_KEY=sk-ant-...
+
 # Notificaciones por email
 NOTIFICATION_SECRET=cadena-aleatoria-larga
 WEBAPP_URL=https://tu-dominio.com
@@ -177,6 +183,14 @@ cd web-app
 python run.py        # desarrollo (en producción: gunicorn detrás de nginx con TLS)
 ```
 
+### Worker del chat de consulta por WhatsApp
+
+Proceso independiente que atiende la cola de mensajes del chat de IA (correr bajo systemd; ver `WHATSAPP_AI_CHAT_SETUP.md`).
+
+```bash
+python whatsapp_agent_worker.py
+```
+
 ### Actualizador de tipos de cambio
 
 Proceso independiente que corre de lunes a viernes a las 23:30.
@@ -189,4 +203,5 @@ python rate_scheduler.py
 
 - `web-app/CLAUDE.md` — Modelo de datos detallado, reglas de negocio y orden de onboarding de clientes.
 - `META_WHATSAPP_SETUP.md` — Checklist completo de WhatsApp: credenciales de Meta, plantillas, webhook y troubleshooting.
+- `WHATSAPP_AI_CHAT_SETUP.md` — Despliegue y operación del chat de consulta con IA: SQL, systemd, parámetros y troubleshooting.
 - `ALPACA_SETUP.md` — Configuración de la integración de inversión.

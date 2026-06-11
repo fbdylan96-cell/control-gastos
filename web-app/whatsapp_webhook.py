@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import urllib.parse
+import uuid
 from pathlib import Path
 
 from flask import Blueprint, abort, request
@@ -37,6 +38,13 @@ INDIVIDUAL_BIZ_ID = "00000000-0000-0000-0000-000000009999"
 WEBAPP_BASE_URL = "https://gastos.empoweredinvestor.trade"
 URL_PERSONA = f"{WEBAPP_BASE_URL}/persona/"
 URL_EMPRESA = f"{WEBAPP_BASE_URL}/empresa/"
+
+# Consultation chat: max user messages accepted per client per hour. Bounds
+# Anthropic API spend per client; the worker is the one paying the LLM cost.
+CHAT_RATE_LIMIT_PER_HOUR = 20
+CHAT_RATE_LIMIT_REPLY = (
+    "Has alcanzado el límite de consultas por hora. Intenta de nuevo más tarde."
+)
 
 ROW_TITLE_MAX = 20  # per PROMPT_requests.md
 SECTION_TITLE_MAX = 24
@@ -165,6 +173,68 @@ def _fetch_categories(conn, business_id: str, individual_id: str) -> list[dict]:
             (business_id, individual_id),
         )
         return [{"category": r[0], "subcategory": r[1]} for r in cur.fetchall()]
+
+
+def _fetch_client_by_phone(conn, phone_digits: str) -> dict | None:
+    """Match a Meta sender (digits only, no '+') to an active client.
+
+    phone_number is stored in display form ('+506 8888 7777'), so compare on
+    digits. If two clients ever share a phone, the oldest one wins.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            r"""
+            SELECT id, business_id, business_admin, client_name
+            FROM core.clients
+            WHERE active = TRUE
+              AND phone_number IS NOT NULL
+              AND regexp_replace(phone_number, '\D', '', 'g') = %s
+            ORDER BY created_at
+            LIMIT 1
+            """,
+            (phone_digits,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+
+
+def _count_recent_chat_messages(conn, client_id: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM core.whatsapp_chat_messages
+            WHERE client_id = %s AND role = 'user'
+              AND created_at > now() - interval '1 hour'
+            """,
+            (client_id,),
+        )
+        return cur.fetchone()[0]
+
+
+def _enqueue_chat_message(conn, client_id: str, phone: str, wamid: str | None, body: str) -> bool:
+    """Queue an inbound consultation message for whatsapp_agent_worker.py.
+
+    Returns False when the wamid was already seen (Meta redelivery) — the
+    UNIQUE constraint turns the retry into a no-op so the user never gets a
+    duplicate answer.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO core.whatsapp_chat_messages
+                (id, client_id, phone, role, content, wamid, status)
+            VALUES (%s, %s, %s, 'user', %s, %s, 'pending')
+            ON CONFLICT (wamid) DO NOTHING
+            RETURNING id
+            """,
+            (str(uuid.uuid4()), client_id, phone, body, wamid),
+        )
+        inserted = cur.fetchone() is not None
+    conn.commit()
+    return inserted
 
 
 def _update_whatsapp_action(conn, notification_id: str, action_value: str) -> None:
@@ -471,8 +541,27 @@ def _handle_message(msg: dict, from_phone: str | None) -> None:
                         _send_reclassify_list(conn, from_phone, nid)
                     elif parsed["action"] == "go":
                         _send_webapp_url(conn, from_phone, nid)
+        elif msg_type == "text":
+            # Consultation chat: queue only — the agent runs in
+            # whatsapp_agent_worker.py so the LLM never blocks this request.
+            body = ((msg.get("text") or {}).get("body") or "").strip()
+            if not body:
+                return
+            client = _fetch_client_by_phone(conn, from_phone)
+            if not client:
+                log.info("  WA text from unregistered/inactive number — ignoring")
+                return
+            if _count_recent_chat_messages(conn, str(client["id"])) >= CHAT_RATE_LIMIT_PER_HOUR:
+                log.info(f"  WA chat rate limit hit for client={client['id']}")
+                whatsapp_client.send_text(from_phone, CHAT_RATE_LIMIT_REPLY, preview_url=False)
+                return
+            if _enqueue_chat_message(conn, str(client["id"]), from_phone, msg.get("id"), body):
+                log.info(f"  WA chat message queued for client={client['id']}")
+            else:
+                log.info("  WA chat message already queued (wamid seen) — ignoring redelivery")
+
         else:
-            # Ignore other inbound types (text/image/etc.) — out of scope for now
+            # Ignore other inbound types (image/audio/etc.) — out of scope for now
             log.info(f"  Ignoring inbound WA message type={msg_type}")
     finally:
         conn.close()

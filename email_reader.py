@@ -16,6 +16,10 @@ load_dotenv()
 GMAIL_LABEL = "Finanzas Personales"
 MAX_PER_RUN = 5
 POLL_INTERVAL = 60  # seconds
+# Cap on back-to-back batches per wake while draining a backlog. Bounds the
+# worst case (MAX_BATCHES_PER_WAKE * MAX_PER_RUN emails) so the loop always
+# returns to sleep even during a sustained burst.
+MAX_BATCHES_PER_WAKE = 12
 
 logging.basicConfig(
     level=logging.INFO,
@@ -170,10 +174,11 @@ def sweep_stranded(conn, clients):
 
 
 def run_once(service, conn):
+    """Process one batch of unread emails. Returns the Gmail ids fetched."""
     clients = db.get_active_clients(conn)
     if not clients:
         log.warning("No active clients in DB.")
-        return
+        return []
 
     messages = gmail_client.find_unread_label_messages(service, GMAIL_LABEL, MAX_PER_RUN)
     if messages:
@@ -193,6 +198,32 @@ def run_once(service, conn):
     if messages or swept:
         notifier.run_notifications(conn, service)
         whatsapp_notifier.run_whatsapp_notifications(conn)
+
+    return [m["id"] for m in messages]
+
+
+def drain_inbox(service, conn):
+    """Run batches back-to-back until the inbox is empty, then let main() sleep.
+
+    A single run_once per wake capped throughput at MAX_PER_RUN per POLL_INTERVAL
+    (5/minute) no matter how large the backlog was. Draining keeps fetching while
+    full batches come back, so bursts clear at actual processing speed.
+
+    Two guards keep this from spinning:
+      - MAX_BATCHES_PER_WAKE bounds the batches processed in one wake.
+      - A failed email stays UNREAD (mark_as_read is skipped on error) and would be
+        re-fetched immediately; when a batch contains only ids already attempted in
+        this wake, nothing is progressing — stop and let the next wake retry.
+    """
+    attempted = set()
+    for _ in range(MAX_BATCHES_PER_WAKE):
+        batch_ids = run_once(service, conn)
+        if len(batch_ids) < MAX_PER_RUN:
+            break  # inbox drained (or empty)
+        if set(batch_ids) <= attempted:
+            log.warning("Drain: same messages keep failing — deferring to next wake")
+            break
+        attempted.update(batch_ids)
 
 
 def _recover_connection(conn):
@@ -229,7 +260,7 @@ def main():
 
     while True:
         try:
-            run_once(service, conn)
+            drain_inbox(service, conn)
         except Exception as e:
             log.error(f"Poller error: {e}")
             conn = _recover_connection(conn)

@@ -5,6 +5,7 @@ psycopg2-binary
 python-dotenv
 pytz
 openai
+anthropic
 openpyxl
 bccr
 lxml

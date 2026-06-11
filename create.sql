@@ -333,5 +333,35 @@ CREATE TABLE core.exchange_rates (
 );
 
 
+DROP TABLE IF EXISTS core.whatsapp_chat_messages CASCADE;
+
+-- WhatsApp consultation chat (AI agent): message queue + conversation history.
+-- The webhook (web-app/whatsapp_webhook.py) INSERTs inbound free-text messages
+-- with status 'pending' and returns 200 to Meta immediately (no LLM work inside
+-- the request). whatsapp_agent_worker.py claims pending rows with
+-- FOR UPDATE SKIP LOCKED (safe to run multiple workers), answers them via
+-- tools/agent.py and stores each reply as a 'done' assistant row.
+-- wamid is Meta's message id — the UNIQUE constraint absorbs webhook
+-- redeliveries (Meta retries) as no-op inserts. NULL on assistant rows.
+CREATE TABLE core.whatsapp_chat_messages (
+    id            UUID PRIMARY KEY,
+    client_id     UUID NOT NULL REFERENCES core.clients(id) ON DELETE CASCADE,
+    phone         TEXT NOT NULL,        -- digits-only, as Meta reports the sender
+    role          TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+    content       TEXT NOT NULL,
+    wamid         TEXT UNIQUE,
+    status        TEXT NOT NULL DEFAULT 'pending'
+                  CHECK (status IN ('pending', 'processing', 'done', 'failed')),
+    error         TEXT,
+    claimed_at    TIMESTAMPTZ,          -- set on claim; drives stale-claim reclaim
+    processed_at  TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_wa_chat_pending ON core.whatsapp_chat_messages (created_at)
+    WHERE status = 'pending';
+CREATE INDEX idx_wa_chat_client_history ON core.whatsapp_chat_messages (client_id, created_at);
+
+
 -- TRUNCATE core.transactions_raw CASCADE;
 -- ALTER TABLE core.transactions_enriched DROP COLUMN bank_email_adress;

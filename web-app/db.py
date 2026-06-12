@@ -153,7 +153,7 @@ def get_investment(conn, client_id):
         cur.execute(
             """
             SELECT client_id, enabled, provider,
-                   token_cipher, token_nonce, key_version,
+                   api_key_cipher, api_secret_cipher, key_version,
                    connected_at, revoked_at, last_used_at
             FROM core.client_investment
             WHERE client_id = %s
@@ -166,8 +166,8 @@ def get_investment(conn, client_id):
 def set_investment_enabled(conn, client_id, enabled):
     """Upsert the investment gate flag for a client (idempotent).
 
-    Disabling also wipes any stored broker token so a stale credential never
-    outlives the service it belongs to.
+    Disabling also wipes any stored broker credentials so a stale credential
+    never outlives the service it belongs to.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -175,50 +175,51 @@ def set_investment_enabled(conn, client_id, enabled):
             INSERT INTO core.client_investment (client_id, enabled)
             VALUES (%s, %s)
             ON CONFLICT (client_id) DO UPDATE
-                SET enabled      = EXCLUDED.enabled,
-                    token_cipher = CASE WHEN EXCLUDED.enabled
-                                        THEN core.client_investment.token_cipher END,
-                    token_nonce  = CASE WHEN EXCLUDED.enabled
-                                        THEN core.client_investment.token_nonce END,
-                    revoked_at   = CASE WHEN EXCLUDED.enabled
-                                        THEN core.client_investment.revoked_at
-                                        ELSE now() END,
-                    updated_at   = now()
+                SET enabled           = EXCLUDED.enabled,
+                    api_key_cipher    = CASE WHEN EXCLUDED.enabled
+                                             THEN core.client_investment.api_key_cipher END,
+                    api_secret_cipher = CASE WHEN EXCLUDED.enabled
+                                             THEN core.client_investment.api_secret_cipher END,
+                    revoked_at        = CASE WHEN EXCLUDED.enabled
+                                             THEN core.client_investment.revoked_at
+                                             ELSE now() END,
+                    updated_at        = now()
             """,
             (str(client_id), bool(enabled)),
         )
     conn.commit()
 
 
-def store_broker_token(conn, client_id, token_cipher, token_nonce):
-    """Persist an encrypted broker token; clears any prior revocation.
+def store_broker_credentials(conn, client_id, api_key_cipher, api_secret_cipher):
+    """Persist the client's encrypted Alpaca API key pair (admin-loaded).
 
     Only stores when the client's investment row exists AND is enabled —
-    guards against the admin disabling the service mid-OAuth-flow. Returns
-    True when the token was actually stored.
+    guards against loading credentials for a disabled service. Returns
+    True when the credentials were actually stored.
     """
     with conn.cursor() as cur:
         cur.execute(
             """
             UPDATE core.client_investment
-            SET token_cipher = %s, token_nonce = %s,
+            SET api_key_cipher = %s, api_secret_cipher = %s,
                 connected_at = now(), revoked_at = NULL, updated_at = now()
             WHERE client_id = %s AND enabled = TRUE
             """,
-            (psycopg2.Binary(token_cipher), psycopg2.Binary(token_nonce), str(client_id)),
+            (psycopg2.Binary(api_key_cipher), psycopg2.Binary(api_secret_cipher),
+             str(client_id)),
         )
         stored = cur.rowcount
     conn.commit()
     return bool(stored)
 
 
-def revoke_broker_token(conn, client_id):
-    """Drop the stored token and mark the connection revoked."""
+def clear_broker_credentials(conn, client_id):
+    """Drop the stored API key pair and mark the connection revoked."""
     with conn.cursor() as cur:
         cur.execute(
             """
             UPDATE core.client_investment
-            SET token_cipher = NULL, token_nonce = NULL,
+            SET api_key_cipher = NULL, api_secret_cipher = NULL,
                 revoked_at = now(), updated_at = now()
             WHERE client_id = %s
             """,
@@ -227,8 +228,8 @@ def revoke_broker_token(conn, client_id):
     conn.commit()
 
 
-def touch_broker_token_used(conn, client_id):
-    """Record that the stored token was just used to read Alpaca data."""
+def touch_broker_credentials_used(conn, client_id):
+    """Record that the stored credentials were just used to read Alpaca data."""
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE core.client_investment SET last_used_at = now() WHERE client_id = %s",

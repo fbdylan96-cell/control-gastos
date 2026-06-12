@@ -1,12 +1,12 @@
 """Reversible encryption for sensitive secrets stored at rest.
 
-Used to protect clients' Alpaca OAuth tokens in core.client_investment.
+Used to protect clients' Alpaca API credentials in core.client_investment.
 
-Unlike passwords (which are *hashed* one-way with werkzeug), a broker token
-must be recovered in plaintext to call Alpaca's API, so it is *encrypted* with
-AES-256-GCM (authenticated encryption). The 32-byte master key comes from the
-ENCRYPTION_KEY environment variable and never touches the database; a DB dump
-alone is therefore useless without it.
+Unlike passwords (which are *hashed* one-way with werkzeug), a broker
+credential must be recovered in plaintext to call Alpaca's API, so it is
+*encrypted* with AES-256-GCM (authenticated encryption). The 32-byte master
+key comes from the ENCRYPTION_KEY environment variable and never touches the
+database; a DB dump alone is therefore useless without it.
 
 Generate a key once with:
     python -c "import base64,os;print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
@@ -66,3 +66,19 @@ def decrypt_token(ciphertext: bytes, nonce: bytes, *, aad: str = "") -> str:
     aesgcm = AESGCM(_master_key())
     plaintext = aesgcm.decrypt(bytes(nonce), bytes(ciphertext), aad.encode("utf-8"))
     return plaintext.decode("utf-8")
+
+
+def encrypt_secret(plaintext: str, *, aad: str = "") -> bytes:
+    """Encrypt a secret into a single self-contained blob (nonce || ciphertext).
+
+    One BYTEA column per secret — no separate nonce column needed. `aad`
+    (e.g. the client id) is authenticated, binding the blob to that record.
+    """
+    ciphertext, nonce = encrypt_token(plaintext, aad=aad)
+    return nonce + ciphertext
+
+
+def decrypt_secret(blob: bytes, *, aad: str = "") -> str:
+    """Reverse of `encrypt_secret`. Raises on tampering, wrong key, or wrong aad."""
+    blob = bytes(blob)
+    return decrypt_token(blob[_NONCE_BYTES:], blob[:_NONCE_BYTES], aad=aad)

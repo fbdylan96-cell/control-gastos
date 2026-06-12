@@ -1063,9 +1063,37 @@ function editCard(c) {
                 <label for="ed_wa_${c.id}">Notificar por WhatsApp</label>
             </div>
             <div class="check-row">
-                <input type="checkbox" id="ed_inv_${c.id}" ${c.investment_enabled ? 'checked' : ''}>
+                <input type="checkbox" id="ed_inv_${c.id}" ${c.investment_enabled ? 'checked' : ''}
+                       onchange="document.getElementById('ed_alpaca_${c.id}').style.display = this.checked ? '' : 'none'">
                 <label for="ed_inv_${c.id}">Cliente de inversión (Alpaca)</label>
             </div>
+        </div>
+
+        <div class="notif-section" id="ed_alpaca_${c.id}" style="${c.investment_enabled ? '' : 'display:none;'}">
+            <div class="notif-title">
+                Credenciales Alpaca
+                ${c.alpaca_credentials_set
+                    ? '<span style="color:var(--accent); font-weight:600; font-size:12px;">● cargadas</span>'
+                    : '<span style="color:var(--gray-500); font-size:12px;">○ sin cargar</span>'}
+            </div>
+            <div class="form-group">
+                <label for="ed_akey_${c.id}">API Key ID</label>
+                <input type="password" id="ed_akey_${c.id}" autocomplete="off"
+                       placeholder="${c.alpaca_credentials_set ? '(sin cambios)' : 'PK... / AK...'}">
+            </div>
+            <div class="form-group">
+                <label for="ed_asec_${c.id}">API Secret</label>
+                <input type="password" id="ed_asec_${c.id}" autocomplete="off"
+                       placeholder="${c.alpaca_credentials_set ? '(sin cambios)' : 'secret de la key'}">
+            </div>
+            <p style="font-size:11px; color:var(--gray-500); margin:0;">
+                Las credenciales se cifran al guardar y nunca se vuelven a mostrar.
+                Deben corresponder al entorno configurado (paper o live).
+            </p>
+            ${c.alpaca_credentials_set
+                ? `<button class="btn btn-outline btn-sm" style="margin-top:8px;"
+                           onclick="clearAlpacaCreds('${c.id}')">🗑 Borrar credenciales</button>`
+                : ''}
         </div>
 
         <div class="action-bar">
@@ -1086,21 +1114,52 @@ async function saveEditClient(id) {
     const email = document.getElementById(`ed_email_${id}`).checked;
     const wa    = document.getElementById(`ed_wa_${id}`).checked;
     const inv   = document.getElementById(`ed_inv_${id}`).checked;
+    const akeyEl = document.getElementById(`ed_akey_${id}`);
+    const asecEl = document.getElementById(`ed_asec_${id}`);
+    const akey = akeyEl ? akeyEl.value.trim() : '';
+    const asec = asecEl ? asecEl.value.trim() : '';
 
     if (wa && !phone) {
         return toast('Para notificar por WhatsApp se requiere un número de teléfono.', 'error');
     }
+    if ((akey || asec) && !(akey && asec)) {
+        return toast('Para cargar credenciales de Alpaca se requieren API Key ID y Secret juntos.', 'error');
+    }
+    if (akey && !inv) {
+        return toast('Marcá "Cliente de inversión" para poder cargar credenciales.', 'error');
+    }
+
+    const payload = {
+        phone_number:          phone || null,
+        email_notification:    email,
+        whatsapp_notification: wa,
+        investment_client:     inv,
+    };
+    if (akey && asec) {
+        payload.alpaca_api_key = akey;
+        payload.alpaca_api_secret = asec;
+    }
 
     try {
-        await api('PATCH', `${API_BASE}/api/clients/${id}`, {
-            phone_number:          phone || null,
-            email_notification:    email,
-            whatsapp_notification: wa,
-            investment_client:     inv,
-        });
+        await api('PATCH', `${API_BASE}/api/clients/${id}`, payload);
+        // Wipe the credential inputs immediately — they must never linger in the DOM.
+        if (akeyEl) akeyEl.value = '';
+        if (asecEl) asecEl.value = '';
         toast('Datos actualizados correctamente.', 'success');
+        if (akey) loadEditClients();   // refresh the "cargadas" indicator
     } catch (err) {
         toast('Error al guardar: ' + err.message, 'error');
+    }
+}
+
+async function clearAlpacaCreds(id) {
+    if (!confirm('¿Borrar las credenciales de Alpaca de este cliente? Su portafolio dejará de mostrarse.')) return;
+    try {
+        await api('PATCH', `${API_BASE}/api/clients/${id}`, { alpaca_clear_credentials: true });
+        toast('Credenciales eliminadas.', 'success');
+        loadEditClients();
+    } catch (err) {
+        toast('Error: ' + err.message, 'error');
     }
 }
 

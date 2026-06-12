@@ -33,8 +33,8 @@ One row per person. Key fields:
 ### `core.client_investment`
 One row per client who has the **investment service** (Alpaca). Created/toggled from `administracion` (the "Cliente de inversión" checkbox / the "Inversión" column toggle).
 - `enabled` — gate that makes the `persona` / `empresa` **Portafolio de Inversión** tab show real Alpaca data. When `FALSE` or no row, the tab keeps its marketing placeholder. In `empresa` the tab itself is hidden unless `enabled` (injected via `investment_enabled` context processor); in `persona` the tab is always visible and the route decides the state.
-- `token_cipher` / `token_nonce` — the client's Alpaca **OAuth access token, encrypted at rest** with AES-256-GCM (`web-app/crypto.py`). The master key is `ENCRYPTION_KEY` in `.env`, **never stored in the DB**. `NULL` until the client connects their account.
-- **Read-only by design:** tokens are requested without the `trading` scope (`web-app/alpaca_client.py`), so they can read portfolio data but can never place orders.
+- `api_key_cipher` / `api_secret_cipher` — the client's Alpaca **API key pair, encrypted at rest** with AES-256-GCM as self-contained blobs (12-byte nonce ‖ ciphertext, client_id as AAD — `crypto.encrypt_secret`/`decrypt_secret`). The master key is `ENCRYPTION_KEY` in `.env`, **never stored in the DB**. `NULL` until the administrator loads them in Administración → Modificar Datos. **Write-only:** no endpoint ever returns them (only the boolean `alpaca_credentials_set`).
+- **⚠ Read-only by code discipline, NOT by credential scope:** Alpaca API keys are full-permission (they CAN place orders). `web-app/alpaca_client.py` must only ever issue **GET** requests — never add a POST/PUT/PATCH/DELETE Alpaca call, and never log or return a credential. (The previous OAuth integration with empty scope was removed 2026-06-12 by business decision.)
 - **FK to `core.clients`:** any client-delete path in `administracion` must delete the matching `core.client_investment` row first (already handled in `_wipe_individual`, `_wipe_business`, `_reassign_and_delete_member`).
 
 ### `core.categories`

@@ -8,6 +8,8 @@ from flask import (Blueprint, jsonify, redirect, render_template, request,
                    session, url_for)
 from werkzeug.security import generate_password_hash
 
+import alpaca_client
+from crypto import encrypt_secret
 from db import get_connection
 from utils import gen_email_forward
 
@@ -95,7 +97,8 @@ def get_clients():
                        c.active, c.email_notification, c.whatsapp_notification,
                        c.created_at, b.name AS business_name,
                        c.email_forward, c.username, c.password_hash,
-                       COALESCE(ci.enabled, FALSE) AS investment_enabled
+                       COALESCE(ci.enabled, FALSE) AS investment_enabled,
+                       (ci.api_key_cipher IS NOT NULL) AS alpaca_credentials_set
                 FROM   core.clients c
                 JOIN   core.businesses b ON b.id = c.business_id
                 LEFT   JOIN core.client_investment ci ON ci.client_id = c.id
@@ -227,27 +230,66 @@ def patch_client(client_id):
                     params,
                 )
             if 'investment_client' in body:
-                # Disabling also wipes any stored broker token so a stale
+                # Disabling also wipes any stored broker credentials so a stale
                 # credential never outlives the service it belongs to.
                 cur.execute(
                     """
                     INSERT INTO core.client_investment (client_id, enabled)
                     VALUES (%s, %s)
                     ON CONFLICT (client_id) DO UPDATE
-                        SET enabled      = EXCLUDED.enabled,
-                            token_cipher = CASE WHEN EXCLUDED.enabled
-                                                THEN core.client_investment.token_cipher END,
-                            token_nonce  = CASE WHEN EXCLUDED.enabled
-                                                THEN core.client_investment.token_nonce END,
-                            revoked_at   = CASE WHEN EXCLUDED.enabled
-                                                THEN core.client_investment.revoked_at
-                                                ELSE now() END,
-                            updated_at   = now()
+                        SET enabled           = EXCLUDED.enabled,
+                            api_key_cipher    = CASE WHEN EXCLUDED.enabled
+                                                     THEN core.client_investment.api_key_cipher END,
+                            api_secret_cipher = CASE WHEN EXCLUDED.enabled
+                                                     THEN core.client_investment.api_secret_cipher END,
+                            revoked_at        = CASE WHEN EXCLUDED.enabled
+                                                     THEN core.client_investment.revoked_at
+                                                     ELSE now() END,
+                            updated_at        = now()
                     """,
                     (client_id, bool(body['investment_client'])),
                 )
+
+            # Alpaca API credentials (write-only: never echoed back by any GET).
+            # Runs after the investment upsert so enabling + loading keys works
+            # in a single PATCH. Values are encrypted here and only ever
+            # decrypted at read time in the inversion views.
+            api_key = (body.get('alpaca_api_key') or '').strip()
+            api_secret = (body.get('alpaca_api_secret') or '').strip()
+            if api_key or api_secret:
+                if not (api_key and api_secret):
+                    conn.rollback()
+                    conn.close()
+                    return jsonify({'error': 'Se requieren API key y secret juntos.'}), 400
+                cur.execute(
+                    """
+                    UPDATE core.client_investment
+                    SET api_key_cipher = %s, api_secret_cipher = %s,
+                        connected_at = now(), revoked_at = NULL, updated_at = now()
+                    WHERE client_id = %s AND enabled = TRUE
+                    """,
+                    (psycopg2.Binary(encrypt_secret(api_key, aad=str(client_id))),
+                     psycopg2.Binary(encrypt_secret(api_secret, aad=str(client_id))),
+                     str(client_id)),
+                )
+                if not cur.rowcount:
+                    conn.rollback()
+                    conn.close()
+                    return jsonify({'error': 'El cliente no tiene el servicio de '
+                                             'inversión habilitado.'}), 400
+            elif body.get('alpaca_clear_credentials'):
+                cur.execute(
+                    """
+                    UPDATE core.client_investment
+                    SET api_key_cipher = NULL, api_secret_cipher = NULL,
+                        revoked_at = now(), updated_at = now()
+                    WHERE client_id = %s
+                    """,
+                    (str(client_id),),
+                )
         conn.commit()
         conn.close()
+        alpaca_client.invalidate_portfolio_cache(str(client_id))
         return jsonify({'ok': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500

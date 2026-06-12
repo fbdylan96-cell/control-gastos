@@ -50,33 +50,37 @@ CREATE TABLE core.clients (
 
 -- Investment / brokerage (Alpaca) access, one row per client.
 -- A row is created only for clients flagged as investment clients.
---   * enabled       — the gate that makes the web app show Alpaca info.
---                     When FALSE / no row, the Inversión tab keeps its
---                     marketing placeholder.
---   * token_cipher  — the client's Alpaca OAuth access token, encrypted at
---                     rest with AES-256-GCM. The master key lives OUTSIDE the
---                     database (env ENCRYPTION_KEY / KMS) and is NEVER stored
---                     here. NULL until the client connects their account.
---   * token_nonce   — per-record GCM nonce (the row id is bound as AAD).
--- The token is requested with a read-only scope (no `trading`), so it can
--- never place orders — only read account/portfolio data.
+--   * enabled            — the gate that makes the web app show Alpaca info.
+--                          When FALSE / no row, the Inversión tab keeps its
+--                          marketing placeholder.
+--   * api_key_cipher     — the client's Alpaca API key id, encrypted at rest
+--                          with AES-256-GCM as a self-contained blob
+--                          (12-byte nonce || ciphertext; client_id bound as
+--                          AAD). The master key lives OUTSIDE the database
+--                          (env ENCRYPTION_KEY / KMS) and is NEVER stored
+--                          here. NULL until the administrator loads it.
+--   * api_secret_cipher  — the matching API secret, same encryption scheme.
+-- WARNING: Alpaca API keys are full-permission credentials (they CAN place
+-- orders). The app's read-only behaviour is enforced in code: alpaca_client
+-- only ever issues GET requests. Credentials are loaded exclusively from the
+-- Administración panel and are never returned by any endpoint.
 DROP TABLE IF EXISTS core.client_investment CASCADE;
 
 CREATE TABLE core.client_investment (
-    client_id     UUID PRIMARY KEY REFERENCES core.clients(id),
+    client_id          UUID PRIMARY KEY REFERENCES core.clients(id),
 
-    enabled       BOOLEAN NOT NULL DEFAULT FALSE,
-    provider      TEXT NOT NULL DEFAULT 'alpaca',
+    enabled            BOOLEAN NOT NULL DEFAULT FALSE,
+    provider           TEXT NOT NULL DEFAULT 'alpaca',
 
-    token_cipher  BYTEA,
-    token_nonce   BYTEA,
-    key_version   INT NOT NULL DEFAULT 1,
+    api_key_cipher     BYTEA,
+    api_secret_cipher  BYTEA,
+    key_version        INT NOT NULL DEFAULT 1,
 
-    connected_at  TIMESTAMPTZ,
-    revoked_at    TIMESTAMPTZ,
-    last_used_at  TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    connected_at       TIMESTAMPTZ,
+    revoked_at         TIMESTAMPTZ,
+    last_used_at       TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 DROP TABLE IF EXISTS core.transactions_raw CASCADE;

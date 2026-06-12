@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Política de Privacidad de Datos — Empowered Investor</title>
+  <title>Política de Privacidad de Datos — neto</title>
+  <link rel="icon" href="{{ url_for('static', filename='rebranding/logos/favicon.ico') }}" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='rebranding/logos/favicon-32.png') }}" />
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='rebranding/logos/apple-touch-icon.png') }}" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
   <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet" />
   <style>
@@ -16,14 +19,14 @@
     .privacy-updated { font-size: 0.82rem; color: rgba(21,25,30,0.5); margin-bottom: 2rem; }
     .privacy-wrap h2 {
       font-size: 1.1rem; font-weight: 700; margin: 1.8rem 0 0.6rem;
-      padding-bottom: 0.3rem; border-bottom: 2px solid var(--mint, #65fdb0);
+      padding-bottom: 0.3rem; border-bottom: 2px solid var(--mint, #3A9C8E);
       display: inline-block;
     }
     .privacy-wrap p, .privacy-wrap li { font-size: 0.94rem; line-height: 1.65; color: rgba(21,25,30,0.8); }
     .privacy-wrap ul { padding-left: 1.25rem; }
     .privacy-note {
-      background: var(--mint-muted, rgba(101,253,176,0.12));
-      border-left: 3px solid var(--mint, #65fdb0);
+      background: var(--mint-muted, rgba(58,156,142,0.12));
+      border-left: 3px solid var(--mint, #3A9C8E);
       padding: 0.6rem 0.9rem; border-radius: 8px; font-size: 0.85rem;
       color: rgba(21,25,30,0.65); margin: 0.5rem 0 0;
     }
@@ -33,8 +36,8 @@
 </head>
 <body style="background:#f7f8f9;">
   <div class="privacy-wrap">
-    <img src="{{ url_for('static', filename='logos/logo-mv.png') }}"
-         alt="Empowered Investor" class="privacy-logo" />
+    <img src="{{ url_for('static', filename='rebranding/logos/neto-logo-transparent-600w.png') }}"
+         alt="neto" class="privacy-logo" />
 
     <h1>Política de Privacidad de Datos</h1>
     <p class="privacy-updated">Última actualización: 21 de mayo de 2026</p>
@@ -92,7 +95,7 @@
       WhatsApp: +506 7055 8296
     </p>
 
-    <p class="privacy-footer">Empowered Investor &copy; 2026</p>
+    <p class="privacy-footer">neto by Empowered Investor &copy; 2026</p>
   </div>
 </body>
 </html>

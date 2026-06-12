@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Términos y Condiciones — Empowered Investor</title>
+  <title>Términos y Condiciones — neto</title>
+  <link rel="icon" href="{{ url_for('static', filename='rebranding/logos/favicon.ico') }}" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='rebranding/logos/favicon-32.png') }}" />
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='rebranding/logos/apple-touch-icon.png') }}" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
   <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet" />
   <style>
@@ -19,7 +22,8 @@
       padding: 1.5rem 0.9rem 2rem;
       position: sticky; top: 0; height: 100vh; overflow-y: auto;
     }
-    .terms-logo { height: 40px; margin-bottom: 2rem; object-fit: contain; }
+    .terms-logo { height: 40px; margin-bottom: 2rem; object-fit: contain;
+      background: #fff; border-radius: 8px; padding: 5px 8px; align-self: flex-start; }
     .terms-nav { display: flex; flex-direction: column; gap: 4px; }
     .terms-nav-btn {
       display: flex; align-items: center; gap: 9px;
@@ -30,7 +34,7 @@
     }
     .terms-nav-btn i { font-size: 1rem; flex-shrink: 0; }
     .terms-nav-btn:hover { background: rgba(255,255,255,0.07); color: #fff; }
-    .terms-nav-btn.active { background: rgba(101,253,176,0.13); color: var(--mint, #65fdb0); }
+    .terms-nav-btn.active { background: rgba(58,156,142,0.18); color: #7fd0c3; }
 
     /* ── Main content ── */
     .terms-main { flex: 1; padding: 2.5rem 2.5rem 4rem; overflow-y: auto; }
@@ -40,14 +44,14 @@
     .terms-section h1 { font-size: 1.55rem; font-weight: 700; color: var(--dark); margin-bottom: 0.2rem; }
     .terms-updated { font-size: 0.82rem; color: rgba(21,25,30,0.5); margin-bottom: 1.6rem; }
     .terms-note {
-      background: rgba(101,253,176,0.12); border-left: 3px solid var(--mint, #65fdb0);
+      background: rgba(58,156,142,0.12); border-left: 3px solid var(--mint, #3A9C8E);
       padding: 0.65rem 0.9rem; border-radius: 8px; font-size: 0.86rem;
       color: rgba(21,25,30,0.7); margin-bottom: 1.4rem; line-height: 1.5;
     }
     .terms-section h2 {
       font-size: 1.05rem; font-weight: 700; color: var(--dark);
       margin: 1.7rem 0 0.55rem; padding-bottom: 0.3rem;
-      border-bottom: 2px solid var(--mint, #65fdb0); display: inline-block;
+      border-bottom: 2px solid var(--mint, #3A9C8E); display: inline-block;
     }
     .terms-section p { font-size: 0.93rem; line-height: 1.65; color: rgba(21,25,30,0.8); margin-bottom: 0.6rem; }
     .terms-section ul { padding-left: 1.25rem; margin-bottom: 0.6rem; }
@@ -72,8 +76,8 @@
 
   <!-- ── Sidebar ── -->
   <aside class="terms-sidebar">
-    <img src="{{ url_for('static', filename='logos/logo-mv.png') }}"
-         alt="Empowered Investor" class="terms-logo" />
+    <img src="{{ url_for('static', filename='rebranding/logos/neto-logo-transparent-600w.png') }}"
+         alt="neto" class="terms-logo" />
     <nav class="terms-nav">
       <button class="terms-nav-btn active" data-section="privacidad">
         <i class="bi bi-shield-check"></i>Política de privacidad
@@ -140,7 +144,7 @@
       Correo: jose@empoweredinvestor.trade<br />
       WhatsApp: +506 7055 8296</p>
 
-      <p class="terms-footer">Empowered Investor &copy; 2026</p>
+      <p class="terms-footer">neto by Empowered Investor &copy; 2026</p>
     </section>
 
     <!-- 2. Condiciones del servicio -->
@@ -180,7 +184,7 @@
       <p>Correo: jose@empoweredinvestor.trade<br />
       WhatsApp: +506 7055 8296</p>
 
-      <p class="terms-footer">Empowered Investor &copy; 2026</p>
+      <p class="terms-footer">neto by Empowered Investor &copy; 2026</p>
     </section>
 
     <!-- 3. Eliminación de datos -->
@@ -222,7 +226,7 @@
       <p>Correo: jose@empoweredinvestor.trade<br />
       WhatsApp: +506 7055 8296</p>
 
-      <p class="terms-footer">Empowered Investor &copy; 2026</p>
+      <p class="terms-footer">neto by Empowered Investor &copy; 2026</p>
     </section>
 
   </main>

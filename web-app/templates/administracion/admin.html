@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gastos Tool — Panel de Administración</title>
+    <title>neto — Panel de Administración</title>
+    <link rel="icon" href="{{ url_for('static', filename='rebranding/logos/favicon.ico') }}" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='rebranding/logos/favicon-32.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='rebranding/logos/apple-touch-icon.png') }}">
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <style>
         :root {
@@ -387,10 +390,11 @@
 
 <!-- ─── Header ─── -->
 <header class="header" style="position:relative;">
-    <img src="{{ url_for('static', filename='images/logo1.png') }}" alt="Logo">
+    <img src="{{ url_for('static', filename='rebranding/logos/neto-logo-transparent-600w.png') }}" alt="neto"
+         style="background:#fff; border-radius:8px; padding:5px 10px;">
     <div class="header-text">
         <h1>Panel de Administración</h1>
-        <p>Gestión de Clientes — Gastos Tool</p>
+        <p>Gestión de Clientes — neto</p>
     </div>
     <a href="{{ url_for('administracion.logout') }}"
        style="position:absolute; top:1rem; right:1.25rem; color:inherit;

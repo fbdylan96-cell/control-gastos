@@ -1,13 +1,14 @@
-/* ── Brand tokens ─────────────────────────────────────────────────── */
+/* ── Brand tokens (paleta neto — ver static/rebranding/neto_colors.py) ── */
 :root {
-  --dark:  #15191e;
-  --cream: #fffaf4;
-  --blue:  #0003c2;
-  --mint:  #65fdb0;
+  --dark:  #1B1C20;     /* neto dark */
+  --cream: #FFFFFF;     /* neto white (token keeps legacy name) */
+  --blue:  #1F4D8E;     /* neto blue */
+  --mint:  #3A9C8E;     /* neto teal (token keeps legacy name) */
+  --yellow: #EFA91A;    /* neto yellow */
 
-  --dark-2:  #1e242b;   /* slightly lighter dark for sidebar hover */
-  --blue-hover: #0002a0;
-  --mint-muted: rgba(101, 253, 176, 0.12);
+  --dark-2:  #26272D;   /* slightly lighter dark for sidebar hover */
+  --blue-hover: #173E73;
+  --mint-muted: rgba(58, 156, 142, 0.12);
 }
 
 /* ── Global ───────────────────────────────────────────────────────── */

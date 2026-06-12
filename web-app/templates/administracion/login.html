@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Panel de Administración — Empowered Investor</title>
+  <title>Panel de Administración — neto</title>
+  <link rel="icon" href="{{ url_for('static', filename='rebranding/logos/favicon.ico') }}" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='rebranding/logos/favicon-32.png') }}" />
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='rebranding/logos/apple-touch-icon.png') }}" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
   <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet" />
 </head>
@@ -11,8 +14,8 @@
 <div class="login-page">
   <div class="login-card">
 
-    <img src="{{ url_for('static', filename='logos/logo-circular.png') }}"
-         alt="Empowered Investor" class="login-logo" />
+    <img src="{{ url_for('static', filename='rebranding/logos/neto-logo-transparent-600w.png') }}"
+         alt="neto" class="login-logo" />
 
     <div class="login-divider"></div>
 
@@ -39,7 +42,7 @@
       </button>
     </form>
 
-    <p class="login-footer">Empowered Investor &copy; {{ 2025 }}</p>
+    <p class="login-footer">neto by Empowered Investor &copy; {{ 2026 }}</p>
   </div>
 </div>
 </body>

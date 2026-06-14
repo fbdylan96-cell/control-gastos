@@ -6,6 +6,10 @@
   <i class="bi bi-pencil-square"></i>
   Editar transacciones
 </div>
+<p style="font-size:0.85rem; color:rgba(21,25,30,0.55); margin:-0.4rem 0 1rem;">
+  Corregí o descartá transacciones de cualquier miembro y fecha. Estos cambios actualizan
+  los reportes y dashboards; no modifican las reglas de clasificación automática.
+</p>
 
 <!-- Filter bar -->
 <form method="GET" action="{{ url_for('empresa.transacciones_editar') }}" class="filter-bar">
@@ -43,6 +47,8 @@
           <th>Tipo</th>
           <th>Categoría</th>
           <th>Subcategoría</th>
+          <th style="width:180px;">Reclasificar</th>
+          <th style="width:60px;"></th>
           <th style="width:120px;"></th>
         </tr>
       </thead>
@@ -63,10 +69,46 @@
           <td>{{ row.transaction_type_guess or '—' }}</td>
           <td>{{ row.final_category or '—' }}</td>
           <td class="muted">{{ row.final_subcategory or '—' }}</td>
+          <td>
+            {% if row.notification_id %}
+            {% set current = (row.final_category or '') ~ '|' ~ (row.final_subcategory or '') %}
+            <select class="ei-input" style="font-size:0.82rem; padding:4px 6px;"
+                    id="sel_{{ loop.index }}" onchange="markDirty({{ loop.index }})">
+              <option value="">— seleccionar —</option>
+              {% for cat in categories %}
+              {% set opt = cat.category ~ '|' ~ (cat.subcategory or '') %}
+              <option value="{{ opt }}" {% if opt == current %}selected{% endif %}>
+                {{ cat.category }}{% if cat.subcategory %} / {{ cat.subcategory }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+            {% else %}
+            <span class="muted" style="font-size:0.82rem;">Sin notificación</span>
+            {% endif %}
+          </td>
+          <td style="text-align:center;">
+            {% if row.notification_id %}
+            <form method="POST" action="{{ url_for('empresa.transacciones_editar_reclassify') }}"
+                  id="form_{{ loop.index }}"
+                  onsubmit="return confirmReclassify({{ loop.index }}, '{{ row.merchant_guess or '' }}')">
+              <input type="hidden" name="notification_id" value="{{ row.notification_id }}">
+              <input type="hidden" name="date_from" value="{{ date_from }}">
+              <input type="hidden" name="date_to" value="{{ date_to }}">
+              <input type="hidden" name="category_value" id="val_{{ loop.index }}"
+                     value="{{ (row.final_category or '') ~ '|' ~ (row.final_subcategory or '') }}">
+              <button type="submit" class="btn-primary-ei"
+                      style="padding:4px 10px; font-size:0.8rem; opacity:0.35; pointer-events:none;"
+                      id="btn_{{ loop.index }}" disabled>
+                <i class="bi bi-floppy"></i>
+              </button>
+            </form>
+            {% endif %}
+          </td>
           <td style="text-align:center;">
             <form method="POST" action="{{ url_for('empresa.transacciones_descartar') }}"
                   id="discard_form_{{ loop.index }}">
               <input type="hidden" name="enriched_id" value="{{ row.enriched_id }}">
+              <input type="hidden" name="origin" value="editar">
               <input type="hidden" name="date_from" value="{{ date_from }}">
               <input type="hidden" name="date_to" value="{{ date_to }}">
               <button type="button" class="btn-danger-outline"
@@ -162,6 +204,23 @@
 
   function confirmDiscard() {
     if (discardFormId) document.getElementById(discardFormId).submit();
+  }
+
+  function markDirty(idx) {
+    const sel = document.getElementById('sel_' + idx);
+    const btn = document.getElementById('btn_' + idx);
+    const val = document.getElementById('val_' + idx);
+    val.value = sel.value;
+    const dirty = sel.value !== '';
+    btn.disabled = !dirty;
+    btn.style.opacity = dirty ? '1' : '0.35';
+    btn.style.pointerEvents = dirty ? 'auto' : 'none';
+  }
+
+  function confirmReclassify(idx, merchant) {
+    const sel = document.getElementById('sel_' + idx);
+    const label = sel.options[sel.selectedIndex].text.trim();
+    return confirm('¿Reclasificar "' + (merchant || 'esta transacción') + '" como ' + label + '?');
   }
 </script>
 {% endblock %}

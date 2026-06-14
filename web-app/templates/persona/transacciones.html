@@ -23,6 +23,7 @@
           <th>Subcategoría</th>
           <th style="width:180px;">Reclasificar</th>
           <th style="width:60px;"></th>
+          <th style="width:110px;"></th>
         </tr>
       </thead>
       <tbody>
@@ -76,6 +77,24 @@
             </form>
             {% endif %}
           </td>
+          <td style="text-align:center;">
+            <form method="POST" action="{{ url_for('persona.transacciones_descartar') }}"
+                  id="discard_form_{{ loop.index }}">
+              <input type="hidden" name="enriched_id" value="{{ row.enriched_id }}">
+              <input type="hidden" name="origin" value="recientes">
+              <button type="button" class="btn-danger-outline"
+                      style="padding:4px 10px; font-size:0.8rem;"
+                      title="Descartar transacción"
+                      onclick="openDiscardModal(this)"
+                      data-form="discard_form_{{ loop.index }}"
+                      data-merchant="{{ row.merchant_guess or '' }}"
+                      data-amount="{% if row.amount_guess is not none %}{{ '{:,.2f}'.format(row.amount_guess) }}{% endif %}"
+                      data-currency="{{ row.currency_guess or '' }}"
+                      data-date="{{ row.local_date.strftime('%d/%m/%Y %H:%M') if row.local_date else '' }}">
+                <i class="bi bi-trash"></i> Descartar
+              </button>
+            </form>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -88,10 +107,76 @@
   <p>No hay transacciones en las últimas 24 horas.</p>
 </div>
 {% endif %}
+
+<!-- ── Discard confirmation modal ───────────────────────────────── -->
+<div class="catdel-overlay" id="discardOverlay">
+  <div class="catdel-modal">
+    <div class="catdel-head">
+      <i class="bi bi-exclamation-triangle-fill"></i> Descartar transacción
+    </div>
+    <p class="catdel-text">
+      Vas a descartar la siguiente transacción. Dejará de aparecer en transacciones
+      recientes, reportes y dashboards:
+    </p>
+    <p class="catdel-detail" id="discardDetail"></p>
+    <p class="catdel-warn">Esta acción la oculta de tus reportes. ¿Continuar?</p>
+
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button type="button" class="btn-outline-ei" onclick="closeDiscardModal()">Cancelar</button>
+      <button type="button" class="btn-danger-outline" onclick="confirmDiscard()">
+        <i class="bi bi-trash"></i> Descartar
+      </button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .catdel-overlay {
+    position: fixed; inset: 0; z-index: 9999; display: none;
+    background: rgba(21,25,30,0.55); backdrop-filter: blur(2px);
+    align-items: center; justify-content: center; padding: 1rem;
+  }
+  .catdel-overlay.open { display: flex; }
+  .catdel-modal {
+    background: #fff; border-radius: 16px; max-width: 440px; width: 100%;
+    padding: 1.5rem; box-shadow: 0 18px 50px rgba(0,0,0,0.25);
+  }
+  .catdel-head {
+    display: flex; align-items: center; gap: 0.5rem; font-weight: 700;
+    font-size: 1.1rem; color: #e67e22; margin-bottom: 0.8rem;
+  }
+  .catdel-text { font-size: 0.9rem; line-height: 1.5; color: rgba(21,25,30,0.75); margin-bottom: 0.75rem; }
+  .catdel-detail {
+    font-size: 0.9rem; font-weight: 600; color: var(--dark);
+    background: rgba(21,25,30,0.04); border-radius: 10px; padding: 10px 12px; margin-bottom: 0.75rem;
+  }
+  .catdel-warn { font-size: 0.8rem; font-weight: 700; color: #e74c3c; margin: 14px 0; text-align: center; }
+</style>
 {% endblock %}
 
 {% block scripts %}
 <script>
+  let discardFormId = null;
+
+  function openDiscardModal(btn) {
+    discardFormId = btn.dataset.form;
+    const merchant = btn.dataset.merchant || 'Sin comercio';
+    const amount = btn.dataset.amount ? (btn.dataset.amount + ' ' + (btn.dataset.currency || '')).trim() : '—';
+    const dateTxt = btn.dataset.date || '—';
+    document.getElementById('discardDetail').textContent =
+      merchant + ' · ' + amount + ' · ' + dateTxt;
+    document.getElementById('discardOverlay').classList.add('open');
+  }
+
+  function closeDiscardModal() {
+    document.getElementById('discardOverlay').classList.remove('open');
+    discardFormId = null;
+  }
+
+  function confirmDiscard() {
+    if (discardFormId) document.getElementById(discardFormId).submit();
+  }
+
   function markDirty(idx) {
     const sel = document.getElementById('sel_' + idx);
     const btn = document.getElementById('btn_' + idx);

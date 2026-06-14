@@ -136,7 +136,8 @@ def transacciones():
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT te.merchant_guess,
+                SELECT te.id          AS enriched_id,
+                       te.merchant_guess,
                        te.amount_guess,
                        te.currency_guess,
                        te.transaction_type_guess,
@@ -260,6 +261,7 @@ def transacciones_editar():
                        te.currency_guess,
                        te.transaction_type_guess,
                        tr.local_date,
+                       tn.id          AS notification_id,
                        tn.final_category,
                        tn.final_subcategory
                 FROM core.transactions_enriched te
@@ -276,28 +278,98 @@ def transacciones_editar():
                 (session["business_id"], date_from, date_to),
             )
             rows = cur.fetchall()
+
+            cur.execute(
+                """
+                SELECT category, subcategory
+                FROM core.categories
+                WHERE business_id = %s AND individual_id IS NULL
+                ORDER BY category, subcategory NULLS FIRST
+                """,
+                (session["business_id"],),
+            )
+            categories = cur.fetchall()
     finally:
         conn.close()
 
     return render_template(
         "empresa/editar.html",
         rows=rows,
+        categories=categories,
         date_from=str(date_from),
         date_to=str(date_to),
     )
+
+
+@empresa_bp.route("/transacciones/editar/reclassify", methods=["POST"])
+@admin_required
+def transacciones_editar_reclassify():
+    """Admin-only reclassification scoped by business_id, so the business admin can
+    reclassify any member's transaction. Only corrects the historical record
+    (final_category); it never touches core.category_rules — the learning signal
+    comes solely from the recent-window flow read by the scheduler."""
+    notification_id = request.form.get("notification_id")
+    raw_value = request.form.get("category_value", "")
+    date_from = request.form.get("date_from", "")
+    date_to = request.form.get("date_to", "")
+    parts = raw_value.split("|", 1)
+    final_category = parts[0].strip() or None
+    final_subcategory = parts[1].strip() or None if len(parts) > 1 else None
+
+    back = redirect(url_for("empresa.transacciones_editar",
+                            date_from=date_from, date_to=date_to))
+
+    if not notification_id or not final_category:
+        flash("Datos inválidos.", "danger")
+        return back
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE core.transactions_notifications
+                SET final_category    = %s,
+                    final_subcategory = %s,
+                    reclassified_by   = 'user',
+                    reclassified_at   = NOW()
+                WHERE id = %s AND business_id = %s
+                """,
+                (final_category, final_subcategory, notification_id, session["business_id"]),
+            )
+            updated = cur.rowcount
+        conn.commit()
+        if updated:
+            flash("Reclasificación guardada.", "success")
+        else:
+            flash("No se encontró la transacción para actualizar.", "warning")
+    except Exception as e:
+        flash(f"Error al guardar: {e}", "danger")
+    finally:
+        conn.close()
+
+    return back
 
 
 @empresa_bp.route("/transacciones/descartar", methods=["POST"])
 @admin_required
 def transacciones_descartar():
     enriched_id = request.form.get("enriched_id")
+    # "recientes" returns to Transacciones recientes; otherwise back to Editar
+    # preserving the active date filter.
+    origin = request.form.get("origin", "")
     date_from = request.form.get("date_from", "")
     date_to = request.form.get("date_to", "")
 
-    if not enriched_id:
-        flash("Datos inválidos.", "danger")
+    def _back():
+        if origin == "recientes":
+            return redirect(url_for("empresa.transacciones"))
         return redirect(url_for("empresa.transacciones_editar",
                                 date_from=date_from, date_to=date_to))
+
+    if not enriched_id:
+        flash("Datos inválidos.", "danger")
+        return _back()
 
     conn = get_connection()
     try:
@@ -322,8 +394,7 @@ def transacciones_descartar():
     finally:
         conn.close()
 
-    return redirect(url_for("empresa.transacciones_editar",
-                            date_from=date_from, date_to=date_to))
+    return _back()
 
 
 # ── Transacciones pendientes ──────────────────────────────────────────────────

@@ -131,7 +131,8 @@ def transacciones():
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT te.merchant_guess,
+                SELECT te.id          AS enriched_id,
+                       te.merchant_guess,
                        te.amount_guess,
                        te.currency_guess,
                        te.transaction_type_guess,
@@ -175,13 +176,26 @@ def transacciones():
 def transacciones_reclassify():
     notification_id = request.form.get("notification_id")
     raw_value = request.form.get("category_value", "")
+    # When invoked from the "Editar transacciones" tab we return there preserving
+    # the active date filter. Reclassifying only updates the historical record
+    # (final_category); it never touches core.category_rules — the learning signal
+    # comes solely from the recent-window flow read by the scheduler.
+    origin = request.form.get("origin", "")
+    date_from = request.form.get("date_from", "")
+    date_to = request.form.get("date_to", "")
     parts = raw_value.split("|", 1)
     final_category = parts[0].strip() or None
     final_subcategory = parts[1].strip() or None if len(parts) > 1 else None
 
+    def _back():
+        if origin == "editar":
+            return redirect(url_for("persona.transacciones_editar",
+                                    date_from=date_from, date_to=date_to))
+        return redirect(url_for("persona.transacciones"))
+
     if not notification_id or not final_category:
         flash("Datos inválidos.", "danger")
-        return redirect(url_for("persona.transacciones"))
+        return _back()
 
     conn = get_connection()
     try:
@@ -208,7 +222,7 @@ def transacciones_reclassify():
     finally:
         conn.close()
 
-    return redirect(url_for("persona.transacciones"))
+    return _back()
 
 
 # ── Editar transacciones (descartar) ──────────────────────────────────────────
@@ -253,6 +267,7 @@ def transacciones_editar():
                        te.currency_guess,
                        te.transaction_type_guess,
                        tr.local_date,
+                       tn.id          AS notification_id,
                        tn.final_category,
                        tn.final_subcategory
                 FROM core.transactions_enriched te
@@ -268,12 +283,25 @@ def transacciones_editar():
                 (session["user_id"], date_from, date_to),
             )
             rows = cur.fetchall()
+
+            cur.execute(
+                """
+                SELECT category, subcategory
+                FROM core.categories
+                WHERE business_id = %s
+                  AND (individual_id = %s OR individual_id IS NULL)
+                ORDER BY category, subcategory NULLS FIRST
+                """,
+                (INDIVIDUAL_BIZ_ID, session["user_id"]),
+            )
+            categories = cur.fetchall()
     finally:
         conn.close()
 
     return render_template(
         "persona/editar.html",
         rows=rows,
+        categories=categories,
         date_from=str(date_from),
         date_to=str(date_to),
     )
@@ -283,13 +311,21 @@ def transacciones_editar():
 @login_required
 def transacciones_descartar():
     enriched_id = request.form.get("enriched_id")
+    # "recientes" returns to Transacciones recientes; otherwise back to Editar
+    # preserving the active date filter.
+    origin = request.form.get("origin", "")
     date_from = request.form.get("date_from", "")
     date_to = request.form.get("date_to", "")
 
-    if not enriched_id:
-        flash("Datos inválidos.", "danger")
+    def _back():
+        if origin == "recientes":
+            return redirect(url_for("persona.transacciones"))
         return redirect(url_for("persona.transacciones_editar",
                                 date_from=date_from, date_to=date_to))
+
+    if not enriched_id:
+        flash("Datos inválidos.", "danger")
+        return _back()
 
     conn = get_connection()
     try:
@@ -314,8 +350,7 @@ def transacciones_descartar():
     finally:
         conn.close()
 
-    return redirect(url_for("persona.transacciones_editar",
-                            date_from=date_from, date_to=date_to))
+    return _back()
 
 
 # ── Transacciones pendientes ──────────────────────────────────────────────────

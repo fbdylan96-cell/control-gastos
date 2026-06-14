@@ -62,6 +62,12 @@
           </a>
         </li>
         <li>
+          <a href="{{ url_for('persona.transacciones_editar') }}"
+             class="nav-link {% if request.endpoint == 'persona.transacciones_editar' %}active{% endif %}">
+            <i class="bi bi-pencil-square"></i>Editar transacciones
+          </a>
+        </li>
+        <li>
           <a href="{{ url_for('persona.reportes') }}"
              class="nav-link {% if request.endpoint in ['persona.reportes', 'persona.reportes_download'] %}active{% endif %}">
             <i class="bi bi-file-earmark-spreadsheet"></i>Reportes

@@ -65,6 +65,12 @@
         {% endif %}
         {% if session.business_admin %}
         <li>
+          <a href="{{ url_for('empresa.transacciones_editar') }}"
+             class="nav-link {% if request.endpoint == 'empresa.transacciones_editar' %}active{% endif %}">
+            <i class="bi bi-pencil-square"></i>Editar transacciones
+          </a>
+        </li>
+        <li>
           <a href="{{ url_for('empresa.reportes') }}"
              class="nav-link {% if request.endpoint in ['empresa.reportes', 'empresa.reportes_download'] %}active{% endif %}">
             <i class="bi bi-file-earmark-spreadsheet"></i>Reportes

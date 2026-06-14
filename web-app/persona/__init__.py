@@ -211,6 +211,113 @@ def transacciones_reclassify():
     return redirect(url_for("persona.transacciones"))
 
 
+# ── Editar transacciones (descartar) ──────────────────────────────────────────
+#
+# "Descartar" is a SOFT delete: it sets transactions_enriched.transaction_status
+# to 'Descartado'. Every read path (transacciones recientes, pendientes, reportes
+# and the finance dashboards/budgets) already excludes that status, so a discarded
+# transaction simply disappears everywhere without any physical DELETE across the
+# raw → enriched → classified → notifications chain.
+
+def _resolve_editar_range(date_from_str, date_to_str):
+    """Defaults to the last week (today − 7 days … today)."""
+    today = date.today()
+    date_from = today - timedelta(days=7)
+    date_to = today
+    if date_from_str:
+        try:
+            date_from = datetime.strptime(date_from_str, "%Y-%m-%d").date()
+        except ValueError:
+            pass
+    if date_to_str:
+        try:
+            date_to = datetime.strptime(date_to_str, "%Y-%m-%d").date()
+        except ValueError:
+            pass
+    return date_from, date_to
+
+
+@persona_bp.route("/transacciones/editar")
+@login_required
+def transacciones_editar():
+    date_from, date_to = _resolve_editar_range(
+        request.args.get("date_from", ""), request.args.get("date_to", ""))
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT te.id          AS enriched_id,
+                       te.merchant_guess,
+                       te.amount_guess,
+                       te.currency_guess,
+                       te.transaction_type_guess,
+                       tr.local_date,
+                       tn.final_category,
+                       tn.final_subcategory
+                FROM core.transactions_enriched te
+                JOIN core.transactions_raw tr ON te.raw_id = tr.id
+                LEFT JOIN core.transactions_classified tc ON tc.raw_id = tr.id
+                LEFT JOIN core.transactions_notifications tn ON tn.classified_id = tc.id
+                WHERE tr.individual_id = %s
+                  AND te.transaction_status NOT IN ('Descartado', 'Duplicado')
+                  AND te.transaction_type_guess != 'unknown'
+                  AND tr.local_date::date BETWEEN %s AND %s
+                ORDER BY tr.local_date DESC
+                """,
+                (session["user_id"], date_from, date_to),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    return render_template(
+        "persona/editar.html",
+        rows=rows,
+        date_from=str(date_from),
+        date_to=str(date_to),
+    )
+
+
+@persona_bp.route("/transacciones/descartar", methods=["POST"])
+@login_required
+def transacciones_descartar():
+    enriched_id = request.form.get("enriched_id")
+    date_from = request.form.get("date_from", "")
+    date_to = request.form.get("date_to", "")
+
+    if not enriched_id:
+        flash("Datos inválidos.", "danger")
+        return redirect(url_for("persona.transacciones_editar",
+                                date_from=date_from, date_to=date_to))
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE core.transactions_enriched
+                SET transaction_status = 'Descartado'
+                WHERE id = %s AND individual_id = %s
+                  AND transaction_status NOT IN ('Descartado', 'Duplicado')
+                """,
+                (enriched_id, session["user_id"]),
+            )
+            updated = cur.rowcount
+        conn.commit()
+        if updated:
+            flash("Transacción descartada.", "success")
+        else:
+            flash("No se encontró la transacción para descartar.", "warning")
+    except Exception as e:
+        flash(f"Error al descartar: {e}", "danger")
+    finally:
+        conn.close()
+
+    return redirect(url_for("persona.transacciones_editar",
+                            date_from=date_from, date_to=date_to))
+
+
 # ── Transacciones pendientes ──────────────────────────────────────────────────
 
 def _count_pending(conn, individual_id):

@@ -54,6 +54,16 @@
         .header-text h1 { color: #fff; font-size: 19px; font-weight: 700; letter-spacing: 0.2px; }
         .header-text p  { color: var(--accent); font-size: 12px; margin-top: 2px; letter-spacing: 0.3px; }
 
+        /* ── Logout button (header, top-right) ── */
+        .btn-logout-admin {
+            position: absolute; top: 50%; right: 24px; transform: translateY(-50%);
+            display: inline-flex; align-items: center; gap: 6px;
+            color: #fff; text-decoration: none; font-size: 13px; line-height: 1;
+            border: 1px solid rgba(255,255,255,0.35); border-radius: 6px;
+            padding: 7px 14px; transition: border-color 0.15s, background 0.15s;
+        }
+        .btn-logout-admin:hover { border-color: var(--accent); background: rgba(255,255,255,0.10); }
+
         /* ── Container ── */
         .container { max-width: 780px; margin: 32px auto; padding: 0 16px 60px; }
 
@@ -396,9 +406,7 @@
         <h1>Panel de Administración</h1>
         <p>Gestión de Clientes — neto</p>
     </div>
-    <a href="{{ url_for('administracion.logout') }}"
-       style="position:absolute; top:1rem; right:1.25rem; color:inherit;
-              text-decoration:none; font-size:0.85rem; opacity:0.75;">
+    <a href="{{ url_for('administracion.logout') }}" class="btn-logout-admin">
         <i class="bi bi-box-arrow-right"></i> Salir
     </a>
 </header>

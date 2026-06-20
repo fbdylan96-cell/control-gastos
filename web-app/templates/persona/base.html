@@ -91,6 +91,12 @@
             <i class="bi bi-graph-up-arrow"></i>Portafolio de Inversión
           </a>
         </li>
+        <li>
+          <a href="{{ url_for('persona.configuracion') }}"
+             class="nav-link {% if request.endpoint == 'persona.configuracion' %}active{% endif %}">
+            <i class="bi bi-gear"></i>Configuración
+          </a>
+        </li>
       </ul>
     </nav>
 

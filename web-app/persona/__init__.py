@@ -17,6 +17,7 @@ from crypto import decrypt_secret
 from db import (get_connection, get_investment, insert_manual_transaction,
                 touch_broker_credentials_used)
 from tools import finance
+from utils import BANK_NOTIFICATION_SENDERS
 
 persona_bp = Blueprint('persona', __name__)
 
@@ -775,6 +776,32 @@ def reportes_download():
         as_attachment=True,
         download_name=filename,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+# ── Configuración ─────────────────────────────────────────────────────────────
+#
+# Read-only help page: shows the client's email_forward and provider-specific
+# instructions to set up forwarding of bank notifications toward it.
+
+@persona_bp.route("/configuracion")
+@login_required
+def configuracion():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT email_forward FROM core.clients WHERE id = %s",
+                (session["user_id"],),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+
+    return render_template(
+        "persona/configuracion.html",
+        email_forward=row[0] if row else None,
+        bank_senders=BANK_NOTIFICATION_SENDERS,
     )
 
 

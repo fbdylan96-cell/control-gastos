@@ -1,0 +1,318 @@
+{# ──────────────────────────────────────────────────────────────────────────
+   Shared "Configuración" content — included by persona/configuracion.html and
+   empresa/configuracion.html. Explains how to forward bank notification emails
+   from the client's own mail provider to their personal email_forward address.
+
+   Expected context:
+     email_forward  -> the gastos+alias@investorcr.com destination address
+     bank_senders   -> list of {bank, emails[]} (utils.BANK_NOTIFICATION_SENDERS)
+   ────────────────────────────────────────────────────────────────────────── #}
+
+{# Combined "all banks" sender string for the rule's «De / From» field, so the
+   client copies a single value that already covers every supported bank. #}
+{% set all_emails = bank_senders | map(attribute='emails') | sum(start=[]) %}
+{% set senders_all = '(' ~ (all_emails | join(' OR ')) ~ ')' %}
+
+{# Inline copy-paste field: label + value + Copy button, embedded right at the
+   step where it's used so the client only has to copy and paste. #}
+{% macro copyrow(label, value, cid) %}
+<div class="cfg-inline">
+  <span class="cfg-inline-label">{{ label }}</span>
+  <code class="cfg-inline-val" id="{{ cid }}">{{ value }}</code>
+  <button type="button" class="cfg-inline-copy copy-btn" data-copy-target="{{ cid }}">
+    <i class="bi bi-clipboard"></i>Copiar
+  </button>
+</div>
+{% endmacro %}
+
+<div class="page-heading">
+  <i class="bi bi-gear"></i>
+  Configuración
+</div>
+
+<p style="max-width:760px; color:var(--ink-soft, #555); margin-top:-0.4rem; margin-bottom:1.25rem;">
+  Para que registremos automáticamente tus gastos, configura tu correo personal
+  para que <strong>reenvíe las notificaciones de tu banco</strong> a tu dirección
+  de reenvío de neto. Solo tienes que hacerlo una vez.
+</p>
+
+<!-- ── Step 1: your forwarding address ─────────────────────────────────────── -->
+<div class="ei-card" style="margin-bottom:1.25rem;">
+  <div class="ei-card-header">
+    <i class="bi bi-1-circle"></i>Tu dirección de reenvío
+  </div>
+  <div class="ei-card-body">
+    {% if email_forward %}
+      <p style="margin-top:0; color:var(--ink-soft, #555);">
+        Esta es la dirección a la que tu banco debe reenviar las notificaciones.
+        Cópiala para pegarla en la regla de tu proveedor de correo.
+      </p>
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <code class="cfg-email" id="forwardEmail">{{ email_forward }}</code>
+        <button type="button" class="btn-outline-ei copy-btn" data-copy-target="forwardEmail">
+          <i class="bi bi-clipboard"></i>Copiar
+        </button>
+      </div>
+    {% else %}
+      <div class="ei-alert ei-alert-warning" style="margin:0;">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        Aún no tienes una dirección de reenvío asignada. Contacta al administrador
+        para activarla.
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Step 2: provider-specific rule (senders encapsulated per provider) ───── -->
+<div class="ei-card">
+  <div class="ei-card-header">
+    <i class="bi bi-2-circle"></i>Crea la regla de reenvío
+  </div>
+  <div class="ei-card-body">
+    <label class="form-label-ei" for="providerSelect">Selecciona tu proveedor de correo</label>
+    <select id="providerSelect" class="ei-select" style="max-width:360px;">
+      <option value="gmail">Gmail</option>
+      <option value="outlook">Outlook / Hotmail / Live</option>
+      <option value="yahoo">Yahoo Mail</option>
+      <option value="icloud">iCloud Mail</option>
+      <option value="otros">Otro proveedor</option>
+    </select>
+
+    <!-- Gmail -->
+    <div class="provider-block" data-provider="gmail" style="margin-top:1.25rem;">
+      <div class="cfg-links">
+        <a class="btn-outline-ei" target="_blank" rel="noopener"
+           href="https://mail.google.com/mail/u/0/#settings/fwdandpop">
+          <i class="bi bi-box-arrow-up-right"></i>Reenvío y POP/IMAP
+        </a>
+        <a class="btn-outline-ei" target="_blank" rel="noopener"
+           href="https://mail.google.com/mail/u/0/#settings/filters">
+          <i class="bi bi-box-arrow-up-right"></i>Filtros y direcciones bloqueadas
+        </a>
+      </div>
+      <ol class="cfg-steps">
+        <li>Abre <strong>Configuración → Reenvío y correo POP/IMAP</strong> y haz clic
+          en <em>«Agregar una dirección de reenvío»</em>. Pega esta dirección y confirma
+          el código que enviaremos a esa bandeja:
+          {% if email_forward %}{{ copyrow('Reenviar a', email_forward, 'gm-fwd') }}{% endif %}
+        </li>
+        <li>Ve a <strong>Configuración → Filtros y direcciones bloqueadas →
+          «Crear un filtro nuevo»</strong>.</li>
+        <li>Pega este bloque en el campo <strong>«De»</strong> y haz clic en
+          <em>«Crear filtro»</em>:
+          {{ copyrow('Campo «De»', senders_all, 'gm-de') }}
+        </li>
+        <li>Marca <strong>«Reenviarlo a»</strong>, elige tu dirección de reenvío y
+          guarda el filtro.</li>
+      </ol>
+    </div>
+
+    <!-- Outlook -->
+    <div class="provider-block" data-provider="outlook" style="margin-top:1.25rem; display:none;">
+      <div class="cfg-links">
+        <a class="btn-outline-ei" target="_blank" rel="noopener"
+           href="https://outlook.live.com/mail/0/options/mail/rules">
+          <i class="bi bi-box-arrow-up-right"></i>Reglas de Outlook
+        </a>
+        <a class="btn-outline-ei" target="_blank" rel="noopener"
+           href="https://outlook.live.com/mail/0/options/mail/forwarding">
+          <i class="bi bi-box-arrow-up-right"></i>Reenvío de Outlook
+        </a>
+      </div>
+      <ol class="cfg-steps">
+        <li>Abre <strong>Configuración → Correo → Reglas</strong> y haz clic en
+          <em>«Agregar nueva regla»</em>. Ponle un nombre (por ejemplo «Reenvío neto»).</li>
+        <li>En <strong>«Agregar una condición»</strong> elige <em>«De»</em> y pega este
+          bloque:
+          {{ copyrow('Condición «De»', senders_all, 'ol-de') }}
+        </li>
+        <li>En <strong>«Agregar una acción»</strong> elige <em>«Reenviar a»</em> y pega
+          tu dirección de reenvío:
+          {% if email_forward %}{{ copyrow('Reenviar a', email_forward, 'ol-fwd') }}{% endif %}
+        </li>
+        <li>Guarda la regla.</li>
+      </ol>
+    </div>
+
+    <!-- Yahoo -->
+    <div class="provider-block" data-provider="yahoo" style="margin-top:1.25rem; display:none;">
+      <div class="cfg-links">
+        <a class="btn-outline-ei" target="_blank" rel="noopener"
+           href="https://mail.yahoo.com/d/settings/1">
+          <i class="bi bi-box-arrow-up-right"></i>Ajustes de Yahoo Mail
+        </a>
+      </div>
+      <ol class="cfg-steps">
+        <li>Para el reenvío automático, ve a <strong>Ajustes → Más ajustes →
+          Buzones → Reenvío</strong>, agrega esta dirección y confirma el código que
+          enviaremos a esa bandeja:
+          {% if email_forward %}{{ copyrow('Reenviar a', email_forward, 'ya-fwd') }}{% endif %}
+        </li>
+        <li>Ve a <strong>Ajustes → Más ajustes → Filtros → «Agregar nuevos
+          filtros»</strong>.</li>
+        <li>En <strong>«Remitente»</strong> selecciona <em>«contiene»</em> y pega este
+          bloque:
+          {{ copyrow('Remitente contiene', senders_all, 'ya-de') }}
+        </li>
+        <li>Guarda los cambios.</li>
+      </ol>
+      <p class="cfg-note">
+        <i class="bi bi-info-circle"></i>
+        El reenvío automático de Yahoo puede requerir Yahoo Mail Plus. Si el filtro no
+        acepta el bloque completo, crea un filtro por cada dirección del bloque.
+      </p>
+    </div>
+
+    <!-- iCloud -->
+    <div class="provider-block" data-provider="icloud" style="margin-top:1.25rem; display:none;">
+      <div class="cfg-links">
+        <a class="btn-outline-ei" target="_blank" rel="noopener"
+           href="https://www.icloud.com/mail/">
+          <i class="bi bi-box-arrow-up-right"></i>iCloud Mail
+        </a>
+      </div>
+      <ol class="cfg-steps">
+        <li>Abre <strong>iCloud Mail</strong> en el navegador y haz clic en el icono de
+          engranaje <i class="bi bi-gear"></i> → <strong>«Reglas» → «Agregar una
+          regla»</strong>.</li>
+        <li>En <strong>«Si un mensaje es de»</strong> pega este bloque:
+          {{ copyrow('Si es de', senders_all, 'ic-de') }}
+        </li>
+        <li>En <strong>«Entonces»</strong> elige <em>«Reenviar a»</em> y pega tu
+          dirección de reenvío:
+          {% if email_forward %}{{ copyrow('Reenviar a', email_forward, 'ic-fwd') }}{% endif %}
+        </li>
+        <li>Guarda la regla.</li>
+      </ol>
+      <p class="cfg-note">
+        <i class="bi bi-info-circle"></i>
+        Si iCloud solo permite una dirección por regla, crea una regla por cada
+        dirección del bloque.
+      </p>
+    </div>
+
+    <!-- Otros -->
+    <div class="provider-block" data-provider="otros" style="margin-top:1.25rem; display:none;">
+      <ol class="cfg-steps">
+        <li>Entra a los <strong>ajustes</strong> de tu correo y busca la sección de
+          <strong>«Filtros»</strong>, <strong>«Reglas»</strong> o
+          <strong>«Reenvío»</strong>.</li>
+        <li>Crea una regla cuya condición sea que el <strong>remitente (De)</strong>
+          coincida con este bloque:
+          {{ copyrow('Remitente (De)', senders_all, 'ot-de') }}
+        </li>
+        <li>Define la acción <strong>«Reenviar a»</strong> hacia tu dirección de reenvío:
+          {% if email_forward %}{{ copyrow('Reenviar a', email_forward, 'ot-fwd') }}{% endif %}
+        </li>
+        <li>Si tu proveedor pide verificar la dirección de reenvío, confirma el código
+          que enviaremos a esa bandeja, y guarda la regla.</li>
+      </ol>
+    </div>
+
+    <p style="margin-bottom:0; margin-top:1rem; font-size:0.85rem; color:var(--ink-soft, #777);">
+      <i class="bi bi-info-circle"></i>
+      El bloque de remitentes ya cubre todos los bancos soportados
+      ({{ bank_senders | map(attribute='bank') | join(', ') }}). ¿Tu banco no aparece?
+      Abre una notificación que hayas recibido, copia la dirección del remitente y
+      agrégala al bloque con <code>OR</code>.
+    </p>
+  </div>
+</div>
+
+<style>
+  .cfg-email {
+    font-size: 1rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--cream, #f6f3ec);
+    border: 1px solid var(--border, #ddd);
+    border-radius: 8px;
+    word-break: break-all;
+  }
+  .cfg-links { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 1rem; }
+  .cfg-steps { margin: 0; padding-left: 1.25rem; line-height: 1.7; }
+  .cfg-steps li { margin-bottom: 0.6rem; }
+  .cfg-note { font-size: 0.85rem; color: var(--ink-soft, #777); margin: 0.75rem 0 0; }
+  .copy-btn.copied { border-color: var(--green, #3a8); color: var(--green, #3a8); }
+
+  /* Inline copy-paste field embedded inside a step */
+  .cfg-inline {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 8px 0 2px;
+    padding: 8px 10px;
+    background: var(--cream, #f6f3ec);
+    border: 1px solid var(--border, #ddd);
+    border-radius: 10px;
+  }
+  .cfg-inline-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+    color: var(--ink-soft, #777);
+    flex: 0 0 auto;
+  }
+  .cfg-inline-val {
+    flex: 1 1 240px;
+    min-width: 0;
+    font-size: 0.85rem;
+    padding: 0.35rem 0.55rem;
+    background: #fff;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 8px;
+    word-break: break-word;
+  }
+  .cfg-inline-copy { flex: 0 0 auto; }
+</style>
+
+<script>
+  (function () {
+    // Provider selector toggles the matching instructions block.
+    var select = document.getElementById('providerSelect');
+    var blocks = document.querySelectorAll('.provider-block');
+    function showProvider(p) {
+      blocks.forEach(function (b) {
+        b.style.display = (b.getAttribute('data-provider') === p) ? '' : 'none';
+      });
+    }
+    if (select) {
+      select.addEventListener('change', function () { showProvider(this.value); });
+      showProvider(select.value);
+    }
+
+    // Copy-to-clipboard for the forward address and each sender chip.
+    function flash(btn) {
+      var original = btn.innerHTML;
+      btn.classList.add('copied');
+      if (btn.classList.contains('cfg-chip-copy')) {
+        btn.innerHTML = '<i class="bi bi-check-lg"></i>';
+      } else {
+        btn.innerHTML = '<i class="bi bi-check-lg"></i>Copiado';
+      }
+      setTimeout(function () {
+        btn.innerHTML = original;
+        btn.classList.remove('copied');
+      }, 1500);
+    }
+    document.querySelectorAll('.copy-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var el = document.getElementById(btn.getAttribute('data-copy-target'));
+        if (!el) return;
+        var text = el.innerText.trim();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () { flash(btn); });
+        } else {
+          var r = document.createRange();
+          r.selectNode(el);
+          var sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(r);
+          try { document.execCommand('copy'); flash(btn); } catch (e) {}
+          sel.removeAllRanges();
+        }
+      });
+    });
+  })();
+</script>

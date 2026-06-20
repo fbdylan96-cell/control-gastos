@@ -101,6 +101,12 @@
           </a>
         </li>
         {% endif %}
+        <li>
+          <a href="{{ url_for('empresa.configuracion') }}"
+             class="nav-link {% if request.endpoint == 'empresa.configuracion' %}active{% endif %}">
+            <i class="bi bi-gear"></i>Configuración
+          </a>
+        </li>
       </ul>
     </nav>
 

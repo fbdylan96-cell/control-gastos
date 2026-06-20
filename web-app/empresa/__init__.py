@@ -17,7 +17,7 @@ from crypto import decrypt_secret
 from db import (get_connection, get_investment, insert_manual_transaction,
                 touch_broker_credentials_used)
 from tools import finance
-from utils import gen_email_forward, gen_password
+from utils import BANK_NOTIFICATION_SENDERS, gen_email_forward, gen_password
 
 empresa_bp = Blueprint('empresa', __name__)
 
@@ -1082,6 +1082,33 @@ def categorias_template():
         as_attachment=True,
         download_name="plantilla_categorias.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+# ── Configuración ─────────────────────────────────────────────────────────────
+#
+# Read-only help page available to every member (each one has its own
+# email_forward): shows the address and provider-specific instructions to set up
+# forwarding of bank notifications toward it.
+
+@empresa_bp.route("/configuracion")
+@login_required
+def configuracion():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT email_forward FROM core.clients WHERE id = %s",
+                (session["user_id"],),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+
+    return render_template(
+        "empresa/configuracion.html",
+        email_forward=row[0] if row else None,
+        bank_senders=BANK_NOTIFICATION_SENDERS,
     )
 
 

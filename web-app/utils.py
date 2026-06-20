@@ -46,6 +46,34 @@ def gen_email_forward(client_name: str) -> str:
     return f'gastos+{name_slug}.{suffix}@investorcr.com'
 
 
+# ── Configuración: reenvío de correos ────────────────────────────────────────
+#
+# Remitentes (direcciones / dominios) desde los que cada banco envía sus
+# notificaciones de transacción. Se ofrecen al cliente para que los use como
+# condición "De / From" al crear la regla de reenvío hacia su email_forward.
+# Las direcciones de BAC están confirmadas en banks/bac.py (BAC_DOMAINS); las de
+# los demás bancos son los dominios habituales y conviene que el cliente las
+# verifique contra un correo real antes de fijar el filtro.
+BANK_NOTIFICATION_SENDERS = [
+    {
+        "bank": "BAC Credomatic",
+        "emails": [
+            "notificacion@notificacionesbaccr.com",
+            "alerta@baccredomatic.com",
+            "notificacionesbaccr.com",
+        ],
+    },
+    {
+        "bank": "Banco Promerica",
+        "emails": ["promerica.fi.cr"],
+    },
+    {
+        "bank": "DAVIbank (Davivienda)",
+        "emails": ["davivienda.cr", "davibank.com"],
+    },
+]
+
+
 def gen_password(nombre: str, apellidos: str) -> str:
     """Derive an initial password from the client's name.
 

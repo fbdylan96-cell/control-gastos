@@ -48,12 +48,11 @@ def gen_email_forward(client_name: str) -> str:
 
 # ── Configuración: reenvío de correos ────────────────────────────────────────
 #
-# Remitentes (direcciones / dominios) desde los que cada banco envía sus
-# notificaciones de transacción. Se ofrecen al cliente para que los use como
-# condición "De / From" al crear la regla de reenvío hacia su email_forward.
-# Las direcciones de BAC están confirmadas en banks/bac.py (BAC_DOMAINS); las de
-# los demás bancos son los dominios habituales y conviene que el cliente las
-# verifique contra un correo real antes de fijar el filtro.
+# Remitentes confirmados desde los que cada banco envía sus notificaciones de
+# transacción. Se ofrecen al cliente para que los use como condición "De / From"
+# al crear la regla de reenvío hacia su email_forward. (BAC también está en
+# banks/bac.py / BAC_DOMAINS.) Si se agrega un banco nuevo, verificar la dirección
+# contra un correo real antes de fijar el filtro.
 BANK_NOTIFICATION_SENDERS = [
     {
         "bank": "BAC Credomatic",
@@ -65,11 +64,11 @@ BANK_NOTIFICATION_SENDERS = [
     },
     {
         "bank": "Banco Promerica",
-        "emails": ["promerica.fi.cr"],
+        "emails": ["info@promerica.fi.cr"],
     },
     {
         "bank": "DAVIbank (Davivienda)",
-        "emails": ["davivienda.cr", "davibank.com"],
+        "emails": ["costarica_clientes@davivienda.cr", "Alertas@davibank.cr"],
     },
     {
         "bank": "Grupo Mutual",

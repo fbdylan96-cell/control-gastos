@@ -66,7 +66,8 @@ def detect_approval(subject: str, body_text_full: str) -> str:
 def detect_transaction_type(subject: str, body_condensed: str) -> str:
     text = f"{subject or ''} {body_condensed or ''}".lower()
 
-    debit_patterns = [r"\bcompra\b", r"\bgasto\b", r"\bd[eé]bito\b", r"\bdebitado\b", r"\bdebit[oó]\b", r"\btarjeta BCR\b"]
+    debit_patterns = [r"\bcompra\b", r"\bgasto\b", r"\bd[eé]bito\b", r"\bdebitado\b", r"\bdebit[oó]\b", r"\btarjeta BCR\b",
+                      r"(?:enviad[oa]|envi[oó])\s+(?:una\s+)?transferencia"]
     credit_patterns = [r"\bcr[eé]dito\b", r"\brecibido\b"]
 
     for pat in debit_patterns:

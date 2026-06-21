@@ -3,6 +3,7 @@
 import re
 
 from banks.utils import (
+    clean_merchant_key,
     normalize_number,
     normalize_whitespace,
     parse_amount_currency,
@@ -17,18 +18,22 @@ GRUPOMUTUAL_SENDERS = [
     "comunicadostarjetadedebito@grupomutual.fi.cr",
 ]
 
-# Grupo Mutual writes the currency as a Spanish word ("MONEDA : COLONES"),
-# not an ISO code, so banks.utils.parse_amount_currency cannot recognize it.
+# Grupo Mutual writes the currency as a Spanish word ("MONEDA : COLONES" or
+# "6,000.00 Colones"), not an ISO code, so banks.utils.parse_amount_currency
+# cannot recognize it. Keys are accent-free lowercase (looked up via
+# clean_merchant_key, which strips accents).
 _CURRENCY_WORDS = {
     "colones": "CRC",
     "colon": "CRC",
     "dolares": "USD",
-    "dólares": "USD",
     "dolar": "USD",
-    "dólar": "USD",
     "euros": "EUR",
     "euro": "EUR",
 }
+
+
+def _currency_code(word):
+    return _CURRENCY_WORDS.get(clean_merchant_key(word or ""))
 
 
 class GrupoMutualParser:
@@ -44,6 +49,10 @@ class GrupoMutualParser:
         # Card transaction (débito / crédito): has the labelled "NOMBRE DEL COMERCIO" field.
         if re.search(r"NOMBRE\s+DEL\s+COMERCIO", t, re.IGNORECASE):
             return self._parse_card_transaction(t)
+
+        # SINPE Móvil transfer: prose with "ha enviado una transferencia… por concepto de…".
+        if re.search(r"\bsinpe\b|transferencia", t, re.IGNORECASE):
+            return self._parse_transfer(t)
 
         # Fallback: amount/currency only (covers formats we haven't mapped yet).
         currency, amount = self._extract_amount_currency(t)
@@ -101,13 +110,57 @@ class GrupoMutualParser:
             "desc_guess": desc,
         }
 
+    def _parse_transfer(self, t):
+        '''
+        Ejemplo (Comprobante de Transferencia SINPE Móvil):
+
+        Grupo Mutual le comunica que ha enviado una transferencia por medio de
+        Sinpe Móvil Mutual por un monto de 6,000.00 Colones, por concepto de "uñas ".
+        La cuenta origen … es 126-200-85297172-BCC a nombre de ASTRIT YOANKA CASTRO ALFARO
+        y el destino de la transferencia es 63271321 a nombre de Soto Jennifer Maria,
+        identificación: 02-0734-0451. La entidad financiera destino es BANCO NACIONAL …
+        '''
+        currency, amount = self._extract_amount_currency(t)
+
+        # payee: "el destino de la transferencia es <cuenta> a nombre de <NOMBRE>"
+        m = re.search(
+            r"destino\s+de\s+la\s+transferencia\s+es\s+\S+\s+a\s+nombre\s+de\s+(.+?)\s*"
+            r"(?=,?\s*identificaci[oó]n|\.\s|\bLa\s+entidad|\bEl\s+n[uú]mero|$)",
+            t, re.IGNORECASE,
+        )
+        payee = smart_title_case(m.group(1).strip()) if m else None
+
+        # concept: por concepto de "uñas"  (straight or curly quotes)
+        m = re.search(
+            r"concepto\s+de\s*[\"“”‘’]\s*(.+?)\s*[\"“”‘’]",
+            t, re.IGNORECASE,
+        )
+        concepto = m.group(1).strip() if m else None
+
+        merchant = payee or "Transferencia SINPE"
+        if payee and concepto:
+            desc = f"SINPE Móvil a {payee}: {concepto}"
+        elif payee:
+            desc = f"SINPE Móvil a {payee}"
+        elif concepto:
+            desc = f"SINPE Móvil: {concepto}"
+        else:
+            desc = "SINPE Móvil"
+
+        return {
+            "merchant_guess": merchant,
+            "amount_guess": amount,
+            "currency_guess": currency,
+            "desc_guess": desc,
+        }
+
     def _extract_amount_currency(self, t):
         """Return (currency, amount) — same order as banks.utils.parse_amount_currency.
 
-        Grupo Mutual labels the amount ("MONTO REBAJADO A SU CUENTA : …") and
-        writes the currency as a word ("MONEDA : COLONES"), so the shared
-        ISO-code/symbol parser does not apply; extract by label and fall back
-        to it only for whatever the labels miss.
+        Grupo Mutual labels the amount ("MONTO REBAJADO A SU CUENTA : …" or
+        "por un monto de …") and writes the currency as a word ("COLONES"),
+        so the shared ISO-code/symbol parser does not apply; extract by label /
+        currency word and fall back to it only for whatever is still missing.
         """
         m = re.search(
             r"MONTO\s+REBAJADO\s+A\s+SU\s+CUENTA\s*:?\s*([\d.,]+)", t, re.IGNORECASE
@@ -119,10 +172,15 @@ class GrupoMutualParser:
             )
         amount = normalize_number(m.group(1)) if m else None
 
+        # currency: explicit "MONEDA : COLONES" label, else a currency word in the text
         currency = None
         m = re.search(r"MONEDA\s*:?\s*([A-Za-zÁÉÍÓÚÑáéíóúñ]+)", t, re.IGNORECASE)
         if m:
-            currency = _CURRENCY_WORDS.get(m.group(1).strip().lower())
+            currency = _currency_code(m.group(1))
+        if currency is None:
+            m = re.search(r"\b(colones|col[oó]n|d[oó]lar(?:es)?|euros?)\b", t, re.IGNORECASE)
+            if m:
+                currency = _currency_code(m.group(1))
 
         if amount is None or currency is None:
             fb_currency, fb_amount = parse_amount_currency(t)

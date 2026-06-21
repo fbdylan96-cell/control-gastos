@@ -59,7 +59,6 @@ BANK_NOTIFICATION_SENDERS = [
         "emails": [
             "notificacion@notificacionesbaccr.com",
             "alerta@baccredomatic.com",
-            "notificacionesbaccr.com",
         ],
     },
     {

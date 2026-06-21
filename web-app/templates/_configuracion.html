@@ -12,6 +12,9 @@
    client copies a single value that already covers every supported bank. #}
 {% set all_emails = bank_senders | map(attribute='emails') | sum(start=[]) %}
 {% set senders_all = '(' ~ (all_emails | join(' OR ')) ~ ')' %}
+{# Outlook/Hotmail/Live's «De» condition does NOT understand the «(a OR b)»
+   syntax: you add each address separately. Offer a plain comma-separated list. #}
+{% set senders_list = all_emails | join(', ') %}
 
 {# Inline copy-paste field: label + value + Copy button, embedded right at the
    step where it's used so the client only has to copy and paste. #}
@@ -122,9 +125,12 @@
       <ol class="cfg-steps">
         <li>Abre <strong>Configuración → Correo → Reglas</strong> y haz clic en
           <em>«Agregar nueva regla»</em>. Ponle un nombre (por ejemplo «Reenvío neto»).</li>
-        <li>En <strong>«Agregar una condición»</strong> elige <em>«De»</em> y pega este
-          bloque:
-          {{ copyrow('Condición «De»', senders_all, 'ol-de') }}
+        <li>En <strong>«Agregar una condición»</strong> elige <em>«De»</em> y agrega
+          <strong>cada una de estas direcciones por separado</strong>. Outlook no usa
+          <code>OR</code>: cuando agregas varias direcciones a la condición «De», las
+          combina automáticamente (coincide si el correo viene de cualquiera de ellas).
+          Agrégalas una por una desde esta lista:
+          {{ copyrow('Direcciones «De»', senders_list, 'ol-de') }}
         </li>
         <li>En <strong>«Agregar una acción»</strong> elige <em>«Reenviar a»</em> y pega
           tu dirección de reenvío:

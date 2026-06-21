@@ -71,6 +71,13 @@ BANK_NOTIFICATION_SENDERS = [
         "bank": "DAVIbank (Davivienda)",
         "emails": ["davivienda.cr", "davibank.com"],
     },
+    {
+        "bank": "Grupo Mutual",
+        "emails": [
+            "MutualMovil@grupomutual.fi.cr",
+            "MutualEnLinea@grupomutual.fi.cr",
+        ],
+    },
 ]
 
 

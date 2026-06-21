@@ -15,6 +15,7 @@ import db as _db
 from banks.bac import BacParser
 from banks.bcr import BcrParser
 from banks.davibank import DavibankParser
+from banks.grupomutual import GrupoMutualParser
 from banks.promerica import PromericaParser
 from banks.utils import clean_merchant_key
 
@@ -29,6 +30,7 @@ _BANK_PARSERS = [
     BcrParser(),
     DavibankParser(),
     PromericaParser(),
+    GrupoMutualParser(),
 ]
 
 # Keywords used to detect which bank sent the email.
@@ -38,6 +40,7 @@ _BANK_KEYWORDS = {
     "bcr": [r"bancobcr", r"banco\s+bcr", r"\bbcr\b"],
     "promerica": [r"prom[eé]rica"],
     "davibank": [r"davibank", r"davivienda"],
+    "grupomutual": [r"grupo\s*mutual", r"grupomutual"],
 }
 
 # ---------------------------------------------------------------------------

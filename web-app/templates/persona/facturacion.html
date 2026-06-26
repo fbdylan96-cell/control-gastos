@@ -1,0 +1,140 @@
+{% extends "persona/base.html" %}
+{% block title %}Facturación — neto{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <i class="bi bi-credit-card"></i>
+  Facturación
+</div>
+
+{% set status_labels = {
+  'trial': 'Prueba gratuita',
+  'active': 'Activo',
+  'comp': 'Cortesía',
+  'past_due': 'Pago pendiente',
+  'suspended': 'Suspendido',
+  'cancelled': 'Cancelado'
+} %}
+
+<!-- ── Membresía ───────────────────────────────────────────────────────────── -->
+<div class="ei-card" style="margin-bottom:1.25rem;">
+  <div class="ei-card-header">
+    <i class="bi bi-stars"></i>Tu membresía
+  </div>
+  <div class="ei-card-body">
+    <div class="fact-grid">
+      <div class="fact-item">
+        <span class="fact-label">Estado</span>
+        <span class="fact-value">
+          {{ status_labels.get(sub.status, '—') if sub else '—' }}
+          {% if sub and sub.comp %}<span class="fact-pill">100%</span>{% endif %}
+        </span>
+      </div>
+      <div class="fact-item">
+        <span class="fact-label">Membresía</span>
+        <span class="fact-value">{{ sub.plan_name if sub and sub.plan_name else 'Sin plan seleccionado' }}</span>
+      </div>
+      <div class="fact-item">
+        <span class="fact-label">Método de pago</span>
+        <span class="fact-value">Ninguno</span>
+      </div>
+      <div class="fact-item">
+        <span class="fact-label">Próximo pago</span>
+        <span class="fact-value">
+          {% if sub and sub.comp %}
+            Sin cargos (cortesía)
+          {% elif sub and sub.status == 'trial' and sub.trial_end %}
+            Prueba gratuita hasta {{ sub.trial_end.strftime('%d/%m/%Y') }}
+          {% elif sub and sub.current_period_end %}
+            {{ sub.current_period_end.strftime('%d/%m/%Y') }}{% if sub.amount_crc is not none %} · ₡{{ '{:,.0f}'.format(sub.amount_crc) }}{% endif %}
+          {% else %}
+            —
+          {% endif %}
+        </span>
+      </div>
+    </div>
+
+    {% if sub and sub.status == 'trial' and sub.trial_end %}
+    <p class="fact-note">
+      <i class="bi bi-info-circle"></i>
+      Estás en tu prueba gratuita de 30 días. Cuando se acerque el final podrás
+      activar tu plan con PayPal.
+    </p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Planes disponibles ──────────────────────────────────────────────────── -->
+<div class="ei-card" style="margin-bottom:1.25rem;">
+  <div class="ei-card-header">
+    <i class="bi bi-box-seam"></i>Planes disponibles
+  </div>
+  <div class="ei-card-body">
+    {% if plans %}
+    <div class="plan-grid">
+      {% for p in plans %}
+      <div class="plan-card">
+        <div class="plan-name">{{ p.name }}</div>
+        <div class="plan-price">₡{{ '{:,.0f}'.format(p.amount_crc) }}</div>
+        <div class="plan-period">por {{ 'mes' if p.modality == 'mensual' else 'año' }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p style="color:var(--ink-soft, #777); margin:0;">Aún no hay planes configurados.</p>
+    {% endif %}
+
+    <div style="margin-top:1rem;">
+      <button class="btn-primary-ei" type="button" disabled
+              title="La activación con PayPal estará disponible pronto"
+              style="opacity:0.6; cursor:not-allowed;">
+        <i class="bi bi-paypal"></i>Conectar PayPal — próximamente
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Código de descuento ─────────────────────────────────────────────────── -->
+<div class="ei-card">
+  <div class="ei-card-header">
+    <i class="bi bi-ticket-perforated"></i>¿Tenés un código?
+  </div>
+  <div class="ei-card-body">
+    <form method="POST" action="{{ url_for('persona.facturacion_codigo') }}"
+          style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; max-width:460px;">
+      <div style="flex:1 1 220px;">
+        <label class="form-label-ei" for="codeInput">Código de descuento</label>
+        <input type="text" id="codeInput" name="code" class="ei-select"
+               placeholder="Ingresá tu código" autocomplete="off" />
+      </div>
+      <button type="submit" class="btn-outline-ei">
+        <i class="bi bi-check2-circle"></i>Aplicar
+      </button>
+    </form>
+  </div>
+</div>
+
+<style>
+  .fact-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:1rem; }
+  .fact-item { display:flex; flex-direction:column; gap:4px; }
+  .fact-label {
+    font-size:0.72rem; text-transform:uppercase; letter-spacing:0.04em;
+    font-weight:700; color:var(--ink-soft, #777);
+  }
+  .fact-value { font-size:1rem; font-weight:600; color:var(--dark, #15191e); }
+  .fact-pill {
+    display:inline-block; margin-left:6px; font-size:0.7rem; font-weight:700;
+    background:var(--green, #00c896); color:#fff; border-radius:20px;
+    padding:1px 8px; vertical-align:middle;
+  }
+  .fact-note { font-size:0.85rem; color:var(--ink-soft, #777); margin:1rem 0 0; }
+  .plan-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:1rem; }
+  .plan-card {
+    border:1px solid var(--border, #ddd); border-radius:12px;
+    padding:1.1rem 1.25rem; background:var(--cream, #f6f3ec);
+  }
+  .plan-name { font-size:0.9rem; font-weight:600; color:var(--ink-soft, #555); margin-bottom:6px; }
+  .plan-price { font-size:1.6rem; font-weight:800; color:var(--dark, #15191e); }
+  .plan-period { font-size:0.8rem; color:var(--ink-soft, #777); }
+</style>
+{% endblock %}

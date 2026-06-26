@@ -420,6 +420,7 @@
         <button class="tab-btn"        onclick="switchTab('empresas',   this)">Empresas</button>
         <button class="tab-btn"        onclick="switchTab('clientes',   this)">Clientes Existentes</button>
         <button class="tab-btn"        onclick="switchTab('modificar',  this)">Modificar Datos</button>
+        <button class="tab-btn"        onclick="switchTab('facturacion', this)">Facturación</button>
     </div>
 
     <!-- ══ Tab: Individuos ══ -->
@@ -552,6 +553,35 @@
         </div>
     </div>
 
+    <!-- ══ Tab: Facturación ══ -->
+    <div class="tab-content" id="tab-facturacion">
+        <div class="card">
+            <div class="card-title">Códigos de descuento</div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="dcCode">Código *</label>
+                    <input type="text" id="dcCode" placeholder="ej: socio2026" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="dcPct">Descuento %</label>
+                    <input type="text" id="dcPct" value="100" placeholder="100">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="dcDesc">Descripción</label>
+                <input type="text" id="dcDesc" placeholder="ej: Cortesía socio">
+            </div>
+            <div class="action-bar">
+                <button class="btn btn-primary btn-sm" onclick="createDiscountCode()">＋ Crear código</button>
+            </div>
+
+            <hr class="divider">
+
+            <div id="dcWrap"><div class="empty-state">Selecciona esta pestaña para cargar los códigos.</div></div>
+        </div>
+    </div>
+
 </div><!-- /container -->
 
 <!-- ─── Password Modal ─── -->
@@ -614,6 +644,7 @@ function switchTab(name, btn) {
     document.getElementById('tab-' + name).classList.add('active');
     if (name === 'clientes') loadClients();
     if (name === 'modificar') loadEditClients();
+    if (name === 'facturacion') loadDiscountCodes();
 }
 
 // ════════════ HELPERS ════════════
@@ -1104,6 +1135,18 @@ function editCard(c) {
                 : ''}
         </div>
 
+        <div class="notif-section">
+            <div class="notif-title">Membresía</div>
+            <p style="font-size:13px; margin:0 0 10px; color:var(--gray-700);">
+                Estado: <strong>${escHtml(subStatusLabel(c.sub_status))}</strong>${c.plan_name ? ' · ' + escHtml(c.plan_name) : ''}
+                ${(c.sub_status === 'trial' && c.trial_end) ? '<br>Prueba hasta ' + fmtDate(c.trial_end) : ''}
+                ${c.current_period_end ? '<br>Próximo cobro ' + fmtDate(c.current_period_end) : ''}
+            </p>
+            <button class="btn btn-outline btn-sm" onclick="toggleComp('${c.id}', ${c.sub_comp ? 'true' : 'false'})">
+                ${c.sub_comp ? 'Quitar cortesía' : 'Marcar cortesía (100%)'}
+            </button>
+        </div>
+
         <div class="action-bar">
             <button class="btn btn-primary btn-sm" onclick="saveEditClient('${c.id}')">💾 Guardar cambios</button>
         </div>
@@ -1166,6 +1209,94 @@ async function clearAlpacaCreds(id) {
         await api('PATCH', `${API_BASE}/api/clients/${id}`, { alpaca_clear_credentials: true });
         toast('Credenciales eliminadas.', 'success');
         loadEditClients();
+    } catch (err) {
+        toast('Error: ' + err.message, 'error');
+    }
+}
+
+// ════════════ BILLING ════════════
+const SUB_STATUS_LABELS = {
+    trial: 'Prueba gratuita', active: 'Activo', comp: 'Cortesía',
+    past_due: 'Pago pendiente', suspended: 'Suspendido', cancelled: 'Cancelado',
+};
+function subStatusLabel(s) { return SUB_STATUS_LABELS[s] || 'Sin suscripción'; }
+
+function fmtDate(iso) {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleDateString('es-CR', { day:'2-digit', month:'short', year:'numeric' }); }
+    catch (_) { return iso; }
+}
+
+async function toggleComp(id, isComp) {
+    try {
+        await api('POST', `${API_BASE}/api/clients/${id}/comp`, { comp: !isComp });
+        toast(isComp ? 'Cortesía removida.' : 'Cliente marcado como cortesía.', 'success');
+        loadEditClients();
+    } catch (err) {
+        toast('Error: ' + err.message, 'error');
+    }
+}
+
+async function loadDiscountCodes() {
+    const wrap = document.getElementById('dcWrap');
+    wrap.innerHTML = '<div class="empty-state">Cargando códigos...</div>';
+    try {
+        const data = await api('GET', API_BASE + '/api/discount-codes');
+        if (!data || data.length === 0) {
+            wrap.innerHTML = '<div class="empty-state">No hay códigos registrados aún.</div>';
+            return;
+        }
+        const rows = data.map(d => `<tr>
+            <td><strong>${escHtml(d.code)}</strong></td>
+            <td>${d.discount_pct}%</td>
+            <td><span class="badge ${d.active ? 'badge-on' : 'badge-off'}">${d.active ? 'Activo' : 'Inactivo'}</span></td>
+            <td>${d.times_redeemed}${d.max_redemptions ? (' / ' + d.max_redemptions) : ''}</td>
+            <td>${escHtml(d.description || '—')}</td>
+            <td>
+                <button class="toggle-btn ${d.active ? 'tbtn-deactivate' : 'tbtn-activate'}"
+                        onclick="toggleDiscountCode('${d.id}', ${d.active})">
+                    ${d.active ? 'Desactivar' : 'Activar'}
+                </button>
+            </td>
+        </tr>`).join('');
+        wrap.innerHTML = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Código</th><th>Descuento</th><th>Estado</th>
+                        <th>Usos</th><th>Descripción</th><th>Acción</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    } catch (err) {
+        wrap.innerHTML = `<div class="empty-state" style="color:var(--danger)">Error al cargar códigos: ${escHtml(err.message)}</div>`;
+    }
+}
+
+async function createDiscountCode() {
+    const code = document.getElementById('dcCode').value.trim();
+    const pct  = parseInt(document.getElementById('dcPct').value.trim() || '100', 10);
+    const desc = document.getElementById('dcDesc').value.trim();
+    if (!code) return toast('Ingresá un código.', 'error');
+    if (!(pct >= 1 && pct <= 100)) return toast('El descuento debe ser un número entre 1 y 100.', 'error');
+    try {
+        await api('POST', API_BASE + '/api/discount-codes', { code, discount_pct: pct, description: desc });
+        document.getElementById('dcCode').value = '';
+        document.getElementById('dcDesc').value = '';
+        document.getElementById('dcPct').value  = '100';
+        toast('Código creado.', 'success');
+        loadDiscountCodes();
+    } catch (err) {
+        toast('Error: ' + err.message, 'error');
+    }
+}
+
+async function toggleDiscountCode(id, active) {
+    try {
+        await api('PATCH', `${API_BASE}/api/discount-codes/${id}`, { active: !active });
+        toast(active ? 'Código desactivado.' : 'Código activado.', 'success');
+        loadDiscountCodes();
     } catch (err) {
         toast('Error: ' + err.message, 'error');
     }

@@ -10,7 +10,8 @@ from werkzeug.security import generate_password_hash
 
 import alpaca_client
 from crypto import encrypt_secret
-from db import get_connection
+from db import (create_discount_code, get_connection, list_discount_codes,
+                set_discount_code_active, set_subscription_comp)
 from utils import gen_email_forward
 
 admin_bp = Blueprint('administracion', __name__)
@@ -98,10 +99,14 @@ def get_clients():
                        c.created_at, b.name AS business_name,
                        c.email_forward, c.username, c.password_hash,
                        COALESCE(ci.enabled, FALSE) AS investment_enabled,
-                       (ci.api_key_cipher IS NOT NULL) AS alpaca_credentials_set
+                       (ci.api_key_cipher IS NOT NULL) AS alpaca_credentials_set,
+                       s.status AS sub_status, COALESCE(s.comp, FALSE) AS sub_comp,
+                       s.trial_end, s.current_period_end, p.name AS plan_name
                 FROM   core.clients c
                 JOIN   core.businesses b ON b.id = c.business_id
                 LEFT   JOIN core.client_investment ci ON ci.client_id = c.id
+                LEFT   JOIN core.client_subscriptions s ON s.client_id = c.id
+                LEFT   JOIN core.subscription_plans p ON p.id = s.plan_id
                 ORDER  BY c.created_at DESC
             """)
             rows = [dict(r) for r in cur.fetchall()]
@@ -109,6 +114,9 @@ def get_clients():
         for r in rows:
             r['id'] = str(r['id'])
             r['created_at'] = r['created_at'].isoformat() if r['created_at'] else None
+            r['trial_end'] = r['trial_end'].isoformat() if r.get('trial_end') else None
+            r['current_period_end'] = (r['current_period_end'].isoformat()
+                                       if r.get('current_period_end') else None)
         return jsonify(rows)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -482,5 +490,81 @@ def delete_client(client_id):
         finally:
             conn.close()
         return jsonify({'ok': True, 'result': result})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ── Billing: códigos de descuento y cortesía ──────────────────────────────────
+
+@admin_bp.route('/api/discount-codes', methods=['GET'])
+@admin_required_api
+def get_discount_codes():
+    try:
+        conn = get_connection()
+        try:
+            rows = list_discount_codes(conn)
+        finally:
+            conn.close()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d['id'] = str(d['id'])
+            d['created_at'] = d['created_at'].isoformat() if d['created_at'] else None
+            out.append(d)
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/api/discount-codes', methods=['POST'])
+@admin_required_api
+def post_discount_code():
+    body = request.get_json() or {}
+    try:
+        conn = get_connection()
+        try:
+            create_discount_code(
+                conn,
+                body.get('code', ''),
+                body.get('description', ''),
+                body.get('discount_pct', 100),
+                body.get('max_redemptions') or None,
+            )
+        finally:
+            conn.close()
+        return jsonify({'ok': True}), 201
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/api/discount-codes/<code_id>', methods=['PATCH'])
+@admin_required_api
+def patch_discount_code(code_id):
+    body = request.get_json() or {}
+    try:
+        conn = get_connection()
+        try:
+            if 'active' in body:
+                set_discount_code_active(conn, code_id, bool(body['active']))
+        finally:
+            conn.close()
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_bp.route('/api/clients/<client_id>/comp', methods=['POST'])
+@admin_required_api
+def post_client_comp(client_id):
+    body = request.get_json() or {}
+    try:
+        conn = get_connection()
+        try:
+            set_subscription_comp(conn, client_id, bool(body.get('comp')))
+        finally:
+            conn.close()
+        return jsonify({'ok': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500

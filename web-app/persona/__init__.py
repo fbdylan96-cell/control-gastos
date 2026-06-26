@@ -14,7 +14,9 @@ from werkzeug.security import check_password_hash
 
 import alpaca_client
 from crypto import decrypt_secret
-from db import (get_connection, get_investment, insert_manual_transaction,
+from db import (apply_discount_code, ensure_trial_subscription,
+                get_client_subscription, get_connection, get_investment,
+                insert_manual_transaction, list_subscription_plans,
                 touch_broker_credentials_used)
 from tools import finance
 from utils import BANK_NOTIFICATION_SENDERS
@@ -803,6 +805,47 @@ def configuracion():
         email_forward=row[0] if row else None,
         bank_senders=BANK_NOTIFICATION_SENDERS,
     )
+
+
+# ── Facturación ───────────────────────────────────────────────────────────────
+#
+# Fase 1: PayPal no está cableado todavía. El tab muestra el estado de la
+# membresía (prueba gratuita / cortesía / activa), el próximo pago y los planes
+# disponibles, y permite aplicar un código de descuento. La suscripción de
+# prueba se crea de forma perezosa la primera vez que el cliente abre el tab.
+
+@persona_bp.route("/facturacion")
+@login_required
+def facturacion():
+    conn = get_connection()
+    try:
+        ensure_trial_subscription(conn, session["user_id"])
+        sub = get_client_subscription(conn, session["user_id"])
+        plans = list_subscription_plans(conn, tier="individual")
+    finally:
+        conn.close()
+
+    return render_template("persona/facturacion.html", sub=sub, plans=plans)
+
+
+@persona_bp.route("/facturacion/codigo", methods=["POST"])
+@login_required
+def facturacion_codigo():
+    code = (request.form.get("code") or "").strip()
+    if not code:
+        flash("Ingrese un código.", "danger")
+        return redirect(url_for("persona.facturacion"))
+
+    conn = get_connection()
+    try:
+        ok, msg = apply_discount_code(conn, session["user_id"], code)
+        flash(msg, "success" if ok else "danger")
+    except Exception as e:
+        flash(f"Error al aplicar el código: {e}", "danger")
+    finally:
+        conn.close()
+
+    return redirect(url_for("persona.facturacion"))
 
 
 # ── Categorias ────────────────────────────────────────────────────────────────

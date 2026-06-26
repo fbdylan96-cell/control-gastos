@@ -369,3 +369,94 @@ CREATE INDEX idx_wa_chat_client_history ON core.whatsapp_chat_messages (client_i
 
 -- TRUNCATE core.transactions_raw CASCADE;
 -- ALTER TABLE core.transactions_enriched DROP COLUMN bank_email_adress;
+
+
+-- ============================================================================
+-- Billing / Motor de pagos (Fase 1)
+-- Ver billing_schema.sql para la migración aditiva e idempotente que se corre
+-- sobre la base existente. PayPal no está cableado en Fase 1 (columnas paypal_*
+-- en NULL). amount_crc = precio mostrado; amount_usd = lo que cobra PayPal
+-- (PayPal no soporta CRC).
+-- ============================================================================
+
+DROP TABLE IF EXISTS core.discount_redemptions CASCADE;
+DROP TABLE IF EXISTS core.client_subscriptions CASCADE;
+DROP TABLE IF EXISTS core.discount_codes CASCADE;
+DROP TABLE IF EXISTS core.subscription_plans CASCADE;
+
+-- Catálogo de planes (una fila por tier × modalidad).
+CREATE TABLE core.subscription_plans (
+    id              UUID PRIMARY KEY,
+    tier            TEXT NOT NULL
+        CONSTRAINT chk_plan_tier CHECK (tier IN ('individual', 'familia', 'empresa')),
+    modality        TEXT NOT NULL
+        CONSTRAINT chk_plan_modality CHECK (modality IN ('mensual', 'anual')),
+    name            TEXT NOT NULL,
+    amount_crc      NUMERIC(12,2) NOT NULL,   -- precio mostrado al cliente (CRC)
+    amount_usd      NUMERIC(12,2) NOT NULL,   -- monto cobrado en PayPal (USD)
+    paypal_plan_id  TEXT,                     -- NULL hasta Fase 2
+    active          BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_plan UNIQUE (tier, modality)
+);
+
+-- Códigos de descuento. discount_pct = 100 → cuenta de cortesía (no se cobra).
+CREATE TABLE core.discount_codes (
+    id               UUID PRIMARY KEY,
+    code             TEXT NOT NULL UNIQUE,
+    description      TEXT,
+    discount_pct     INT NOT NULL DEFAULT 100
+        CONSTRAINT chk_discount_pct CHECK (discount_pct BETWEEN 1 AND 100),
+    active           BOOLEAN NOT NULL DEFAULT TRUE,
+    max_redemptions  INT,                       -- NULL = ilimitado
+    times_redeemed   INT NOT NULL DEFAULT 0,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT chk_redemptions_cap CHECK (max_redemptions IS NULL OR times_redeemed <= max_redemptions)
+);
+
+-- Suscripción por cliente (una fila por core.clients).
+-- ON DELETE CASCADE para que el borrado de un cliente la limpie sin tocar la
+-- lógica de borrado de administracion.
+CREATE TABLE core.client_subscriptions (
+    id                      UUID PRIMARY KEY,
+    client_id               UUID NOT NULL UNIQUE REFERENCES core.clients(id) ON DELETE CASCADE,
+    plan_id                 UUID REFERENCES core.subscription_plans(id),
+    status                  TEXT NOT NULL DEFAULT 'trial'
+        CONSTRAINT chk_sub_status CHECK (status IN ('trial', 'active', 'past_due', 'suspended', 'cancelled', 'comp')),
+    trial_start             TIMESTAMPTZ,
+    trial_end               TIMESTAMPTZ,
+    current_period_end      TIMESTAMPTZ,        -- próxima fecha de cobro (NULL en trial/cortesía)
+    provider                TEXT NOT NULL DEFAULT 'paypal',
+    paypal_subscription_id  TEXT,               -- NULL hasta Fase 2
+    comp                    BOOLEAN NOT NULL DEFAULT FALSE,
+    discount_code_id        UUID REFERENCES core.discount_codes(id),
+    cancel_at_period_end    BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Redenciones de códigos (un código como máximo una vez por cliente).
+CREATE TABLE core.discount_redemptions (
+    id            UUID PRIMARY KEY,
+    code_id       UUID NOT NULL REFERENCES core.discount_codes(id),
+    client_id     UUID NOT NULL REFERENCES core.clients(id) ON DELETE CASCADE,
+    redeemed_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_redemption UNIQUE (code_id, client_id)
+);
+
+-- Seeds: planes Individuos + códigos de cortesía 100% de los socios.
+INSERT INTO core.subscription_plans (id, tier, modality, name, amount_crc, amount_usd)
+VALUES (gen_random_uuid(), 'individual', 'mensual', 'Individual mensual', 7500, 15.00)
+ON CONFLICT ON CONSTRAINT uq_plan DO NOTHING;
+
+INSERT INTO core.subscription_plans (id, tier, modality, name, amount_crc, amount_usd)
+VALUES (gen_random_uuid(), 'individual', 'anual', 'Individual anual', 75000, 150.00)
+ON CONFLICT ON CONSTRAINT uq_plan DO NOTHING;
+
+INSERT INTO core.discount_codes (id, code, description, discount_pct)
+VALUES (gen_random_uuid(), 'josemontero', 'Socio — cortesía 100%', 100)
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO core.discount_codes (id, code, description, discount_pct)
+VALUES (gen_random_uuid(), 'dylanmosquera', 'Socio — cortesía 100%', 100)
+ON CONFLICT (code) DO NOTHING;

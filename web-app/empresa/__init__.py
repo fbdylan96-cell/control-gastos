@@ -21,6 +21,8 @@ from utils import BANK_NOTIFICATION_SENDERS, gen_email_forward, gen_password
 
 empresa_bp = Blueprint('empresa', __name__)
 
+log = logging.getLogger(__name__)
+
 
 # ── Auth decorators ───────────────────────────────────────────────────────────
 

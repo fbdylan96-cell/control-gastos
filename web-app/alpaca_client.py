@@ -70,6 +70,27 @@ def get_portfolio_history(key_id: str, secret: str, period: str, timeframe: str 
     )
 
 
+def _period_change_pct(hist: dict):
+    """Cumulative % change over the requested window.
+
+    IMPORTANT: Alpaca's `profit_loss_pct` array is PER-BUCKET — each element is
+    that day's return, NOT the running total. Reading its last element yields the
+    most recent single day's move, which is identical for 1W/1M/1A (they all end
+    on the same day) — that was the bug that made week/month/year show the same
+    number. Compute the real period return from base_value (portfolio value at
+    the start of the window) to the latest equity instead.
+    """
+    equity = [e for e in (hist.get("equity") or []) if e is not None]
+    if not equity:
+        return None
+    base = hist.get("base_value")
+    if not base:  # missing or zero → fall back to the first in-window equity point
+        base = equity[0]
+    if not base:
+        return None
+    return round((equity[-1] - base) / base * 100.0, 2)
+
+
 def get_portfolio_summary(key_id: str, secret: str) -> dict:
     """Aggregate everything the Inversión tab needs: current value, positions,
     and percentage change over the last week, month and year."""
@@ -80,9 +101,7 @@ def get_portfolio_summary(key_id: str, secret: str) -> dict:
     for label, period in (("week", "1W"), ("month", "1M"), ("year", "1A")):
         try:
             hist = get_portfolio_history(key_id, secret, period)
-            pct = [p for p in (hist.get("profit_loss_pct") or []) if p is not None]
-            # Alpaca returns a fraction (0.023 == 2.3%); last value is cumulative.
-            changes[label] = round(pct[-1] * 100, 2) if pct else None
+            changes[label] = _period_change_pct(hist)
         except Exception:  # noqa: BLE001 - a missing period shouldn't break the page
             changes[label] = None
 

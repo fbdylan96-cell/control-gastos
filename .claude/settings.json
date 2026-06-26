@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(git --no-pager diff --stat)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git --no-pager diff -- create.sql)",
+      "Bash(git --no-pager diff --stat HEAD -- create.sql billing_schema.sql)",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('web-app/db.py', doraise=True\\); print\\('db.py OK'\\)\")"
+    ]
+  }
+}

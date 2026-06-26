@@ -417,7 +417,7 @@
     <!-- Tabs -->
     <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('individuos', this)">Individuos</button>
-        <button class="tab-btn"        onclick="switchTab('empresas',   this)">Empresas</button>
+        <button class="tab-btn"        onclick="switchTab('empresas',   this)">Familia/Empresa</button>
         <button class="tab-btn"        onclick="switchTab('clientes',   this)">Clientes Existentes</button>
         <button class="tab-btn"        onclick="switchTab('modificar',  this)">Modificar Datos</button>
         <button class="tab-btn"        onclick="switchTab('facturacion', this)">Facturación</button>
@@ -490,11 +490,21 @@
     <!-- ══ Tab: Empresas ══ -->
     <div class="tab-content" id="tab-empresas">
         <div class="card">
-            <div class="card-title">Agregar Empresa</div>
+            <div class="card-title">Agregar Familia / Empresa</div>
 
-            <div class="form-group">
-                <label for="bizName">Nombre de la empresa *</label>
-                <input type="text" id="bizName" placeholder="Ej: Empresa Ejemplo S.A. de C.V.">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="bizType">Tipo de cuenta *</label>
+                    <select id="bizType"
+                            style="width:100%; padding:10px 13px; border:1.5px solid var(--gray-300); border-radius:var(--radius-sm); font-size:14px; color:var(--gray-800); background:var(--white);">
+                        <option value="familia">Familia</option>
+                        <option value="empresa">Empresa</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="bizName">Nombre *</label>
+                    <input type="text" id="bizName" placeholder="Ej: Familia Pérez / Empresa Ejemplo S.A.">
+                </div>
             </div>
 
             <hr class="divider">
@@ -811,7 +821,8 @@ function submitIndividuo() {
 // ════════════ SUBMIT: EMPRESA ════════════
 function submitEmpresa() {
     const bizName = document.getElementById('bizName').value.trim();
-    if (!bizName) return toast('Por favor ingresa el nombre de la empresa.', 'error');
+    const accountType = document.getElementById('bizType').value;
+    if (!bizName) return toast('Por favor ingresa el nombre de la familia o empresa.', 'error');
 
     const cards = document.getElementById('membersContainer').children;
     if (cards.length === 0) return toast('Agrega al menos un miembro a la empresa.', 'error');
@@ -837,7 +848,7 @@ function submitEmpresa() {
     }
 
     pendingAction = async () => {
-        const { id: businessId } = await api('POST', API_BASE + '/api/businesses', { name: bizName });
+        const { id: businessId } = await api('POST', API_BASE + '/api/businesses', { name: bizName, account_type: accountType });
         for (const m of members) {
             await api('POST', API_BASE + '/api/clients', {
                 business_id:           businessId,
@@ -924,6 +935,7 @@ function resetForms() {
 
     // Empresa
     document.getElementById('bizName').value = '';
+    document.getElementById('bizType').value = 'familia';
     document.getElementById('membersContainer').innerHTML = '';
     document.getElementById('noMembersPlaceholder').style.display = 'block';
     memberSeq = 0;
@@ -1079,7 +1091,10 @@ async function loadEditClients() {
 }
 
 function editCard(c) {
-    const bizName = (!c.business_name || c.business_name === '__individual__') ? 'Individuo' : c.business_name;
+    const acctTypeLabel = { familia: 'Familia', empresa: 'Empresa', individual: 'Individuo' };
+    const bizName = (!c.business_name || c.business_name === '__individual__')
+        ? 'Individuo'
+        : (acctTypeLabel[c.account_type] || 'Empresa') + ': ' + c.business_name;
     return `<div class="member-card" data-name="${escHtml((c.client_name || '').toLowerCase())}">
         <div class="member-card-top">
             <span class="member-num">${escHtml(c.client_name)}</span>

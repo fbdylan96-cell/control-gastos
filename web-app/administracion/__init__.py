@@ -96,7 +96,7 @@ def get_clients():
             cur.execute("""
                 SELECT c.id, c.client_name, c.email_address, c.phone_number,
                        c.active, c.email_notification, c.whatsapp_notification,
-                       c.created_at, b.name AS business_name,
+                       c.created_at, b.name AS business_name, b.account_type,
                        c.email_forward, c.username, c.password_hash,
                        COALESCE(ci.enabled, FALSE) AS investment_enabled,
                        (ci.api_key_cipher IS NOT NULL) AS alpaca_credentials_set,
@@ -194,10 +194,15 @@ def post_business():
     try:
         conn = get_connection()
         bid = str(uuid.uuid4())
+        # account_type distingue la facturación. Sólo 'familia' / 'empresa' se
+        # crean desde acá ('individual' está reservado para el centinela).
+        account_type = body.get('account_type', 'empresa')
+        if account_type not in ('familia', 'empresa'):
+            account_type = 'empresa'
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO core.businesses (id, name) VALUES (%s, %s)",
-                (bid, body['name'])
+                "INSERT INTO core.businesses (id, name, account_type) VALUES (%s, %s, %s)",
+                (bid, body['name'], account_type)
             )
         conn.commit()
         conn.close()

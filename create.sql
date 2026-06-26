@@ -9,12 +9,17 @@ DROP TABLE IF EXISTS core.businesses CASCADE;
 CREATE TABLE core.businesses (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
+    -- account_type distingue la facturación a aplicar. El centinela
+    -- __individual__ es 'individual'; las cuentas reales son 'familia' o
+    -- 'empresa' (mismo workflow, distinto plan/precio).
+    account_type TEXT NOT NULL DEFAULT 'empresa'
+        CONSTRAINT chk_business_account_type CHECK (account_type IN ('individual', 'familia', 'empresa')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Seed the sentinel individual business
-INSERT INTO core.businesses (id, name)
-VALUES ('00000000-0000-0000-0000-000000009999', '__individual__');
+INSERT INTO core.businesses (id, name, account_type)
+VALUES ('00000000-0000-0000-0000-000000009999', '__individual__', 'individual');
 
 DROP TABLE IF EXISTS core.clients CASCADE;
 

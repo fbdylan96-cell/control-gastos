@@ -458,6 +458,14 @@ INSERT INTO core.subscription_plans (id, tier, modality, name, amount_crc, amoun
 VALUES (gen_random_uuid(), 'individual', 'anual', 'Individual anual', 75000, 150.00)
 ON CONFLICT ON CONSTRAINT uq_plan DO NOTHING;
 
+INSERT INTO core.subscription_plans (id, tier, modality, name, amount_crc, amount_usd)
+VALUES (gen_random_uuid(), 'familia', 'mensual', 'Familia mensual', 10000, 20.00)
+ON CONFLICT ON CONSTRAINT uq_plan DO NOTHING;
+
+INSERT INTO core.subscription_plans (id, tier, modality, name, amount_crc, amount_usd)
+VALUES (gen_random_uuid(), 'familia', 'anual', 'Familia anual', 100000, 200.00)
+ON CONFLICT ON CONSTRAINT uq_plan DO NOTHING;
+
 INSERT INTO core.discount_codes (id, code, description, discount_pct)
 VALUES (gen_random_uuid(), 'josemontero', 'Socio — cortesía 100%', 100)
 ON CONFLICT (code) DO NOTHING;

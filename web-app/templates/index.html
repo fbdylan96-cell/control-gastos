@@ -43,6 +43,11 @@
       background: var(--blue);
       color: #fff;
     }
+    .app-btn-plan {
+      /* Acentos del logo Empowered Investor (verde "W" → azul "in") */
+      background: linear-gradient(135deg, #34d399, #3b5bdb);
+      color: #fff;
+    }
     .app-btn i {
       font-size: 1.2rem;
     }
@@ -77,6 +82,10 @@
       <a href="{{ url_for('administracion.index') }}" class="app-btn app-btn-admin">
         <i class="bi bi-shield-lock-fill"></i>
         Panel de Administración
+      </a>
+      <a href="/calculadora/" target="_blank" rel="noopener" class="app-btn app-btn-plan">
+        <i class="bi bi-compass"></i>
+        Plan de Inversión
       </a>
     </div>
 

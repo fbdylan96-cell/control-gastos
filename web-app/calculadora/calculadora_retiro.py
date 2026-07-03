@@ -71,6 +71,26 @@ if LOGO_PATH.exists():
 
 PLOTLY_CONFIG = {"displayModeBar": False, "scrollZoom": False}
 
+# ----------------------------------------------------------
+# CACHÉ DE CÓMPUTO — Streamlit re-ejecuta TODO el script en cada interacción;
+# sin esto, cada input re-simulaba décadas de datos y reintentaba el refresco
+# de Yahoo Finance. Con el caché, una combinación de parámetros ya calculada
+# responde al instante. max_entries acota la memoria del proceso (el servicio
+# corre con MemoryMax en systemd); ttl deja refrescar precios durante el día.
+# ----------------------------------------------------------
+# hash_funcs: fechas_disparo_caida devuelve un DatetimeIndex, que st.cache_data
+# no sabe hashear por sí solo cuando se pasa como argumento al backtest cacheado.
+_CACHE_KW = dict(
+    show_spinner=False, ttl=6 * 3600, max_entries=24,
+    hash_funcs={pd.DatetimeIndex: lambda idx: idx.asi8.tobytes()},
+)
+obtener_serie_diaria = st.cache_data(**_CACHE_KW)(obtener_serie_diaria)
+simular_dca_historico = st.cache_data(**_CACHE_KW)(simular_dca_historico)
+fechas_disparo_caida = st.cache_data(**_CACHE_KW)(fechas_disparo_caida)
+backtest_buy_the_dip = st.cache_data(**_CACHE_KW)(backtest_buy_the_dip)
+retornos_individuales_por_evento = st.cache_data(**_CACHE_KW)(retornos_individuales_por_evento)
+retornos_post_caida_vs_promedio = st.cache_data(**_CACHE_KW)(retornos_post_caida_vs_promedio)
+
 
 def _edad_en_anio(anio: int, edad_actual: int, anio_actual: int) -> str:
     edad = edad_actual + (anio - anio_actual)
@@ -184,12 +204,29 @@ def _on_change_dinero(key: str, simbolo: str = "$") -> None:
     st.session_state[key] = _formatear_dinero(_parsear_dinero(st.session_state[key]), simbolo)
 
 
-def money_input(contenedor, label: str, key: str, value: float, help: str | None = None, simbolo: str = "$") -> float:
-    """Campo de dinero: muestra el símbolo antes del número, sin decimales por defecto (solo si el usuario los escribe)."""
+def money_input(
+    contenedor, label: str, key: str, value: float, help: str | None = None,
+    simbolo: str = "$", en_form: bool = False,
+) -> float:
+    """Campo de dinero: muestra el símbolo antes del número, sin decimales por defecto (solo si el usuario los escribe).
+
+    en_form=True para usarlo dentro de un st.form: ahí Streamlit prohíbe callbacks
+    en widgets (solo el submit button puede tenerlos), así que el reformateo bonito
+    se hace al enviar el formulario (ver _reformatear_dinero_hist)."""
     if key not in st.session_state:
         st.session_state[key] = _formatear_dinero(value, simbolo)
-    contenedor.text_input(label, key=key, on_change=_on_change_dinero, args=(key, simbolo), help=help)
+    if en_form:
+        contenedor.text_input(label, key=key, help=help)
+    else:
+        contenedor.text_input(label, key=key, on_change=_on_change_dinero, args=(key, simbolo), help=help)
     return _parsear_dinero(st.session_state[key])
+
+
+def _reformatear_dinero_hist() -> None:
+    """Al enviar el form de la simulación histórica, deja los campos de dinero con formato."""
+    for k in ("aporte_inicial_hist_txt", "aporte_periodico_hist_txt"):
+        if k in st.session_state:
+            st.session_state[k] = _formatear_dinero(_parsear_dinero(st.session_state[k]))
 
 
 def colon_input(contenedor, label: str, key: str, value: float, help: str | None = None) -> float:
@@ -472,69 +509,111 @@ with tab_historica:
     st.subheader("¿Cómo hubiera sido con datos históricos reales?")
     st.caption("Precios reales de Yahoo Finance (splits y dividendos incluidos), cacheados localmente.")
 
-    with st.expander("ℹ️ Detalles técnicos"):
-        st.caption(
-            "TQQQ (desde 2010) y QLD (desde 2006) no existían en años más antiguos. Antes de su fecha "
-            "real de listado, su precio se simula con la fórmula típica de un ETF apalancado sobre el "
-            "retorno diario de QQQ, anclada para calzar exactamente con su primer precio real. QQQ en sí "
-            "(listado real desde 1999-03-10) se puede extender hacia atrás hasta 1985 usando el índice "
-            "Nasdaq-100 (^NDX) como proxy — un índice de precio que no incluye dividendos, así que ese "
-            "tramo simulado subestima levemente el retorno total real."
-        )
-        c1, c2 = st.columns(2)
-        expense_ratio_anual_pct = c1.number_input(
-            "Gasto anual del fondo apalancado (%)", 0.0, 5.0, DEFAULT_EXPENSE_RATIO_ANUAL_PCT, 0.05
-        )
-        financing_rate_anual_pct = c2.number_input(
-            "Costo de financiamiento anual (%)", 0.0, 15.0, DEFAULT_FINANCING_RATE_ANUAL_PCT, 0.25
-        )
-
     st.divider()
     st.markdown("##### 📥 Plan de aportes para esta simulación")
     st.caption(
         "Estos datos son independientes de la pestaña 'Proyección de Inversión con Empowered Investor' "
         "— podés usar un plan distinto para ver cómo le hubiera ido en el pasado. Los costos del "
-        "servicio (fee de apertura, SWIFT, management fee) sí se toman del panel de la izquierda, "
-        "compartidos con las demás pestañas. Todo se recalcula automáticamente al cambiar cualquier dato."
+        "servicio (fee de apertura, SWIFT, management fee) se toman del panel de la izquierda tal como "
+        "estén al momento de recalcular. Ajustá todo con calma: **nada se recalcula hasta que presionés "
+        "🔄 Recalcular simulación**."
     )
-    c1, c2 = st.columns(2)
-    edad_actual_hist = c1.number_input("Edad hoy", min_value=1, max_value=100, value=35, key="edad_hist")
-    frecuencia_aporte_hist = c2.selectbox(
-        "Frecuencia del aporte", ["Mensual", "Trimestral", "Semestral", "Anual", "Cada 2 años", "Cada 3 años"], index=2, key="frecuencia_hist"
-    )
-    c1, c2 = st.columns(2)
-    aporte_inicial_hist = money_input(c1, "Aporte inicial", "aporte_inicial_hist_txt", 10_000.0)
-    aporte_periodico_hist = money_input(c2, "Aporte periódico", "aporte_periodico_hist_txt", 5_000.0)
+    with st.form("form_simulacion_historica"):
+        c1, c2 = st.columns(2)
+        edad_actual_hist = c1.number_input("Edad hoy", min_value=1, max_value=100, value=35, key="edad_hist")
+        frecuencia_aporte_hist = c2.selectbox(
+            "Frecuencia del aporte", ["Mensual", "Trimestral", "Semestral", "Anual", "Cada 2 años", "Cada 3 años"], index=2, key="frecuencia_hist"
+        )
+        c1, c2 = st.columns(2)
+        aporte_inicial_hist = money_input(c1, "Aporte inicial", "aporte_inicial_hist_txt", 10_000.0, en_form=True)
+        aporte_periodico_hist = money_input(c2, "Aporte periódico", "aporte_periodico_hist_txt", 5_000.0, en_form=True)
 
-    c1, c2 = st.columns(2)
-    fecha_inicio_hist = c1.date_input(
-        "Fecha de inicio de la simulación", value=FECHA_INCEPTION_GLOBAL,
-        min_value=date(1985, 10, 1), max_value=date.today() - timedelta(days=31),
-        help="Desde cuándo empezar a simular los aportes. Cada ticker igual muestra datos reales solo "
-        "desde su propia fecha de listado (p.ej. TQQQ arranca hasta 2010, QLD hasta 2006). Si elegís "
-        "una fecha antes del 1999-03-10 para **QQQ**, el tramo previo se simula sobre el índice "
-        "Nasdaq-100 (disponible desde 1985) — así podés capturar la subida y caída de la burbuja "
-        "puntocom completa.",
-    )
-    anios_max_disponibles_hist = max(1, date.today().year - fecha_inicio_hist.year)
-    anios_aportes_hist = c2.number_input(
-        "Años de aportes a simular", min_value=1, max_value=anios_max_disponibles_hist,
-        value=anios_max_disponibles_hist, step=1,
-        help="Cuántos años, desde la fecha de inicio, se simulan los aportes. Por defecto llega hasta hoy.",
-    )
+        c1, c2 = st.columns(2)
+        fecha_inicio_hist = c1.date_input(
+            "Fecha de inicio de la simulación", value=FECHA_INCEPTION_GLOBAL,
+            min_value=date(1985, 10, 1), max_value=date.today() - timedelta(days=31),
+            help="Desde cuándo empezar a simular los aportes. Cada ticker igual muestra datos reales solo "
+            "desde su propia fecha de listado (p.ej. TQQQ arranca hasta 2010, QLD hasta 2006). Si elegís "
+            "una fecha antes del 1999-03-10 para **QQQ**, el tramo previo se simula sobre el índice "
+            "Nasdaq-100 (disponible desde 1985) — así podés capturar la subida y caída de la burbuja "
+            "puntocom completa.",
+        )
+        anios_max_disponibles_hist = max(1, date.today().year - fecha_inicio_hist.year)
+        anios_aportes_hist = c2.number_input(
+            "Años de aportes a simular", min_value=1, max_value=anios_max_disponibles_hist,
+            value=anios_max_disponibles_hist, step=1,
+            help="Cuántos años, desde la fecha de inicio, se simulan los aportes. Por defecto llega hasta hoy.",
+        )
+
+        tickers_elegidos = st.multiselect(
+            "Tickers a simular", TICKERS_DISPONIBLES, default=["QQQ", "SPY", "TQQQ", "QLD"]
+        )
+
+        with st.expander("ℹ️ Detalles técnicos"):
+            st.caption(
+                "TQQQ (desde 2010) y QLD (desde 2006) no existían en años más antiguos. Antes de su fecha "
+                "real de listado, su precio se simula con la fórmula típica de un ETF apalancado sobre el "
+                "retorno diario de QQQ, anclada para calzar exactamente con su primer precio real. QQQ en sí "
+                "(listado real desde 1999-03-10) se puede extender hacia atrás hasta 1985 usando el índice "
+                "Nasdaq-100 (^NDX) como proxy — un índice de precio que no incluye dividendos, así que ese "
+                "tramo simulado subestima levemente el retorno total real."
+            )
+            c1, c2 = st.columns(2)
+            expense_ratio_anual_pct = c1.number_input(
+                "Gasto anual del fondo apalancado (%)", 0.0, 5.0, DEFAULT_EXPENSE_RATIO_ANUAL_PCT, 0.05
+            )
+            financing_rate_anual_pct = c2.number_input(
+                "Costo de financiamiento anual (%)", 0.0, 15.0, DEFAULT_FINANCING_RATE_ANUAL_PCT, 0.25
+            )
+
+        recalcular_hist = st.form_submit_button(
+            "🔄 Recalcular simulación", type="primary", on_click=_reformatear_dinero_hist
+        )
+
     fecha_fin_hist = min(date.today(), _sumar_anios(fecha_inicio_hist, anios_aportes_hist))
 
-    tickers_elegidos = st.multiselect(
-        "Tickers a simular", TICKERS_DISPONIBLES, default=["QQQ", "SPY", "TQQQ", "QLD"]
-    )
+    # "Foto" de parámetros: solo se actualiza al presionar el botón. Incluye los
+    # costos del sidebar para que editar el panel izquierdo tampoco dispare la
+    # simulación pesada — todo se aplica junto en el próximo recálculo.
+    if recalcular_hist:
+        st.session_state["params_hist"] = {
+            "edad": edad_actual_hist,
+            "frecuencia": frecuencia_aporte_hist,
+            "aporte_inicial": aporte_inicial_hist,
+            "aporte_periodico": aporte_periodico_hist,
+            "fecha_inicio": fecha_inicio_hist,
+            "fecha_fin": fecha_fin_hist,
+            "tickers": list(tickers_elegidos),
+            "expense_ratio": expense_ratio_anual_pct,
+            "financing_rate": financing_rate_anual_pct,
+            "setup_fee": setup_fee,
+            "costo_swift": costo_swift,
+            "management_fee": management_fee_anual_pct,
+        }
+    params_hist = st.session_state.get("params_hist")
 
-    if not tickers_elegidos:
-        st.warning("Elige al menos un ticker.")
+    if params_hist is None:
+        st.info("👆 Configurá tu plan de aportes y presioná **🔄 Recalcular simulación** para correr la simulación histórica.")
+    elif not params_hist["tickers"]:
+        st.warning("Elige al menos un ticker y volvé a presionar 🔄 Recalcular simulación.")
     else:
+        # Todo lo de aquí para abajo usa la foto del último recálculo, no los
+        # valores "en vivo" de los widgets.
+        edad_actual_hist = params_hist["edad"]
+        frecuencia_aporte_hist = params_hist["frecuencia"]
+        aporte_inicial_hist = params_hist["aporte_inicial"]
+        aporte_periodico_hist = params_hist["aporte_periodico"]
+        fecha_inicio_hist = params_hist["fecha_inicio"]
+        fecha_fin_hist = params_hist["fecha_fin"]
+        expense_ratio_anual_pct = params_hist["expense_ratio"]
+        financing_rate_anual_pct = params_hist["financing_rate"]
+        setup_fee = params_hist["setup_fee"]
+        costo_swift = params_hist["costo_swift"]
+        management_fee_anual_pct = params_hist["management_fee"]
         try:
             with st.spinner("Descargando / leyendo precios históricos de Yahoo Finance..."):
                 resultados = simular_dca_historico(
-                    tickers=tickers_elegidos,
+                    tickers=params_hist["tickers"],
                     fecha_inicio=fecha_inicio_hist,
                     fecha_fin=fecha_fin_hist,
                     aporte_inicial=aporte_inicial_hist,

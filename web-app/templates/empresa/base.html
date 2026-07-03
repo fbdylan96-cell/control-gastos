@@ -65,6 +65,11 @@
           </a>
         </li>
         {% endif %}
+        <li>
+          <a href="/calculadora/" target="_blank" rel="noopener" class="nav-link">
+            <i class="bi bi-compass"></i>Plan de Inversión
+          </a>
+        </li>
         {% if session.business_admin %}
         <li>
           <a href="{{ url_for('empresa.transacciones_editar') }}"

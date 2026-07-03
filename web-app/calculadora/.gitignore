@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Entornos
+.env
+.venv/
+venv/
+
+# Streamlit
+.streamlit/
+.cache/
+
+# Cache local de precios descargados de Yahoo Finance
+data_cache/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

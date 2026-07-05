@@ -48,6 +48,55 @@
       background: linear-gradient(135deg, #34d399, #3b5bdb);
       color: #fff;
     }
+    /* El botón "Empowered Investor" es un <button> que despliega un submenú */
+    button.app-btn {
+      border: none;
+      cursor: pointer;
+      width: 100%;
+      font-family: inherit;
+      text-align: left;
+    }
+    .ei-chevron { margin-left: auto; font-size: 0.9rem; transition: transform 0.2s; }
+    .app-submenu {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      margin: 0 0 0 1.25rem;
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      transition: max-height 0.25s ease, opacity 0.2s ease, margin 0.25s ease;
+    }
+    .app-submenu.open {
+      max-height: 200px;
+      opacity: 1;
+      margin-top: -0.4rem;
+    }
+    .app-sub-btn {
+      background: var(--cream, #f6f3ec);
+      color: var(--dark);
+      border: 1.5px solid rgba(21, 25, 30, 0.12);
+      padding: 0.7rem 1.1rem;
+      font-size: 0.9rem;
+    }
+    .app-sub-btn i { color: #3b5bdb; }
+    .app-sub-btn-soon {
+      color: rgba(21, 25, 30, 0.45);
+      cursor: not-allowed;
+    }
+    .app-sub-btn-soon i { color: rgba(21, 25, 30, 0.35); }
+    .app-sub-btn-soon:hover { transform: none; box-shadow: none; }
+    .soon-tag {
+      margin-left: auto;
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: rgba(21, 25, 30, 0.5);
+      background: rgba(21, 25, 30, 0.07);
+      border-radius: 20px;
+      padding: 2px 9px;
+    }
     .app-btn i {
       font-size: 1.2rem;
     }
@@ -83,14 +132,42 @@
         <i class="bi bi-shield-lock-fill"></i>
         Panel de Administración
       </a>
-      <a href="/calculadora/" target="_blank" rel="noopener" class="app-btn app-btn-plan">
+      <button type="button" class="app-btn app-btn-plan" id="eiToggle"
+              aria-expanded="false" aria-controls="eiSubmenu">
         <i class="bi bi-compass"></i>
-        Plan de Inversión
-      </a>
+        Empowered Investor
+        <i class="bi bi-chevron-down ei-chevron" id="eiChevron"></i>
+      </button>
+      <div class="app-submenu" id="eiSubmenu">
+        <a href="/calculadora/" target="_blank" rel="noopener" class="app-btn app-sub-btn">
+          <i class="bi bi-graph-up-arrow"></i>
+          Plan de Inversión
+        </a>
+        <a href="#" class="app-btn app-sub-btn app-sub-btn-soon"
+           onclick="return false;" aria-disabled="true" title="Muy pronto disponible">
+          <i class="bi bi-clipboard2-pulse"></i>
+          Diagnóstico Financiero
+          <span class="soon-tag">próximamente</span>
+        </a>
+      </div>
     </div>
 
     <p class="login-footer" style="margin-top:2rem;">neto by Empowered Investor &copy; {{ 2026 }}</p>
   </div>
 </div>
+
+<script>
+  (function () {
+    var toggle = document.getElementById('eiToggle');
+    var menu = document.getElementById('eiSubmenu');
+    var chevron = document.getElementById('eiChevron');
+    if (!toggle || !menu) return;
+    toggle.addEventListener('click', function () {
+      var open = menu.classList.toggle('open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (chevron) chevron.style.transform = open ? 'rotate(180deg)' : '';
+    });
+  })();
+</script>
 </body>
 </html>

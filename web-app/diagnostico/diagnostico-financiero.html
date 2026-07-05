@@ -3,31 +3,39 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Diagnóstico Financiero Personal</title>
+<title>Diagnóstico Financiero Personal — neto</title>
+<link rel="icon" href="/static/rebranding/logos/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/rebranding/logos/favicon-32.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+/* Paleta de marca neto — misma que web-app/static/style.css
+   (ver static/rebranding/neto_colors.py) */
 :root{
-  --ink:#122B21;
-  --forest:#0E3B2E;
-  --paper:#F7F6F1;
+  --ink:#1B1C20;          /* neto dark */
+  --forest:#1B1C20;       /* header oscuro, como la navbar de la app */
+  --paper:#F4F6F9;
   --card:#FFFFFF;
-  --line:#DDDBD2;
-  --accent:#1E7A5A;
-  --accent-soft:#E4F0EA;
-  --gold:#B8860B;
+  --line:#E2E6EB;
+  --accent:#3A9C8E;       /* neto teal */
+  --accent-soft:rgba(58,156,142,0.12);
+  --gold:#EFA91A;         /* neto yellow */
   --red:#B3402E;
-  --muted:#6B7A72;
+  --muted:#6B7280;
+  --blue:#1F4D8E;         /* neto blue */
   --mono:'IBM Plex Mono',monospace;
-  --sans:'Archivo',sans-serif;
+  --sans:'Inter',sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-height:1.5;padding-bottom:120px}
 .wrap{max-width:860px;margin:0 auto;padding:0 20px}
 
 /* Header */
-header{background:var(--forest);color:#fff;padding:28px 0 22px}
-header .wrap{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px}
+header{background:var(--forest);color:#fff;padding:22px 0 20px}
+header .wrap{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+.brand{display:flex;align-items:center;gap:14px}
+.brand-logo{background:#fff;border-radius:8px;padding:4px 8px;display:flex;align-items:center}
+.brand-logo img{height:38px;width:auto;display:block}
 .brand h1{font-size:22px;font-weight:800;letter-spacing:-0.02em}
 .brand p{font-size:13px;opacity:.75;margin-top:2px}
 .client-field input{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);color:#fff;padding:8px 12px;border-radius:6px;font-family:var(--sans);font-size:14px;width:220px}
@@ -128,8 +136,13 @@ textarea{resize:vertical;min-height:64px}
 <header>
   <div class="wrap">
     <div class="brand">
-      <h1>Diagnóstico Financiero Personal</h1>
-      <p>Complete este formulario antes de su sesión de asesoría · 15–20 min</p>
+      <div class="brand-logo">
+        <img src="/static/rebranding/logos/neto-logo-transparent-600w.png" alt="neto">
+      </div>
+      <div>
+        <h1>Diagnóstico Financiero Personal</h1>
+        <p>Complete este formulario antes de su sesión de asesoría · 15–20 min</p>
+      </div>
     </div>
     <div class="client-field">
       <input type="text" id="clientName" placeholder="Nombre del cliente / familia">
@@ -443,8 +456,8 @@ function buildSummary(){
 
   // Bars
   const cats = [
-    {n:'Gastos fijos', v:t.tf, c:'#1E7A5A'},
-    {n:'Gastos variables', v:t.tv, c:'#B8860B'},
+    {n:'Gastos fijos', v:t.tf, c:'#3A9C8E'},
+    {n:'Gastos variables', v:t.tv, c:'#EFA91A'},
     {n:'Gastos hormiga', v:t.th, c:'#B3402E'},
     {n:'Cuotas de deudas', v:t.tc, c:'#5B4B8A'}
   ];

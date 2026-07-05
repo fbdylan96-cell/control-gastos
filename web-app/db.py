@@ -1,6 +1,6 @@
 import os
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 import psycopg2
@@ -10,6 +10,12 @@ from dotenv import find_dotenv, load_dotenv
 load_dotenv(find_dotenv())
 
 _CR_TZ = ZoneInfo("America/Costa_Rica")
+
+
+def today_cr():
+    """Fecha de hoy en Costa Rica (el server corre en UTC: de 6pm a medianoche
+    hora CR, date.today() ya es 'mañana' — usar siempre esta para validar)."""
+    return datetime.now(_CR_TZ).date()
 
 
 def get_connection():
@@ -474,12 +480,19 @@ def set_subscription_comp(conn, client_id, comp):
 
 
 def insert_manual_transaction(conn, *, individual_id, business_id, merchant, amount,
-                              currency, txn_type, category, subcategory):
+                              currency, txn_type, category, subcategory, txn_date=None):
     """Insert a user-entered transaction across all four pipeline tables so it behaves
     like any ingested one. The notification row is pre-marked notified (email + WhatsApp)
     so the notifiers never send anything for it.
+
+    txn_date: fecha (date) elegida por el cliente. None o la fecha de hoy usan el
+    timestamp actual (comportamiento original). Fechas pasadas se registran a las
+    12:00 hora CR de ese día. Fechas futuras se recortan a "ahora" — la validación
+    amigable vive en las rutas; esto es el respaldo.
     """
     now_cr = datetime.now(_CR_TZ)
+    if txn_date is not None and txn_date < now_cr.date():
+        now_cr = datetime.combine(txn_date, time(12, 0), tzinfo=_CR_TZ)
     raw_id = str(uuid.uuid4())
     enriched_id = str(uuid.uuid4())
     classified_id = str(uuid.uuid4())

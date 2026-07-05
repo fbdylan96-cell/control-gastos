@@ -35,12 +35,21 @@
         </div>
       </div>
 
-      <label class="form-label-ei" style="margin-top:0.85rem;">Tipo</label>
-      <select name="tipo" class="ei-select" required>
-        <option value="">— seleccionar —</option>
-        <option value="debito">Débito (gasto)</option>
-        <option value="credito">Crédito (ingreso)</option>
-      </select>
+      <div style="display:grid; grid-template-columns:1fr 170px; gap:10px; margin-top:0.85rem;">
+        <div>
+          <label class="form-label-ei">Tipo</label>
+          <select name="tipo" class="ei-select" required>
+            <option value="">— seleccionar —</option>
+            <option value="debito">Débito (gasto)</option>
+            <option value="credito">Crédito (ingreso)</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label-ei">Fecha</label>
+          <input type="date" name="txn_date" class="ei-input"
+                 value="{{ today }}" max="{{ today }}" required />
+        </div>
+      </div>
 
       <label class="form-label-ei" style="margin-top:0.85rem;">Clasificación</label>
       <select name="category_value" class="ei-select" required>

@@ -17,7 +17,7 @@ from crypto import decrypt_secret
 from db import (apply_discount_code, ensure_trial_subscription,
                 get_client_subscription, get_connection, get_investment,
                 insert_manual_transaction, list_subscription_plans,
-                touch_broker_credentials_used)
+                today_cr, touch_broker_credentials_used)
 from tools import finance
 from utils import BANK_NOTIFICATION_SENDERS
 
@@ -524,6 +524,7 @@ def agregar_transaccion():
         amount_raw = (request.form.get("amount") or "").strip()
         currency = (request.form.get("currency") or "").strip().upper()
         txn_type = (request.form.get("tipo") or "").strip()
+        txn_date_raw = (request.form.get("txn_date") or "").strip()
         parts = (request.form.get("category_value") or "").split("|", 1)
         category = parts[0].strip() or None
         subcategory = (parts[1].strip() or None) if len(parts) > 1 else None
@@ -533,6 +534,15 @@ def agregar_transaccion():
         except (TypeError, ValueError):
             amount = None
 
+        # Fecha de la transacción: default hoy (hora CR); nunca futura.
+        if txn_date_raw:
+            try:
+                txn_date = datetime.strptime(txn_date_raw, "%Y-%m-%d").date()
+            except ValueError:
+                txn_date = None
+        else:
+            txn_date = today_cr()
+
         if not merchant:
             flash("Ingrese el comercio.", "danger")
         elif amount is None or amount <= 0:
@@ -541,6 +551,10 @@ def agregar_transaccion():
             flash("Seleccione una moneda válida.", "danger")
         elif txn_type not in ("debito", "credito"):
             flash("Seleccione el tipo (débito o crédito).", "danger")
+        elif txn_date is None:
+            flash("Ingrese una fecha válida.", "danger")
+        elif txn_date > today_cr():
+            flash("La fecha de la transacción no puede ser futura.", "danger")
         elif not category:
             flash("Seleccione una clasificación.", "danger")
         else:
@@ -552,8 +566,17 @@ def agregar_transaccion():
                     business_id=INDIVIDUAL_BIZ_ID,
                     merchant=merchant, amount=amount, currency=currency,
                     txn_type=txn_type, category=category, subcategory=subcategory,
+                    txn_date=txn_date,
                 )
-                flash("Transacción agregada correctamente.", "success")
+                if txn_date < today_cr():
+                    flash(
+                        f"Transacción agregada con fecha {txn_date.strftime('%d/%m/%Y')}. "
+                        "Por ser de un día anterior no aparece en 'Transacciones recientes' "
+                        "(últimas 24 h); la encontrás en Editar transacciones y en Reportes.",
+                        "success",
+                    )
+                else:
+                    flash("Transacción agregada correctamente.", "success")
                 return redirect(url_for("persona.transacciones"))
             except Exception as e:
                 flash(f"Error al agregar la transacción: {e}", "danger")
@@ -561,7 +584,8 @@ def agregar_transaccion():
                 conn.close()
 
     return render_template("persona/agregar.html",
-                           categories=_load_categories_persona(session["user_id"]))
+                           categories=_load_categories_persona(session["user_id"]),
+                           today=str(today_cr()))
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────

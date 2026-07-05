@@ -48,7 +48,7 @@
       background: linear-gradient(135deg, #34d399, #3b5bdb);
       color: #fff;
     }
-    /* El botón "Empowered Investor" es un <button> que despliega un submenú */
+    /* El botón "Finanzas Personales" es un <button> que despliega un submenú */
     button.app-btn {
       border: none;
       cursor: pointer;
@@ -80,23 +80,6 @@
       font-size: 0.9rem;
     }
     .app-sub-btn i { color: #3b5bdb; }
-    .app-sub-btn-soon {
-      color: rgba(21, 25, 30, 0.45);
-      cursor: not-allowed;
-    }
-    .app-sub-btn-soon i { color: rgba(21, 25, 30, 0.35); }
-    .app-sub-btn-soon:hover { transform: none; box-shadow: none; }
-    .soon-tag {
-      margin-left: auto;
-      font-size: 0.68rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: rgba(21, 25, 30, 0.5);
-      background: rgba(21, 25, 30, 0.07);
-      border-radius: 20px;
-      padding: 2px 9px;
-    }
     .app-btn i {
       font-size: 1.2rem;
     }
@@ -135,7 +118,7 @@
       <button type="button" class="app-btn app-btn-plan" id="eiToggle"
               aria-expanded="false" aria-controls="eiSubmenu">
         <i class="bi bi-compass"></i>
-        Empowered Investor
+        Finanzas Personales
         <i class="bi bi-chevron-down ei-chevron" id="eiChevron"></i>
       </button>
       <div class="app-submenu" id="eiSubmenu">
@@ -143,11 +126,9 @@
           <i class="bi bi-graph-up-arrow"></i>
           Plan de Inversión
         </a>
-        <a href="#" class="app-btn app-sub-btn app-sub-btn-soon"
-           onclick="return false;" aria-disabled="true" title="Muy pronto disponible">
+        <a href="/diagnostico/" target="_blank" rel="noopener" class="app-btn app-sub-btn">
           <i class="bi bi-clipboard2-pulse"></i>
           Diagnóstico Financiero
-          <span class="soon-tag">próximamente</span>
         </a>
       </div>
     </div>

@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diagnóstico Financiero Personal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#122B21;
+  --forest:#0E3B2E;
+  --paper:#F7F6F1;
+  --card:#FFFFFF;
+  --line:#DDDBD2;
+  --accent:#1E7A5A;
+  --accent-soft:#E4F0EA;
+  --gold:#B8860B;
+  --red:#B3402E;
+  --muted:#6B7A72;
+  --mono:'IBM Plex Mono',monospace;
+  --sans:'Archivo',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-height:1.5;padding-bottom:120px}
+.wrap{max-width:860px;margin:0 auto;padding:0 20px}
+
+/* Header */
+header{background:var(--forest);color:#fff;padding:28px 0 22px}
+header .wrap{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px}
+.brand h1{font-size:22px;font-weight:800;letter-spacing:-0.02em}
+.brand p{font-size:13px;opacity:.75;margin-top:2px}
+.client-field input{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);color:#fff;padding:8px 12px;border-radius:6px;font-family:var(--sans);font-size:14px;width:220px}
+.client-field input::placeholder{color:rgba(255,255,255,.5)}
+
+/* Stepper */
+.stepper{display:flex;gap:0;margin:24px 0 8px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card)}
+.step{flex:1;padding:12px 10px;text-align:center;font-size:12.5px;font-weight:600;color:var(--muted);cursor:pointer;border-right:1px solid var(--line);position:relative;transition:all .15s}
+.step:last-child{border-right:none}
+.step .num{display:block;font-family:var(--mono);font-size:11px;margin-bottom:2px;opacity:.7}
+.step.active{background:var(--forest);color:#fff}
+.step.done{color:var(--accent)}
+.step.done .num::after{content:' ✓'}
+
+section.phase{display:none;margin-top:20px}
+section.phase.visible{display:block}
+.phase-intro{margin:6px 0 18px}
+.phase-intro h2{font-size:20px;font-weight:800;letter-spacing:-0.02em}
+.phase-intro p{font-size:14px;color:var(--muted);margin-top:4px;max-width:640px}
+
+/* Cards */
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+.card h3{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.card .hint{font-size:12.5px;color:var(--muted);margin-bottom:14px}
+.tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:3px 8px;border-radius:20px;background:var(--accent-soft);color:var(--accent)}
+.tag.warn{background:#FBEEE9;color:var(--red)}
+.tag.gold{background:#F6EFDD;color:var(--gold)}
+
+/* Rows */
+.row{display:grid;grid-template-columns:1fr 150px 34px;gap:10px;margin-bottom:8px;align-items:center}
+.row input[type=text]{border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-family:var(--sans);font-size:14px;width:100%;background:#FDFDFB}
+.row input.amount{font-family:var(--mono);font-size:14px;text-align:right;border:1px solid var(--line);border-radius:7px;padding:9px 11px;width:100%;background:#FDFDFB}
+.row input:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+.row .del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px;border-radius:6px}
+.row .del:hover{color:var(--red);background:#FBEEE9}
+.add-row{background:none;border:1px dashed var(--line);color:var(--accent);font-family:var(--sans);font-weight:600;font-size:13px;padding:9px;border-radius:7px;cursor:pointer;width:100%;margin-top:4px}
+.add-row:hover{border-color:var(--accent);background:var(--accent-soft)}
+.subtotal{display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:14px;padding-top:12px;font-weight:700;font-size:14px}
+.subtotal .val{font-family:var(--mono)}
+
+/* Debt rows */
+.row.debt{grid-template-columns:1.4fr 110px 80px 110px 34px}
+.row.debt input{font-size:13px}
+.debt-head{display:grid;grid-template-columns:1.4fr 110px 80px 110px 34px;gap:10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px}
+
+/* Checkboxes / selects */
+.chk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-top:8px}
+.chk{display:flex;align-items:center;gap:8px;font-size:13.5px;border:1px solid var(--line);border-radius:8px;padding:9px 12px;cursor:pointer;background:#FDFDFB}
+.chk:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.chk input{accent-color:var(--accent)}
+select,textarea{border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-family:var(--sans);font-size:14px;background:#FDFDFB;width:100%}
+textarea{resize:vertical;min-height:64px}
+.field-label{font-size:12.5px;font-weight:600;color:var(--muted);display:block;margin:12px 0 5px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:640px){.two-col{grid-template-columns:1fr}.row.debt{grid-template-columns:1fr 90px 34px}.row.debt input:nth-child(3),.row.debt input:nth-child(4){display:none}.debt-head{display:none}}
+
+/* Nav buttons */
+.nav-btns{display:flex;justify-content:space-between;margin-top:22px}
+.btn{font-family:var(--sans);font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;cursor:pointer;border:none}
+.btn.primary{background:var(--forest);color:#fff}
+.btn.primary:hover{background:var(--accent)}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--ink)}
+.btn.ghost:hover{border-color:var(--ink)}
+
+/* Live ledger bar */
+.ledger{position:fixed;bottom:0;left:0;right:0;background:var(--forest);color:#fff;padding:12px 0;box-shadow:0 -4px 20px rgba(0,0,0,.15);z-index:50}
+.ledger .wrap{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
+.ledger .li{display:flex;flex-direction:column}
+.ledger .li .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;opacity:.65;font-weight:600}
+.ledger .li .amt{font-family:var(--mono);font-size:16px;font-weight:600}
+.ledger .li .amt.pos{color:#7FD8A8}
+.ledger .li .amt.neg{color:#F2A08D}
+
+/* Summary */
+.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.kpi .lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.kpi .val{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:6px}
+.kpi .sub{font-size:12px;color:var(--muted);margin-top:4px}
+.kpi.good{border-left:4px solid var(--accent)}
+.kpi.bad{border-left:4px solid var(--red)}
+.kpi.mid{border-left:4px solid var(--gold)}
+.bar-chart{margin-top:10px}
+.bar-item{margin-bottom:10px}
+.bar-item .bar-lbl{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}
+.bar-item .bar-lbl .v{font-family:var(--mono);font-size:12.5px}
+.bar-track{background:var(--paper);border-radius:6px;height:14px;overflow:hidden}
+.bar-fill{height:100%;border-radius:6px;transition:width .4s}
+.alertas li{font-size:13.5px;margin-bottom:8px;padding-left:8px}
+.copy-btn{margin-top:8px}
+.currency-toggle{display:flex;gap:6px;margin-left:auto}
+.currency-toggle button{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;font-family:var(--mono);font-size:12px;padding:4px 10px;border-radius:6px;cursor:pointer}
+.currency-toggle button.on{background:#fff;color:var(--forest);font-weight:600}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="brand">
+      <h1>Diagnóstico Financiero Personal</h1>
+      <p>Complete este formulario antes de su sesión de asesoría · 15–20 min</p>
+    </div>
+    <div class="client-field">
+      <input type="text" id="clientName" placeholder="Nombre del cliente / familia">
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="stepper" id="stepper">
+    <div class="step active" data-step="0"><span class="num">Fase 1</span>Gastos mensuales</div>
+    <div class="step" data-step="1"><span class="num">Fase 2</span>Ingresos y patrimonio</div>
+    <div class="step" data-step="2"><span class="num">Fase 3</span>Protección y metas</div>
+    <div class="step" data-step="3"><span class="num">Fase 4</span>Resumen</div>
+  </div>
+
+  <!-- ============ FASE 1: GASTOS ============ -->
+  <section class="phase visible" id="phase0">
+    <div class="phase-intro">
+      <h2>¿En qué se va su dinero cada mes?</h2>
+      <p>No necesita cifras exactas — un estimado mensual honesto es suficiente. Si un gasto es anual (ej. marchamo), divídalo entre 12.</p>
+    </div>
+
+    <div class="card">
+      <h3>Gastos fijos <span class="tag">se pagan sí o sí</span></h3>
+      <p class="hint">Compromisos mensuales que no cambian mucho: vivienda, servicios, cuotas, educación.</p>
+      <div id="rows-fijos"></div>
+      <button class="add-row" onclick="addRow('fijos')">+ Agregar gasto fijo</button>
+      <div class="subtotal"><span>Subtotal fijos</span><span class="val" id="sub-fijos">₡0</span></div>
+    </div>
+
+    <div class="card">
+      <h3>Gastos variables <span class="tag gold">cambian mes a mes</span></h3>
+      <p class="hint">Alimentación, transporte variable, entretenimiento, ropa, salud ocasional.</p>
+      <div id="rows-variables"></div>
+      <button class="add-row" onclick="addRow('variables')">+ Agregar gasto variable</button>
+      <div class="subtotal"><span>Subtotal variables</span><span class="val" id="sub-variables">₡0</span></div>
+    </div>
+
+    <div class="card">
+      <h3>Gastos hormiga <span class="tag warn">pequeños pero constantes</span></h3>
+      <p class="hint">Cafés, snacks, apps y suscripciones, delivery, antojos. Sea honesto — aquí suele esconderse el 10-15% del ingreso.</p>
+      <div id="rows-hormiga"></div>
+      <button class="add-row" onclick="addRow('hormiga')">+ Agregar gasto hormiga</button>
+      <div class="subtotal"><span>Subtotal hormiga</span><span class="val" id="sub-hormiga">₡0</span></div>
+    </div>
+
+    <div class="nav-btns">
+      <span></span>
+      <button class="btn primary" onclick="goStep(1)">Continuar a ingresos →</button>
+    </div>
+  </section>
+
+  <!-- ============ FASE 2: FOTOGRAFÍA FINANCIERA ============ -->
+  <section class="phase" id="phase1">
+    <div class="phase-intro">
+      <h2>Su fotografía financiera</h2>
+      <p>Ingresos, lo que tiene (activos) y lo que debe (pasivos). Con esto calculamos su patrimonio neto y flujo de caja.</p>
+    </div>
+
+    <div class="card">
+      <h3>Ingresos mensuales <span class="tag">netos, después de deducciones</span></h3>
+      <p class="hint">Salarios, ingresos de negocio, alquileres, pensiones, remesas u otros ingresos del hogar.</p>
+      <div id="rows-ingresos"></div>
+      <button class="add-row" onclick="addRow('ingresos')">+ Agregar ingreso</button>
+      <div class="subtotal"><span>Total ingresos</span><span class="val" id="sub-ingresos">₡0</span></div>
+    </div>
+
+    <div class="card">
+      <h3>Activos <span class="tag">lo que tiene</span></h3>
+      <p class="hint">Valor estimado actual: propiedades, vehículos, ahorros, inversiones, negocio propio.</p>
+      <div id="rows-activos"></div>
+      <button class="add-row" onclick="addRow('activos')">+ Agregar activo</button>
+      <div class="subtotal"><span>Total activos</span><span class="val" id="sub-activos">₡0</span></div>
+    </div>
+
+    <div class="card">
+      <h3>Deudas / pasivos <span class="tag warn">lo que debe</span></h3>
+      <p class="hint">Incluya saldo total pendiente, tasa de interés anual y la cuota mensual de cada deuda.</p>
+      <div class="debt-head"><span>Deuda</span><span>Saldo total</span><span>Tasa %</span><span>Cuota/mes</span><span></span></div>
+      <div id="rows-deudas"></div>
+      <button class="add-row" onclick="addDebtRow()">+ Agregar deuda</button>
+      <div class="subtotal"><span>Total deudas</span><span class="val" id="sub-deudas">₡0</span></div>
+      <div class="subtotal" style="border:none;padding-top:4px;font-weight:600;color:var(--muted);font-size:13px"><span>Cuotas mensuales totales</span><span class="val" id="sub-cuotas">₡0</span></div>
+    </div>
+
+    <div class="nav-btns">
+      <button class="btn ghost" onclick="goStep(0)">← Volver</button>
+      <button class="btn primary" onclick="goStep(2)">Continuar a protección →</button>
+    </div>
+  </section>
+
+  <!-- ============ FASE 3: PROTECCIÓN Y METAS ============ -->
+  <section class="phase" id="phase2">
+    <div class="phase-intro">
+      <h2>Protección y metas</h2>
+      <p>Preguntas rápidas para completar el panorama antes de la sesión.</p>
+    </div>
+
+    <div class="card">
+      <h3>Fondo de emergencia</h3>
+      <label class="field-label">¿Tiene ahorros líquidos disponibles para una emergencia?</label>
+      <select id="fe-tiene">
+        <option value="">Seleccione…</option>
+        <option value="si">Sí</option>
+        <option value="no">No</option>
+      </select>
+      <label class="field-label">Monto aproximado disponible (₡)</label>
+      <input type="text" class="amount" id="fe-monto" placeholder="0" style="border:1px solid var(--line);border-radius:7px;padding:9px 11px;width:100%;font-family:var(--mono);text-align:right;background:#FDFDFB">
+    </div>
+
+    <div class="card">
+      <h3>Seguros actuales</h3>
+      <p class="hint">Marque los que tiene vigentes.</p>
+      <div class="chk-grid">
+        <label class="chk"><input type="checkbox" name="seg" value="Vida"> Vida</label>
+        <label class="chk"><input type="checkbox" name="seg" value="Gastos médicos"> Gastos médicos privado</label>
+        <label class="chk"><input type="checkbox" name="seg" value="Vehículo"> Vehículo (más allá del obligatorio)</label>
+        <label class="chk"><input type="checkbox" name="seg" value="Hogar"> Hogar / incendio</label>
+        <label class="chk"><input type="checkbox" name="seg" value="Incapacidad"> Incapacidad / desempleo</label>
+        <label class="chk"><input type="checkbox" name="seg" value="Ninguno"> Ninguno</label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Retiro</h3>
+      <label class="field-label">¿Realiza aportes voluntarios para su pensión (además del ROP obligatorio)?</label>
+      <select id="retiro">
+        <option value="">Seleccione…</option>
+        <option value="si">Sí, aporto voluntariamente</option>
+        <option value="solo-obligatorio">Solo el régimen obligatorio</option>
+        <option value="no">No cotizo actualmente</option>
+      </select>
+    </div>
+
+    <div class="card">
+      <h3>Sus 3 metas financieras principales</h3>
+      <p class="hint">Ej.: comprar casa, educación de los hijos, salir de deudas, viajar, iniciar un negocio, retiro anticipado.</p>
+      <label class="field-label">Meta 1 (la más importante)</label>
+      <input type="text" id="meta1" style="border:1px solid var(--line);border-radius:7px;padding:9px 11px;width:100%;font-family:var(--sans);background:#FDFDFB" placeholder="Ej. Comprar casa en 5 años">
+      <label class="field-label">Meta 2</label>
+      <input type="text" id="meta2" style="border:1px solid var(--line);border-radius:7px;padding:9px 11px;width:100%;font-family:var(--sans);background:#FDFDFB">
+      <label class="field-label">Meta 3</label>
+      <input type="text" id="meta3" style="border:1px solid var(--line);border-radius:7px;padding:9px 11px;width:100%;font-family:var(--sans);background:#FDFDFB">
+      <label class="field-label">¿Algo más que el asesor deba saber? (opcional)</label>
+      <textarea id="notas" placeholder="Situación laboral, cambios próximos, preocupaciones…"></textarea>
+    </div>
+
+    <div class="nav-btns">
+      <button class="btn ghost" onclick="goStep(1)">← Volver</button>
+      <button class="btn primary" onclick="goStep(3)">Ver resumen →</button>
+    </div>
+  </section>
+
+  <!-- ============ FASE 4: RESUMEN ============ -->
+  <section class="phase" id="phase3">
+    <div class="phase-intro">
+      <h2>Resumen del diagnóstico</h2>
+      <p>Este es el panorama que revisaremos juntos en la sesión de asesoría.</p>
+    </div>
+
+    <div class="summary-grid" id="kpis"></div>
+
+    <div class="card">
+      <h3>Distribución de gastos</h3>
+      <div class="bar-chart" id="bars"></div>
+    </div>
+
+    <div class="card">
+      <h3>Señales para revisar en la sesión</h3>
+      <ul class="alertas" id="alertas" style="list-style:none"></ul>
+    </div>
+
+    <div class="nav-btns">
+      <button class="btn ghost" onclick="goStep(2)">← Volver</button>
+      <button class="btn primary copy-btn" onclick="copySummary()">📋 Copiar resumen para el asesor</button>
+    </div>
+  </section>
+</div>
+
+<!-- Live ledger -->
+<div class="ledger">
+  <div class="wrap">
+    <div class="li"><span class="lbl">Ingresos/mes</span><span class="amt" id="lg-ing">₡0</span></div>
+    <div class="li"><span class="lbl">Gastos/mes</span><span class="amt" id="lg-gas">₡0</span></div>
+    <div class="li"><span class="lbl">Flujo de caja</span><span class="amt" id="lg-flujo">₡0</span></div>
+    <div class="li"><span class="lbl">Patrimonio neto</span><span class="amt" id="lg-patri">₡0</span></div>
+  </div>
+</div>
+
+<script>
+// ---------- State ----------
+const state = {
+  fijos: [], variables: [], hormiga: [], ingresos: [], activos: [], deudas: []
+};
+
+const presets = {
+  fijos: ['Alquiler / hipoteca','Electricidad','Agua','Internet y cable','Celular','Educación / colegiaturas','Seguro (cuota mensual)'],
+  variables: ['Supermercado / alimentación','Gasolina / transporte','Comidas fuera','Entretenimiento','Ropa y calzado','Salud / farmacia'],
+  hormiga: ['Cafés y snacks','Suscripciones (streaming, apps)','Delivery / Uber Eats','Antojos y compras impulsivas'],
+  ingresos: ['Salario neto principal','Salario neto cónyuge'],
+  activos: ['Vivienda (valor estimado)','Vehículo(s)','Ahorros en cuentas','Inversiones / CDP']
+};
+
+let idc = 0;
+function fmt(n){
+  return '₡' + Math.round(n).toLocaleString('es-CR');
+}
+function parseAmt(v){
+  const n = parseFloat(String(v).replace(/[^\d.]/g,''));
+  return isNaN(n) ? 0 : n;
+}
+
+// ---------- Simple rows ----------
+function addRow(cat, name=''){
+  const id = 'r'+(idc++);
+  state[cat].push({id, name, amount:0});
+  const div = document.createElement('div');
+  div.className = 'row'; div.id = id;
+  div.innerHTML = `
+    <input type="text" placeholder="Descripción" value="${name.replace(/"/g,'&quot;')}" oninput="upd('${cat}','${id}','name',this.value)">
+    <input type="text" class="amount" placeholder="0" inputmode="numeric" oninput="upd('${cat}','${id}','amount',this.value)">
+    <button class="del" title="Eliminar" onclick="delRow('${cat}','${id}')">✕</button>`;
+  document.getElementById('rows-'+cat).appendChild(div);
+}
+function addDebtRow(name=''){
+  const id = 'r'+(idc++);
+  state.deudas.push({id, name, saldo:0, tasa:0, cuota:0});
+  const div = document.createElement('div');
+  div.className = 'row debt'; div.id = id;
+  div.innerHTML = `
+    <input type="text" placeholder="Ej. Tarjeta BAC" value="${name}" oninput="upd('deudas','${id}','name',this.value)">
+    <input type="text" class="amount" placeholder="0" inputmode="numeric" oninput="upd('deudas','${id}','saldo',this.value)">
+    <input type="text" class="amount" placeholder="%" inputmode="decimal" oninput="upd('deudas','${id}','tasa',this.value)">
+    <input type="text" class="amount" placeholder="0" inputmode="numeric" oninput="upd('deudas','${id}','cuota',this.value)">
+    <button class="del" title="Eliminar" onclick="delRow('deudas','${id}')">✕</button>`;
+  document.getElementById('rows-deudas').appendChild(div);
+}
+function upd(cat, id, field, value){
+  const item = state[cat].find(x=>x.id===id);
+  if(!item) return;
+  item[field] = (field==='name') ? value : parseAmt(value);
+  recalc();
+}
+function delRow(cat, id){
+  state[cat] = state[cat].filter(x=>x.id!==id);
+  document.getElementById(id).remove();
+  recalc();
+}
+
+// ---------- Totals ----------
+function sum(cat, field='amount'){ return state[cat].reduce((a,x)=>a+(x[field]||0),0); }
+
+function recalc(){
+  const tf = sum('fijos'), tv = sum('variables'), th = sum('hormiga');
+  const ti = sum('ingresos');
+  const ta = sum('activos');
+  const td = sum('deudas','saldo');
+  const tc = sum('deudas','cuota');
+  const gastos = tf+tv+th+tc;
+  const flujo = ti - gastos;
+  const patri = ta - td;
+
+  document.getElementById('sub-fijos').textContent = fmt(tf);
+  document.getElementById('sub-variables').textContent = fmt(tv);
+  document.getElementById('sub-hormiga').textContent = fmt(th);
+  document.getElementById('sub-ingresos').textContent = fmt(ti);
+  document.getElementById('sub-activos').textContent = fmt(ta);
+  document.getElementById('sub-deudas').textContent = fmt(td);
+  document.getElementById('sub-cuotas').textContent = fmt(tc);
+
+  const lgF = document.getElementById('lg-flujo');
+  const lgP = document.getElementById('lg-patri');
+  document.getElementById('lg-ing').textContent = fmt(ti);
+  document.getElementById('lg-gas').textContent = fmt(gastos);
+  lgF.textContent = fmt(flujo); lgF.className = 'amt ' + (flujo>=0?'pos':'neg');
+  lgP.textContent = fmt(patri); lgP.className = 'amt ' + (patri>=0?'pos':'neg');
+  return {tf,tv,th,ti,ta,td,tc,gastos,flujo,patri};
+}
+
+// ---------- Navigation ----------
+function goStep(n){
+  document.querySelectorAll('.phase').forEach((p,i)=>p.classList.toggle('visible', i===n));
+  document.querySelectorAll('.step').forEach((s,i)=>{
+    s.classList.toggle('active', i===n);
+    s.classList.toggle('done', i<n);
+  });
+  window.scrollTo({top:0,behavior:'smooth'});
+  if(n===3) buildSummary();
+}
+document.querySelectorAll('.step').forEach(s=>s.addEventListener('click',()=>goStep(+s.dataset.step)));
+
+// ---------- Summary ----------
+function buildSummary(){
+  const t = recalc();
+  const feMonto = parseAmt(document.getElementById('fe-monto').value);
+  const gastosBasicos = t.tf + t.tv; // proxy for essential expenses
+  const mesesFE = gastosBasicos>0 ? feMonto/gastosBasicos : 0;
+  const pctDeuda = t.ti>0 ? (t.tc/t.ti)*100 : 0;
+  const pctHormiga = t.ti>0 ? (t.th/t.ti)*100 : 0;
+  const tasaAhorro = t.ti>0 ? (t.flujo/t.ti)*100 : 0;
+
+  const kpis = [
+    {lbl:'Flujo de caja mensual', val:fmt(t.flujo), sub: t.ti>0? tasaAhorro.toFixed(0)+'% del ingreso' :'', cls: t.flujo>0?'good':'bad'},
+    {lbl:'Patrimonio neto', val:fmt(t.patri), sub:'Activos − deudas', cls: t.patri>=0?'good':'bad'},
+    {lbl:'Carga de deuda', val:pctDeuda.toFixed(0)+'%', sub:'Cuotas / ingreso · ideal < 35%', cls: pctDeuda<35?'good':(pctDeuda<45?'mid':'bad')},
+    {lbl:'Fondo de emergencia', val:mesesFE.toFixed(1)+' meses', sub:'Meta: 3–6 meses de gastos', cls: mesesFE>=3?'good':(mesesFE>=1?'mid':'bad')},
+    {lbl:'Gastos hormiga', val:pctHormiga.toFixed(0)+'%', sub:'del ingreso mensual', cls: pctHormiga<8?'good':(pctHormiga<15?'mid':'bad')}
+  ];
+  document.getElementById('kpis').innerHTML = kpis.map(k=>
+    `<div class="kpi ${k.cls}"><div class="lbl">${k.lbl}</div><div class="val">${k.val}</div><div class="sub">${k.sub}</div></div>`).join('');
+
+  // Bars
+  const cats = [
+    {n:'Gastos fijos', v:t.tf, c:'#1E7A5A'},
+    {n:'Gastos variables', v:t.tv, c:'#B8860B'},
+    {n:'Gastos hormiga', v:t.th, c:'#B3402E'},
+    {n:'Cuotas de deudas', v:t.tc, c:'#5B4B8A'}
+  ];
+  const max = Math.max(t.ti, t.gastos, 1);
+  document.getElementById('bars').innerHTML = cats.map(c=>{
+    const pct = t.ti>0 ? (c.v/t.ti*100).toFixed(0)+'% del ingreso' : '';
+    return `<div class="bar-item">
+      <div class="bar-lbl"><span>${c.n}</span><span class="v">${fmt(c.v)} · ${pct}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(c.v/max*100)}%;background:${c.c}"></div></div>
+    </div>`;
+  }).join('');
+
+  // Alerts
+  const alerts = [];
+  if(t.flujo < 0) alerts.push('🔴 <b>Flujo de caja negativo:</b> los gastos superan los ingresos. Prioridad #1 de la sesión.');
+  if(pctDeuda >= 40) alerts.push('🔴 <b>Carga de deuda alta ('+pctDeuda.toFixed(0)+'%):</b> revisar estrategia de pago o consolidación.');
+  else if(pctDeuda >= 30) alerts.push('🟡 <b>Carga de deuda moderada:</b> vale la pena revisar tasas y plazos.');
+  if(mesesFE < 1) alerts.push('🔴 <b>Sin colchón de emergencia:</b> cualquier imprevisto se financia con deuda.');
+  else if(mesesFE < 3) alerts.push('🟡 <b>Fondo de emergencia insuficiente:</b> meta de 3–6 meses de gastos.');
+  if(pctHormiga >= 12) alerts.push('🟡 <b>Gastos hormiga elevados ('+pctHormiga.toFixed(0)+'% del ingreso):</b> oportunidad rápida de liberación de flujo.');
+  const segs = [...document.querySelectorAll('input[name=seg]:checked')].map(x=>x.value);
+  if(segs.includes('Ninguno') || segs.length===0) alerts.push('🟡 <b>Sin coberturas de seguro reportadas:</b> revisar protección básica según dependientes.');
+  const ret = document.getElementById('retiro').value;
+  if(ret==='no') alerts.push('🔴 <b>No cotiza para el retiro:</b> tema clave de largo plazo.');
+  if(ret==='solo-obligatorio') alerts.push('🟢 <b>Retiro:</b> cotiza el régimen obligatorio — evaluar si conviene aporte voluntario.');
+  const deudasCaras = state.deudas.filter(d=>d.tasa>=30);
+  if(deudasCaras.length) alerts.push('🔴 <b>Deuda(s) con tasa ≥30%:</b> '+deudasCaras.map(d=>d.name||'sin nombre').join(', ')+'. Candidatas a pago acelerado.');
+  if(!alerts.length) alerts.push('🟢 Sin señales críticas evidentes. La sesión se puede enfocar en optimización y metas.');
+  document.getElementById('alertas').innerHTML = alerts.map(a=>'<li>'+a+'</li>').join('');
+}
+
+// ---------- Copy summary ----------
+function copySummary(){
+  const t = recalc();
+  const name = document.getElementById('clientName').value || '(sin nombre)';
+  const feMonto = parseAmt(document.getElementById('fe-monto').value);
+  const segs = [...document.querySelectorAll('input[name=seg]:checked')].map(x=>x.value).join(', ') || 'Ninguno reportado';
+  const metas = [1,2,3].map(i=>document.getElementById('meta'+i).value).filter(Boolean);
+  const lines = [
+    'DIAGNÓSTICO FINANCIERO — ' + name,
+    'Fecha: ' + new Date().toLocaleDateString('es-CR'),
+    '',
+    '— FLUJO MENSUAL —',
+    'Ingresos: ' + fmt(t.ti),
+    'Gastos fijos: ' + fmt(t.tf),
+    'Gastos variables: ' + fmt(t.tv),
+    'Gastos hormiga: ' + fmt(t.th),
+    'Cuotas de deudas: ' + fmt(t.tc),
+    'FLUJO DE CAJA: ' + fmt(t.flujo),
+    '',
+    '— PATRIMONIO —',
+    'Activos: ' + fmt(t.ta),
+    'Deudas (saldo): ' + fmt(t.td),
+    'PATRIMONIO NETO: ' + fmt(t.patri),
+    '',
+    '— DEUDAS DETALLE —',
+    ...state.deudas.map(d=>`• ${d.name||'?'}: saldo ${fmt(d.saldo)}, tasa ${d.tasa}%, cuota ${fmt(d.cuota)}`),
+    '',
+    '— PROTECCIÓN —',
+    'Fondo de emergencia: ' + fmt(feMonto),
+    'Seguros: ' + segs,
+    'Retiro: ' + (document.getElementById('retiro').selectedOptions[0]?.text || '—'),
+    '',
+    '— METAS —',
+    ...metas.map((m,i)=>`${i+1}. ${m}`),
+    '',
+    '— NOTAS —',
+    document.getElementById('notas').value || '—'
+  ];
+  navigator.clipboard.writeText(lines.join('\n')).then(()=>{
+    alert('Resumen copiado al portapapeles ✓');
+  }).catch(()=>{
+    prompt('Copie el texto:', lines.join('\n'));
+  });
+}
+
+// ---------- Init with presets ----------
+presets.fijos.forEach(n=>addRow('fijos',n));
+presets.variables.forEach(n=>addRow('variables',n));
+presets.hormiga.forEach(n=>addRow('hormiga',n));
+presets.ingresos.forEach(n=>addRow('ingresos',n));
+presets.activos.forEach(n=>addRow('activos',n));
+addDebtRow('Tarjeta de crédito');
+recalc();
+</script>
+</body>
+</html>

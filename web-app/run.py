@@ -3,7 +3,8 @@ import os
 import sys
 
 from dotenv import find_dotenv, load_dotenv
-from flask import Flask, redirect, render_template, request, url_for
+from flask import (Flask, redirect, render_template, request,
+                   send_from_directory, url_for)
 
 load_dotenv(find_dotenv())
 
@@ -47,6 +48,18 @@ def index():
 @app.route('/terminos')
 def terminos():
     return render_template('terminos.html')
+
+
+# Diagnóstico Financiero: página estática autocontenida (web-app/diagnostico/),
+# enlazada desde el submenú "Finanzas Personales" del landing. Público, sin login
+# (igual que /calculadora/): no muestra datos de clientes.
+@app.route('/diagnostico')
+@app.route('/diagnostico/')
+def diagnostico():
+    return send_from_directory(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'diagnostico'),
+        'diagnostico-financiero.html',
+    )
 
 
 @app.route('/privacidad-datos')

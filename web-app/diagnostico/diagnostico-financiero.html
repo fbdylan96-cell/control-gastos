@@ -88,6 +88,10 @@ section.phase.visible{display:block}
 
 /* Checkboxes / selects */
 .chk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-top:8px}
+.quiz-q{margin-bottom:18px}
+.quiz-q .q-title{font-size:13.5px;font-weight:700;margin-bottom:6px}
+.quiz-opts{display:grid;grid-template-columns:1fr;gap:6px}
+.quiz-name input{border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-family:var(--sans);font-size:14px;width:100%;max-width:320px;background:#FDFDFB}
 .chk{display:flex;align-items:center;gap:8px;font-size:13.5px;border:1px solid var(--line);border-radius:8px;padding:9px 12px;cursor:pointer;background:#FDFDFB}
 .chk:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
 .chk input{accent-color:var(--accent)}
@@ -156,7 +160,8 @@ textarea{resize:vertical;min-height:64px}
     <div class="step active" data-step="0"><span class="num">Fase 1</span>Gastos mensuales</div>
     <div class="step" data-step="1"><span class="num">Fase 2</span>Ingresos y patrimonio</div>
     <div class="step" data-step="2"><span class="num">Fase 3</span>Protección y metas</div>
-    <div class="step" data-step="3"><span class="num">Fase 4</span>Resumen</div>
+    <div class="step" data-step="3"><span class="num">Fase 4</span>Personalidades del dinero</div>
+    <div class="step" data-step="4"><span class="num">Fase 5</span>Resumen</div>
   </div>
 
   <!-- ============ FASE 1: GASTOS ============ -->
@@ -293,12 +298,32 @@ textarea{resize:vertical;min-height:64px}
 
     <div class="nav-btns">
       <button class="btn ghost" onclick="goStep(1)">← Volver</button>
-      <button class="btn primary" onclick="goStep(3)">Ver resumen →</button>
+      <button class="btn primary" onclick="goStep(3)">Continuar a personalidades →</button>
     </div>
   </section>
 
-  <!-- ============ FASE 4: RESUMEN ============ -->
+  <!-- ============ FASE 4: PERSONALIDADES DEL DINERO ============ -->
   <section class="phase" id="phase3">
+    <div class="phase-intro">
+      <h2>Personalidades del dinero</h2>
+      <p>Ocho preguntas rápidas para conocer su relación con el dinero (basado en las clasificaciones
+      de Olivia Mellan). No hay respuestas buenas ni malas — elija la opción que más se parezca a lo
+      que usted <b>realmente hace</b>, no a lo que "debería" hacer. El resultado llega junto con el
+      reporte por correo. Si son pareja, cada uno puede responder su propio cuestionario.</p>
+    </div>
+
+    <div id="quiz-personas"></div>
+
+    <button class="add-row" id="btnPersona2" onclick="agregarPersona2()">➕ Agregar segunda persona (pareja)</button>
+
+    <div class="nav-btns">
+      <button class="btn ghost" onclick="goStep(2)">← Volver</button>
+      <button class="btn primary" onclick="goStep(4)">Ver resumen →</button>
+    </div>
+  </section>
+
+  <!-- ============ FASE 5: RESUMEN ============ -->
+  <section class="phase" id="phase4">
     <div class="phase-intro">
       <h2>Resumen del diagnóstico</h2>
       <p>Este es el panorama que revisaremos juntos en la sesión de asesoría.</p>
@@ -335,7 +360,7 @@ textarea{resize:vertical;min-height:64px}
     </div>
 
     <div class="nav-btns">
-      <button class="btn ghost" onclick="goStep(2)">← Volver</button>
+      <button class="btn ghost" onclick="goStep(3)">← Volver</button>
       <button class="btn primary" id="btnEnviar" onclick="enviarReporte()">📤 Enviar reporte para diagnóstico</button>
     </div>
   </section>
@@ -449,7 +474,7 @@ function goStep(n){
     s.classList.toggle('done', i<n);
   });
   window.scrollTo({top:0,behavior:'smooth'});
-  if(n===3) buildSummary();
+  if(n===4) buildSummary();
 }
 document.querySelectorAll('.step').forEach(s=>s.addEventListener('click',()=>goStep(+s.dataset.step)));
 
@@ -508,6 +533,117 @@ function buildSummary(){
   document.getElementById('alertas').innerHTML = alerts.map(a=>'<li>'+a+'</li>').join('');
 }
 
+// ---------- Fase 4: Personalidades del dinero (Olivia Mellan) ----------
+// Las etiquetas de perfil viajan como value del radio; nunca se muestran al
+// usuario para no sesgar las respuestas. El resultado solo llega por correo.
+const QUIZ = [
+  {q:'Recibe un dinero extra inesperado (aguinaldo mayor, bono, premio). ¿Qué hace primero?', opts:[
+    ['Lo deposito en ahorros de inmediato','ahorrador'],
+    ['Me doy un gusto que tenía pendiente','gastador'],
+    ['Lo dejo en la cuenta sin decidir qué hacer','evasor'],
+    ['Me incomoda un poco; probablemente ayude a alguien o lo done','monje'],
+    ['Busco dónde invertirlo para que crezca','amasador'],
+    ['Lo guardo "por si acaso" pasa algo malo','preocupado']
+  ]},
+  {q:'¿Qué siente al revisar su estado de cuenta o sus finanzas?', opts:[
+    ['Satisfacción al ver el saldo acumulado','ahorrador'],
+    ['Sorpresa — casi siempre gasté más de lo que creía','gastador'],
+    ['Prefiero no revisarlo; lo pospongo','evasor'],
+    ['Indiferencia — no es algo a lo que dé importancia','monje'],
+    ['Lo reviso con detalle; me gusta medir el progreso','amasador'],
+    ['Ansiedad, aunque los números estén bien','preocupado']
+  ]},
+  {q:'Compra algo caro para usted mismo (no una necesidad). ¿Cómo se siente después?', opts:[
+    ['Culpable — pienso en lo que pude haber ahorrado','ahorrador'],
+    ['Feliz, lo disfruto sin remordimiento','gastador'],
+    ['Trato de no pensar en cuánto costó','evasor'],
+    ['Incómodo — siento que fue un exceso innecesario','monje'],
+    ['Lo evalúo: ¿mantendrá su valor? ¿fue buena compra?','amasador'],
+    ['Preocupado por si voy a necesitar ese dinero después','preocupado']
+  ]},
+  {q:'¿Con qué frecuencia revisa sus cuentas y movimientos?', opts:[
+    ['Regularmente, me gusta confirmar que el ahorro crece','ahorrador'],
+    ['Casi nunca — hasta que algo no pasa o llega el cobro','gastador'],
+    ['Solo cuando es inevitable','evasor'],
+    ['Rara vez; el dinero no ocupa mi atención','monje'],
+    ['Constantemente: saldos, inversiones, rendimientos','amasador'],
+    ['Varias veces por semana, a veces por día, por temor a algo inesperado','preocupado']
+  ]},
+  {q:'Para usted, el dinero es principalmente…', opts:[
+    ['Seguridad para el futuro','ahorrador'],
+    ['Un medio para disfrutar la vida','gastador'],
+    ['Una fuente de complicaciones','evasor'],
+    ['Algo secundario; demasiado enfoque en él corrompe','monje'],
+    ['Libertad, opciones y una medida de logro','amasador'],
+    ['Una preocupación que nunca desaparece','preocupado']
+  ]},
+  {q:'¿Cómo se siente hablando de dinero con su pareja, familia o amigos?', opts:[
+    ['Cómodo hablando de ahorro, incómodo justificando gastos','ahorrador'],
+    ['Cómodo, aunque a veces me critican por gastar','gastador'],
+    ['Evito el tema; me genera tensión','evasor'],
+    ['El tema me parece de mal gusto','monje'],
+    ['Me gusta — hablo de inversiones y oportunidades','amasador'],
+    ['Me estresa; temo malas noticias o conflictos','preocupado']
+  ]},
+  {q:'Si su ingreso se duplicara mañana, ¿qué haría?', opts:[
+    ['Ahorraría casi todo el excedente','ahorrador'],
+    ['Mejoraría mi estilo de vida: casa, viajes, gustos','gastador'],
+    ['Honestamente, no sé — no lo he pensado','evasor'],
+    ['No cambiaría mucho; no necesito más','monje'],
+    ['Invertiría agresivamente para multiplicarlo','amasador'],
+    ['Me tranquilizaría un tiempo… y luego me preocuparía por mantenerlo','preocupado']
+  ]},
+  {q:'¿Con cuál frase se identifica más?', opts:[
+    ['"Más vale pájaro en mano: hay que guardar"','ahorrador'],
+    ['"La plata es para gastarla; de nada sirve de último"','gastador'],
+    ['"Prefiero no meterme en esos números"','evasor'],
+    ['"El dinero no hace la felicidad y puede dañar a las personas"','monje'],
+    ['"El dinero llama dinero: hay que ponerlo a trabajar"','amasador'],
+    ['"Nunca se sabe qué puede pasar mañana"','preocupado']
+  ]}
+];
+
+function renderQuizPersona(pi){
+  const preguntas = QUIZ.map((item,qi)=>`
+    <div class="quiz-q">
+      <div class="q-title">${qi+1}. ${item.q}</div>
+      <div class="quiz-opts">
+        ${item.opts.map(([txt,perfil])=>`
+          <label class="chk"><input type="radio" name="p${pi}q${qi}" value="${perfil}"> ${txt}</label>`).join('')}
+      </div>
+    </div>`).join('');
+  const div = document.createElement('div');
+  div.className = 'card'; div.id = 'quiz-persona-'+pi;
+  div.innerHTML = `
+    <h3>${pi===1?'Persona 1':'Persona 2'} <span class="tag">${pi===1?'8 preguntas · 3 min':'pareja'}</span></h3>
+    <p class="hint">${pi===1?'Responda pensando en cómo actúa la mayoría de las veces.':'Que responda sin ver las respuestas de la otra persona.'}</p>
+    <div class="quiz-name" style="margin-bottom:14px;">
+      <label class="field-label" style="margin-top:0;">Nombre</label>
+      <input type="text" id="quizNombre${pi}" placeholder="¿Quién responde este cuestionario?">
+    </div>
+    ${preguntas}`;
+  document.getElementById('quiz-personas').appendChild(div);
+}
+
+function agregarPersona2(){
+  renderQuizPersona(2);
+  document.getElementById('btnPersona2').style.display = 'none';
+}
+
+function collectPersonalidades(){
+  const personas = [];
+  for(const pi of [1,2]){
+    if(!document.getElementById('quiz-persona-'+pi)) continue;
+    const nombre = document.getElementById('quizNombre'+pi).value.trim();
+    const respuestas = QUIZ.map((_,qi)=>{
+      const sel = document.querySelector(`input[name=p${pi}q${qi}]:checked`);
+      return sel ? sel.value : null;
+    });
+    if(nombre || respuestas.some(Boolean)) personas.push({nombre, respuestas});
+  }
+  return personas;
+}
+
 // ---------- Enviar reporte ----------
 function setStatus(msg, cls){
   const el = document.getElementById('sendStatus');
@@ -538,7 +674,8 @@ async function enviarReporte(){
     seguros: [...document.querySelectorAll('input[name=seg]:checked')].map(x=>x.value),
     retiro: document.getElementById('retiro').selectedOptions[0]?.value ? document.getElementById('retiro').selectedOptions[0].text : '',
     metas: [1,2,3].map(i=>document.getElementById('meta'+i).value),
-    notas: document.getElementById('notas').value
+    notas: document.getElementById('notas').value,
+    personalidades: collectPersonalidades()
   };
 
   const btn = document.getElementById('btnEnviar');
@@ -569,6 +706,7 @@ async function enviarReporte(){
 }
 
 // ---------- Init with presets ----------
+renderQuizPersona(1);
 presets.fijos.forEach(n=>addRow('fijos',n));
 presets.variables.forEach(n=>addRow('variables',n));
 presets.hormiga.forEach(n=>addRow('hormiga',n));

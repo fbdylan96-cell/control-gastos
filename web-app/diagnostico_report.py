@@ -56,6 +56,79 @@ def _clean_amount(value):
     return min(n, 1e12)
 
 
+# ── Personalidades del dinero (Olivia Mellan) ────────────────────────────────
+
+_ORDEN_PERFILES = ["ahorrador", "gastador", "evasor", "monje", "amasador", "preocupado"]
+
+PERFILES_DEF = {
+    "ahorrador": ("🏦", "El Ahorrador",
+                  "Su disciplina para guardar es una fortaleza que pocos tienen — la "
+                  "seguridad es su motor. Su riesgo: vivir con una escasez autoimpuesta "
+                  "y postergar indefinidamente el disfrute del fruto de su trabajo."),
+    "gastador": ("🛍️", "El Gastador",
+                 "Sabe disfrutar la vida y ser generoso con los suyos — el dinero fluye "
+                 "y le da alegría. Su riesgo: poca capacidad de ahorro, compras "
+                 "impulsivas y deudas de consumo que hipotecan ese mismo disfrute futuro."),
+    "evasor": ("🙈", "El Evasor",
+               "Suele ser una persona capaz y ocupada en lo que sí le importa — el tema "
+               "no es falta de habilidad, sino que el dinero le genera ansiedad y lo "
+               "pospone. Su riesgo: desorden, cobros vencidos y sorpresas desagradables "
+               "que se pudieron evitar."),
+    "monje": ("🕊️", "El Monje del dinero",
+              "Tiene valores sólidos y claridad de que el dinero no es lo más importante "
+              "en la vida. Su riesgo: creer que quererlo es \"malo\" puede llevarlo a "
+              "sabotear sus propios ingresos y oportunidades sin darse cuenta."),
+    "amasador": ("📈", "El Amasador",
+                 "Tiene una capacidad natural para hacer crecer el patrimonio — el dinero "
+                 "es logro, libertad y opciones. Su riesgo: que nunca sea suficiente, con "
+                 "exceso de trabajo y descuido de relaciones y salud en el camino."),
+    "preocupado": ("😰", "El Preocupado",
+                   "Es prevenido y responsable — nada lo toma por sorpresa porque siempre "
+                   "está atento. Su riesgo: que el dinero sea una fuente permanente de "
+                   "estrés aunque los números estén bien, revisando compulsivamente sin "
+                   "ganar tranquilidad."),
+}
+
+_MIN_RESPUESTAS = 5
+
+
+def clasificar_personalidad(respuestas):
+    """Puntuación Mellan: 1 punto al perfil de cada respuesta. Devuelve
+    {predominante, secundario, n} o None si hay menos de 5 respuestas.
+    El secundario solo se reporta si acumula 2 o más puntos."""
+    votos = [r for r in respuestas if r]
+    if len(votos) < _MIN_RESPUESTAS:
+        return None
+    conteo = {k: votos.count(k) for k in _ORDEN_PERFILES}
+    predominante = max(_ORDEN_PERFILES, key=lambda k: conteo[k])
+    resto = [k for k in _ORDEN_PERFILES if k != predominante]
+    secundario = max(resto, key=lambda k: conteo[k])
+    if conteo[secundario] < 2:
+        secundario = None
+    return {"predominante": predominante, "secundario": secundario, "n": len(votos)}
+
+
+def _clean_personalidades(raw):
+    """Normaliza [{nombre, respuestas[8]}] (máx. 2 personas, valores del quiz)."""
+    personas = []
+    if not isinstance(raw, list):
+        return personas
+    for p in raw[:2]:
+        if not isinstance(p, dict):
+            continue
+        nombre = _clean_text(p.get("nombre"), 120)
+        respuestas = []
+        resp_raw = p.get("respuestas")
+        if isinstance(resp_raw, list):
+            for r in resp_raw[:len(_ORDEN_PERFILES) + 2]:
+                r = str(r or "").strip().lower()
+                respuestas.append(r if r in _ORDEN_PERFILES else None)
+        respuestas = respuestas[:8]
+        if nombre or any(respuestas):
+            personas.append({"nombre": nombre, "respuestas": respuestas})
+    return personas
+
+
 def _clean_rows(raw, fields=("amount",)):
     """Normaliza una lista [{name, <montos>}] recortando filas y valores."""
     rows = []
@@ -105,6 +178,7 @@ def sanitize_payload(data):
         "retiro": _clean_text(data.get("retiro"), 120),
         "metas": [_clean_text(m) for m in (data.get("metas") or [])[:3]],
         "notas": _clean_text(data.get("notas"), _MAX_NOTAS),
+        "personalidades": _clean_personalidades(data.get("personalidades")),
     }
     return payload, None
 
@@ -249,6 +323,22 @@ def build_excel(p):
     if p["notas"]:
         item("Notas para el asesor", p["notas"], fmt="General")
 
+    if p.get("personalidades"):
+        section("PERSONALIDADES DEL DINERO (OLIVIA MELLAN)")
+        for i, persona in enumerate(p["personalidades"], start=1):
+            nombre = persona["nombre"] or f"Persona {i}"
+            res = clasificar_personalidad(persona["respuestas"])
+            if res is None:
+                n = len([r for r in persona["respuestas"] if r])
+                item(nombre, f"Respuestas insuficientes ({n} de 8; mínimo {_MIN_RESPUESTAS})",
+                     fmt="General")
+                continue
+            emoji, titulo, _ = PERFILES_DEF[res["predominante"]]
+            item(f"{nombre} — perfil predominante", f"{emoji} {titulo}", fmt="General")
+            if res["secundario"]:
+                emoji2, titulo2, _ = PERFILES_DEF[res["secundario"]]
+                item(f"{nombre} — rasgo secundario", f"{emoji2} {titulo2}", fmt="General")
+
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -274,6 +364,84 @@ _BAR_5030_20 = f"""
 def _fmt_crc(n):
     """₡1.234.567 (separador de miles al estilo es-CR)."""
     return "₡" + f"{round(n):,}".replace(",", ".")
+
+
+def _resultados_personalidades(p):
+    """[(nombre, resultado_o_None, n_respondidas)] por persona del quiz."""
+    out = []
+    for i, persona in enumerate(p.get("personalidades") or [], start=1):
+        nombre = persona["nombre"] or f"Persona {i}"
+        n = len([r for r in persona["respuestas"] if r])
+        out.append((nombre, clasificar_personalidad(persona["respuestas"]), n))
+    return out
+
+
+def _html_personalidades(p):
+    """Bloque HTML del correo con los perfiles de personalidad (o '' si no hay quiz)."""
+    esc = html_mod.escape
+    resultados = _resultados_personalidades(p)
+    if not resultados:
+        return ""
+
+    def tarjeta(etiqueta, perfil, color):
+        emoji, titulo, definicion = PERFILES_DEF[perfil]
+        return f"""
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+             style="margin-top:10px;">
+        <tr>
+          <td width="4" bgcolor="{color}" style="border-radius:4px 0 0 4px;font-size:0;">&nbsp;</td>
+          <td bgcolor="#F4F6F9" style="padding:14px 16px;border-radius:0 4px 4px 0;
+              font-family:Helvetica,Arial,sans-serif;">
+            <div style="font-size:10px;font-weight:bold;letter-spacing:.06em;
+                        text-transform:uppercase;color:#6B7280;">{etiqueta}</div>
+            <div style="font-size:15px;font-weight:bold;color:#1B1C20;padding-top:3px;">
+              {emoji} {esc(titulo)}</div>
+            <div style="font-size:12.5px;line-height:1.6;color:#4B5563;padding-top:4px;">
+              {esc(definicion)}</div>
+          </td>
+        </tr>
+      </table>"""
+
+    bloques = []
+    for nombre, res, n in resultados:
+        if res is None:
+            cuerpo = f"""
+      <p style="font-size:12.5px;line-height:1.6;color:#6B7280;margin:8px 0 0;">
+        Respondió {n} de 8 preguntas — se necesitan al menos {_MIN_RESPUESTAS} para
+        identificar el perfil. Lo pueden completar juntos en la sesión.</p>"""
+        else:
+            cuerpo = tarjeta("Perfil predominante", res["predominante"], "#3A9C8E")
+            if res["secundario"]:
+                cuerpo += tarjeta("Rasgo secundario", res["secundario"], "#EFA91A")
+        bloques.append(f"""
+      <div style="font-size:15px;font-weight:bold;letter-spacing:-.01em;margin-top:22px;">
+        {esc(nombre)}</div>{cuerpo}""")
+
+    return f"""
+      <div style="font-size:17px;font-weight:bold;letter-spacing:-.02em;margin-top:32px;">
+        🧭 Personalidades del dinero</div>
+      <p style="font-size:12.5px;line-height:1.6;color:#6B7280;margin:6px 0 0;">
+        Basado en las clasificaciones de Olivia Mellan. Conocer su relación con el
+        dinero ayuda a diseñar un plan que sí se pueda sostener.</p>
+      {''.join(bloques)}"""
+
+
+def _texto_personalidades(p):
+    """Versión de texto plano del bloque de personalidades ('' si no hay quiz)."""
+    resultados = _resultados_personalidades(p)
+    if not resultados:
+        return ""
+    lineas = ["", "— PERSONALIDADES DEL DINERO —"]
+    for nombre, res, n in resultados:
+        if res is None:
+            lineas.append(f"{nombre}: respuestas insuficientes ({n} de 8; mínimo {_MIN_RESPUESTAS}).")
+            continue
+        emoji, titulo, definicion = PERFILES_DEF[res["predominante"]]
+        lineas.append(f"{nombre} — Perfil predominante: {titulo}. {definicion}")
+        if res["secundario"]:
+            emoji2, titulo2, definicion2 = PERFILES_DEF[res["secundario"]]
+            lineas.append(f"{nombre} — Rasgo secundario: {titulo2}. {definicion2}")
+    return "\n".join(lineas) + "\n"
 
 
 def _build_html(p, fecha_larga, archivo):
@@ -354,6 +522,8 @@ def _build_html(p, fecha_larga, archivo):
         </tr>
       </table>
 
+      {_html_personalidades(p)}
+
       <!-- Adjunto -->
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
              style="margin-top:24px;">
@@ -424,8 +594,9 @@ def send_report(p):
         f"Hola {p['nombre']},\n\n"
         "Adjuntamos el reporte de su Diagnóstico Financiero Personal. "
         "Su asesor lo revisará y lo contactará para coordinar la sesión de "
-        "asesoría.\n\n"
-        f"Datos de contacto registrados:\n"
+        "asesoría.\n"
+        + _texto_personalidades(p) +
+        f"\nDatos de contacto registrados:\n"
         f"  • Correo: {p['correo']}\n"
         f"  • Celular: {p['celular']}\n\n"
         "— neto by Empowered Investor\n"

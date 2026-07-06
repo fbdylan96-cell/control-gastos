@@ -8,6 +8,7 @@ Variables de entorno requeridas (.env de la raíz, ya presentes en el server):
   SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD
 """
 
+import html as html_mod
 import io
 import os
 import re
@@ -253,6 +254,153 @@ def build_excel(p):
     return buf.getvalue()
 
 
+_LOGO_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "static", "rebranding", "logos", "neto-logo-transparent-600w.png",
+)
+
+# Barra de proporciones 50-30-20 con la paleta del favicon (donut):
+# teal (50%) → azul (30%) → amarillo (20%)
+_BAR_5030_20 = f"""
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td width="50%" height="8" bgcolor="#3A9C8E" style="font-size:0;line-height:0;">&nbsp;</td>
+    <td width="30%" height="8" bgcolor="#1F4D8E" style="font-size:0;line-height:0;">&nbsp;</td>
+    <td width="20%" height="8" bgcolor="#EFA91A" style="font-size:0;line-height:0;">&nbsp;</td>
+  </tr>
+</table>"""
+
+
+def _fmt_crc(n):
+    """₡1.234.567 (separador de miles al estilo es-CR)."""
+    return "₡" + f"{round(n):,}".replace(",", ".")
+
+
+def _build_html(p, fecha_larga, archivo):
+    """Cuerpo HTML del correo con la marca neto (logo inline cid:netologo)."""
+    esc = html_mod.escape
+    t = _totales(p)
+    flujo_color = "#3A9C8E" if t["flujo"] >= 0 else "#B3402E"
+    patri_color = "#3A9C8E" if t["patrimonio"] >= 0 else "#B3402E"
+
+    def kpi(label, value, color="#1B1C20"):
+        return f"""
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+               style="background:#F4F6F9;border-radius:10px;">
+          <tr><td style="padding:14px 16px;font-family:Helvetica,Arial,sans-serif;">
+            <div style="font-size:10px;font-weight:bold;letter-spacing:.06em;
+                        text-transform:uppercase;color:#6B7280;">{label}</div>
+            <div style="font-size:19px;font-weight:bold;color:{color};
+                        padding-top:4px;">{value}</div>
+          </td></tr>
+        </table>"""
+
+    return f"""\
+<!DOCTYPE html>
+<html lang="es">
+<body style="margin:0;padding:0;background:#F4F6F9;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#F4F6F9">
+<tr><td align="center" style="padding:32px 16px;">
+
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
+         style="max-width:600px;width:100%;background:#FFFFFF;border-radius:12px;
+                border:1px solid #E2E6EB;">
+
+    <!-- Header -->
+    <tr><td bgcolor="#1B1C20" style="padding:26px 32px;border-radius:12px 12px 0 0;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td bgcolor="#FFFFFF" style="border-radius:8px;padding:7px 12px;">
+            <img src="cid:netologo" width="96" alt="neto"
+                 style="display:block;width:96px;height:auto;border:0;">
+          </td>
+          <td style="padding-left:18px;font-family:Helvetica,Arial,sans-serif;color:#FFFFFF;">
+            <div style="font-size:16px;font-weight:bold;letter-spacing:-.01em;">
+              Diagnóstico Financiero Personal</div>
+            <div style="font-size:12px;color:#9CA3AF;padding-top:2px;">
+              by Empowered Investor</div>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+
+    <!-- Barra 50-30-20 -->
+    <tr><td>{_BAR_5030_20}</td></tr>
+
+    <!-- Cuerpo -->
+    <tr><td style="padding:32px;font-family:Helvetica,Arial,sans-serif;color:#1B1C20;">
+
+      <div style="font-size:20px;font-weight:bold;letter-spacing:-.02em;">
+        Hola {esc(p["nombre"].split()[0])}, su diagnóstico está listo</div>
+
+      <p style="font-size:14px;line-height:1.6;color:#4B5563;margin:14px 0 24px;">
+        Gracias por completar su Diagnóstico Financiero Personal. Adjuntamos el
+        reporte completo en Excel con el detalle de sus gastos, ingresos,
+        patrimonio y metas. Su asesor recibió una copia y lo contactará para
+        coordinar la sesión de asesoría.</p>
+
+      <!-- KPIs -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td width="49%" valign="top">{kpi("Ingresos / mes", _fmt_crc(t["ingresos"]))}</td>
+          <td width="2%">&nbsp;</td>
+          <td width="49%" valign="top">{kpi("Gastos / mes", _fmt_crc(t["gastos"]))}</td>
+        </tr>
+        <tr><td colspan="3" height="10" style="font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr>
+          <td width="49%" valign="top">{kpi("Flujo de caja", _fmt_crc(t["flujo"]), flujo_color)}</td>
+          <td width="2%">&nbsp;</td>
+          <td width="49%" valign="top">{kpi("Patrimonio neto", _fmt_crc(t["patrimonio"]), patri_color)}</td>
+        </tr>
+      </table>
+
+      <!-- Adjunto -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+             style="margin-top:24px;">
+        <tr>
+          <td width="4" bgcolor="#3A9C8E" style="border-radius:4px 0 0 4px;font-size:0;">&nbsp;</td>
+          <td bgcolor="#F4F6F9" style="padding:14px 16px;border-radius:0 4px 4px 0;
+              font-family:Helvetica,Arial,sans-serif;">
+            <div style="font-size:13px;font-weight:bold;color:#1B1C20;">
+              Reporte adjunto</div>
+            <div style="font-size:12.5px;color:#6B7280;padding-top:2px;">
+              {esc(archivo)} · generado el {esc(fecha_larga)}</div>
+          </td>
+        </tr>
+      </table>
+
+      <p style="font-size:13px;line-height:1.6;color:#4B5563;margin:24px 0 0;">
+        <b>Datos de contacto registrados:</b><br>
+        Correo: {esc(p["correo"])}<br>
+        Celular: {esc(p["celular"])}</p>
+
+    </td></tr>
+
+    <!-- Footer -->
+    <tr><td>{_BAR_5030_20}</td></tr>
+    <tr><td bgcolor="#1B1C20" style="padding:20px 32px;border-radius:0 0 12px 12px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td style="font-family:Helvetica,Arial,sans-serif;font-size:12px;color:#9CA3AF;">
+            <b style="color:#FFFFFF;">neto</b> by Empowered Investor<br>
+            <span style="font-size:11px;">50 necesidades · 30 estilo de vida · 20 ahorro</span>
+          </td>
+          <td align="right" style="font-family:Helvetica,Arial,sans-serif;
+              font-size:11px;color:#6B7280;">
+            Sus datos no se almacenan<br>en ninguna base de datos.
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+
+  </table>
+
+</td></tr>
+</table>
+</body>
+</html>"""
+
+
 def send_report(p):
     """Envía el reporte al cliente y al asesor. Lanza excepción si falla."""
     host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
@@ -263,7 +411,9 @@ def send_report(p):
         raise RuntimeError("SMTP_USER / SMTP_PASSWORD no configurados en .env")
 
     xlsx = build_excel(p)
-    fecha = datetime.now(_CR_TZ).strftime("%Y-%m-%d")
+    ahora = datetime.now(_CR_TZ)
+    fecha = ahora.strftime("%Y-%m-%d")
+    archivo = f"diagnostico-financiero-{fecha}.xlsx"
 
     msg = EmailMessage()
     msg["Subject"] = f"Diagnóstico Financiero — {p['nombre']}"
@@ -280,11 +430,20 @@ def send_report(p):
         f"  • Celular: {p['celular']}\n\n"
         "— neto by Empowered Investor\n"
     )
+
+    # Alternativa HTML con la marca neto; el logo va embebido (cid) para que
+    # se muestre sin depender de imágenes remotas bloqueadas por el cliente.
+    msg.add_alternative(_build_html(p, ahora.strftime("%d/%m/%Y"), archivo),
+                        subtype="html")
+    with open(_LOGO_PATH, "rb") as f:
+        msg.get_payload()[1].add_related(
+            f.read(), maintype="image", subtype="png", cid="<netologo>")
+
     msg.add_attachment(
         xlsx,
         maintype="application",
         subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename=f"diagnostico-financiero-{fecha}.xlsx",
+        filename=archivo,
     )
 
     with smtplib.SMTP(host, port, timeout=30) as smtp:

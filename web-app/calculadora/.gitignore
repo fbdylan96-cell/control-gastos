@@ -8,12 +8,11 @@ __pycache__/
 .venv/
 venv/
 
-# Streamlit
-.streamlit/
+# Streamlit (.streamlit/config.toml SÍ va commiteado: tema de la app)
 .cache/
 
-# Cache local de precios descargados de Yahoo Finance
-data_cache/
+# data_cache/ SÍ va commiteado: el server lo usa como semilla para no
+# depender de Yahoo Finance/FRED en el primer arranque.
 
 # VS Code
 .vscode/

@@ -18,7 +18,15 @@ def peores_drawdowns(precios: pd.Series, top_n: int = 10) -> list[dict]:
     """
     Identifica episodios de caída: tramos continuos donde el precio está
     por debajo de su máximo previo. Devuelve los `top_n` más profundos,
-    con la fecha del pico, la fecha del valle y el % de caída.
+    cada uno con:
+      - fecha_pico: cuándo empezó a caer (último máximo antes del derrumbe)
+      - fecha_valle: el punto más profundo del episodio
+      - drawdown_pct: la caída máxima (%) de ese episodio
+      - fecha_recuperacion: cuándo el precio volvió a alcanzar el pico
+        previo (None si el episodio aún no se ha recuperado al final de
+        la serie — sigue "bajo el agua")
+      - dias_recuperacion: días desde el pico hasta la recuperación
+        (None si no se ha recuperado)
     """
     if precios.empty:
         return []
@@ -36,8 +44,16 @@ def peores_drawdowns(precios: pd.Series, top_n: int = 10) -> list[dict]:
         precio = float(precio)
         if precio >= max_precio_actual:
             if en_caida:
+                # `fecha` es el día en que el precio recupera el máximo previo.
+                dias_rec = (fecha - fecha_pico_episodio).days
                 episodios.append(
-                    {"fecha_pico": fecha_pico_episodio, "fecha_valle": fecha_valle, "drawdown_pct": peor_dd * 100.0}
+                    {
+                        "fecha_pico": fecha_pico_episodio,
+                        "fecha_valle": fecha_valle,
+                        "drawdown_pct": peor_dd * 100.0,
+                        "fecha_recuperacion": fecha,
+                        "dias_recuperacion": dias_rec,
+                    }
                 )
                 en_caida = False
             max_precio_actual = precio
@@ -54,8 +70,15 @@ def peores_drawdowns(precios: pd.Series, top_n: int = 10) -> list[dict]:
                 fecha_valle = fecha
 
     if en_caida:
+        # El episodio sigue abierto al final de la serie: nunca se recuperó.
         episodios.append(
-            {"fecha_pico": fecha_pico_episodio, "fecha_valle": fecha_valle, "drawdown_pct": peor_dd * 100.0}
+            {
+                "fecha_pico": fecha_pico_episodio,
+                "fecha_valle": fecha_valle,
+                "drawdown_pct": peor_dd * 100.0,
+                "fecha_recuperacion": None,
+                "dias_recuperacion": None,
+            }
         )
 
     episodios.sort(key=lambda e: e["drawdown_pct"])

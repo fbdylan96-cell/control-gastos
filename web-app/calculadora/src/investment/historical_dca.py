@@ -115,6 +115,18 @@ def obtener_serie_diaria(
     return diaria
 
 
+def obtener_vix_diario(fecha_inicio: date, fecha_fin: date, refresh: bool = False) -> pd.Series:
+    """
+    Nivel diario del VIX (^VIX, el índice de volatilidad del S&P 500) — un nivel,
+    no un precio de inversión, así que no pasa por la simulación de apalancamiento
+    ni por costos: se descarga y cachea tal cual, igual que cualquier otro ticker.
+    """
+    diaria = get_daily_closes("^VIX", refresh=refresh)
+    if diaria.empty:
+        return diaria
+    return diaria[(diaria.index.date >= fecha_inicio) & (diaria.index.date <= fecha_fin)]
+
+
 def _serie_mensual_para_ticker(
     ticker: str,
     fecha_inicio: date,
@@ -148,6 +160,7 @@ def simular_dca_historico(
     expense_ratio_anual_pct: float = DEFAULT_EXPENSE_RATIO_ANUAL_PCT,
     financing_rate_anual_pct: float = DEFAULT_FINANCING_RATE_ANUAL_PCT,
     refresh: bool = False,
+    meses_sin_management: int = 0,
 ) -> Dict[str, SimulacionHistoricaResultado]:
     if not tickers:
         return {}
@@ -202,7 +215,9 @@ def simular_dca_historico(
                 flujos_caja.append((fecha.date(), -aporte_periodico))
 
             valor_actual = shares * precio
-            fee_mes = valor_actual * fee_manejo_mensual
+            # Los primeros `meses_sin_management` meses (p.ej. el primer año) no cobran management
+            # fee: ese manejo lo cubre el fee de apertura.
+            fee_mes = valor_actual * fee_manejo_mensual if i >= meses_sin_management else 0.0
             if precio > 0 and fee_mes > 0:
                 shares -= fee_mes / precio
             comisiones_manejo_cum += fee_mes

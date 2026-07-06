@@ -55,6 +55,7 @@ def proyectar_rendimiento_fijo(
     costo_swift: float = 0.0,
     management_fee_anual_pct: float = 0.0,
     anio_actual: int | None = None,
+    meses_sin_management: int = 0,
 ) -> ProyeccionFijaResultado:
     if anio_actual is None:
         anio_actual = date.today().year
@@ -84,7 +85,9 @@ def proyectar_rendimiento_fijo(
     for m in range(1, meses + 1):
         balance *= (1.0 + r_month)
 
-        fee_mes = balance * fee_manejo_mensual
+        # Durante los primeros `meses_sin_management` meses (p.ej. el primer año) el manejo
+        # del portafolio lo cubre el fee de apertura, así que el management fee todavía no se cobra.
+        fee_mes = balance * fee_manejo_mensual if m > meses_sin_management else 0.0
         balance -= fee_mes
         comisiones_manejo_cum += fee_mes
         costos_servicio_cum += fee_mes

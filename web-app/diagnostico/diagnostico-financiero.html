@@ -38,8 +38,13 @@ header .wrap{display:flex;justify-content:space-between;align-items:center;flex-
 .brand-logo img{height:38px;width:auto;display:block}
 .brand h1{font-size:22px;font-weight:800;letter-spacing:-0.02em}
 .brand p{font-size:13px;opacity:.75;margin-top:2px}
-.client-field input{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);color:#fff;padding:8px 12px;border-radius:6px;font-family:var(--sans);font-size:14px;width:220px}
-.client-field input::placeholder{color:rgba(255,255,255,.5)}
+/* Envío del reporte */
+.contact-input{border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-family:var(--sans);font-size:14px;width:100%;background:#FDFDFB}
+.contact-input:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+.send-status{font-size:13.5px;font-weight:600;margin-top:12px;display:none}
+.send-status.ok{display:block;color:var(--accent)}
+.send-status.err{display:block;color:var(--red)}
+.btn.primary:disabled{opacity:.55;cursor:wait}
 
 /* Stepper */
 .stepper{display:flex;gap:0;margin:24px 0 8px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card)}
@@ -125,7 +130,6 @@ textarea{resize:vertical;min-height:64px}
 .bar-track{background:var(--paper);border-radius:6px;height:14px;overflow:hidden}
 .bar-fill{height:100%;border-radius:6px;transition:width .4s}
 .alertas li{font-size:13.5px;margin-bottom:8px;padding-left:8px}
-.copy-btn{margin-top:8px}
 .currency-toggle{display:flex;gap:6px;margin-left:auto}
 .currency-toggle button{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;font-family:var(--mono);font-size:12px;padding:4px 10px;border-radius:6px;cursor:pointer}
 .currency-toggle button.on{background:#fff;color:var(--forest);font-weight:600}
@@ -143,9 +147,6 @@ textarea{resize:vertical;min-height:64px}
         <h1>Diagnóstico Financiero Personal</h1>
         <p>Complete este formulario antes de su sesión de asesoría · 15–20 min</p>
       </div>
-    </div>
-    <div class="client-field">
-      <input type="text" id="clientName" placeholder="Nombre del cliente / familia">
     </div>
   </div>
 </header>
@@ -315,9 +316,27 @@ textarea{resize:vertical;min-height:64px}
       <ul class="alertas" id="alertas" style="list-style:none"></ul>
     </div>
 
+    <div class="card">
+      <h3>Enviar reporte para diagnóstico</h3>
+      <p class="hint">Recibirá el reporte completo en Excel por correo, con copia a su asesor. Sus datos no se almacenan en ninguna base de datos.</p>
+      <div class="two-col">
+        <div>
+          <label class="field-label">Nombre completo</label>
+          <input type="text" class="contact-input" id="contactoNombre" placeholder="Ej. María Rodríguez Solano" autocomplete="name">
+        </div>
+        <div>
+          <label class="field-label">Correo electrónico</label>
+          <input type="email" class="contact-input" id="contactoCorreo" placeholder="correo@ejemplo.com" autocomplete="email">
+        </div>
+      </div>
+      <label class="field-label">Número celular</label>
+      <input type="tel" class="contact-input" id="contactoCelular" placeholder="Ej. 8888-8888" autocomplete="tel" style="max-width:280px">
+      <div class="send-status" id="sendStatus"></div>
+    </div>
+
     <div class="nav-btns">
       <button class="btn ghost" onclick="goStep(2)">← Volver</button>
-      <button class="btn primary copy-btn" onclick="copySummary()">📋 Copiar resumen para el asesor</button>
+      <button class="btn primary" id="btnEnviar" onclick="enviarReporte()">📤 Enviar reporte para diagnóstico</button>
     </div>
   </section>
 </div>
@@ -489,49 +508,64 @@ function buildSummary(){
   document.getElementById('alertas').innerHTML = alerts.map(a=>'<li>'+a+'</li>').join('');
 }
 
-// ---------- Copy summary ----------
-function copySummary(){
-  const t = recalc();
-  const name = document.getElementById('clientName').value || '(sin nombre)';
-  const feMonto = parseAmt(document.getElementById('fe-monto').value);
-  const segs = [...document.querySelectorAll('input[name=seg]:checked')].map(x=>x.value).join(', ') || 'Ninguno reportado';
-  const metas = [1,2,3].map(i=>document.getElementById('meta'+i).value).filter(Boolean);
-  const lines = [
-    'DIAGNÓSTICO FINANCIERO — ' + name,
-    'Fecha: ' + new Date().toLocaleDateString('es-CR'),
-    '',
-    '— FLUJO MENSUAL —',
-    'Ingresos: ' + fmt(t.ti),
-    'Gastos fijos: ' + fmt(t.tf),
-    'Gastos variables: ' + fmt(t.tv),
-    'Gastos hormiga: ' + fmt(t.th),
-    'Cuotas de deudas: ' + fmt(t.tc),
-    'FLUJO DE CAJA: ' + fmt(t.flujo),
-    '',
-    '— PATRIMONIO —',
-    'Activos: ' + fmt(t.ta),
-    'Deudas (saldo): ' + fmt(t.td),
-    'PATRIMONIO NETO: ' + fmt(t.patri),
-    '',
-    '— DEUDAS DETALLE —',
-    ...state.deudas.map(d=>`• ${d.name||'?'}: saldo ${fmt(d.saldo)}, tasa ${d.tasa}%, cuota ${fmt(d.cuota)}`),
-    '',
-    '— PROTECCIÓN —',
-    'Fondo de emergencia: ' + fmt(feMonto),
-    'Seguros: ' + segs,
-    'Retiro: ' + (document.getElementById('retiro').selectedOptions[0]?.text || '—'),
-    '',
-    '— METAS —',
-    ...metas.map((m,i)=>`${i+1}. ${m}`),
-    '',
-    '— NOTAS —',
-    document.getElementById('notas').value || '—'
-  ];
-  navigator.clipboard.writeText(lines.join('\n')).then(()=>{
-    alert('Resumen copiado al portapapeles ✓');
-  }).catch(()=>{
-    prompt('Copie el texto:', lines.join('\n'));
-  });
+// ---------- Enviar reporte ----------
+function setStatus(msg, cls){
+  const el = document.getElementById('sendStatus');
+  el.textContent = msg;
+  el.className = 'send-status' + (cls ? ' ' + cls : '');
+}
+
+async function enviarReporte(){
+  const nombre = document.getElementById('contactoNombre').value.trim();
+  const correo = document.getElementById('contactoCorreo').value.trim();
+  const celular = document.getElementById('contactoCelular').value.trim();
+
+  if(nombre.length < 3){ setStatus('Ingrese su nombre completo.', 'err'); return; }
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)){ setStatus('Ingrese un correo electrónico válido.', 'err'); return; }
+  if(celular.replace(/\D/g,'').length < 8){ setStatus('Ingrese un número celular válido (mínimo 8 dígitos).', 'err'); return; }
+
+  const strip = r => ({name:r.name, amount:r.amount});
+  const payload = {
+    nombre, correo, celular,
+    fijos: state.fijos.map(strip),
+    variables: state.variables.map(strip),
+    hormiga: state.hormiga.map(strip),
+    ingresos: state.ingresos.map(strip),
+    activos: state.activos.map(strip),
+    deudas: state.deudas.map(d=>({name:d.name, saldo:d.saldo, tasa:d.tasa, cuota:d.cuota})),
+    fe_tiene: document.getElementById('fe-tiene').value,
+    fe_monto: parseAmt(document.getElementById('fe-monto').value),
+    seguros: [...document.querySelectorAll('input[name=seg]:checked')].map(x=>x.value),
+    retiro: document.getElementById('retiro').selectedOptions[0]?.value ? document.getElementById('retiro').selectedOptions[0].text : '',
+    metas: [1,2,3].map(i=>document.getElementById('meta'+i).value),
+    notas: document.getElementById('notas').value
+  };
+
+  const btn = document.getElementById('btnEnviar');
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = 'Enviando…';
+  setStatus('', '');
+  try{
+    const res = await fetch('/diagnostico/enviar', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(()=>({}));
+    if(res.ok && data.ok){
+      setStatus('✓ Reporte enviado. Revise su correo (' + correo + ') — su asesor recibió una copia.', 'ok');
+      btn.textContent = '✓ Reporte enviado';
+    }else{
+      setStatus(data.error || 'No se pudo enviar el reporte. Intente de nuevo más tarde.', 'err');
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  }catch(e){
+    setStatus('Error de conexión. Verifique su internet e intente de nuevo.', 'err');
+    btn.disabled = false;
+    btn.textContent = original;
+  }
 }
 
 // ---------- Init with presets ----------

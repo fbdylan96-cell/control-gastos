@@ -62,6 +62,53 @@ def diagnostico():
     )
 
 
+# Rate limit del envío de diagnósticos (endpoint público que manda correos):
+# máx. 5 envíos por IP por hora, en memoria (aproximado con varios workers).
+_DIAG_RATE = {}
+_DIAG_RATE_MAX = 5
+_DIAG_RATE_WINDOW = 3600  # segundos
+
+
+def _diag_rate_ok(ip):
+    import time
+    now = time.time()
+    hits = [ts for ts in _DIAG_RATE.get(ip, []) if now - ts < _DIAG_RATE_WINDOW]
+    if len(hits) >= _DIAG_RATE_MAX:
+        _DIAG_RATE[ip] = hits
+        return False
+    hits.append(now)
+    _DIAG_RATE[ip] = hits
+    return True
+
+
+@app.route('/diagnostico/enviar', methods=['POST'])
+def diagnostico_enviar():
+    from diagnostico_report import sanitize_payload, send_report
+
+    # Detrás de nginx la IP real viene en X-Forwarded-For
+    ip = (request.headers.get('X-Forwarded-For', request.remote_addr or '?')
+          .split(',')[0].strip())
+    if not _diag_rate_ok(ip):
+        return {"ok": False, "error": "Demasiados envíos. Intente de nuevo en "
+                "una hora."}, 429
+
+    data = request.get_json(silent=True)
+    payload, error = sanitize_payload(data)
+    if error:
+        return {"ok": False, "error": error}, 400
+
+    try:
+        send_report(payload)
+    except Exception as e:
+        app.logger.error(f"Diagnóstico: fallo enviando reporte a "
+                         f"{payload['correo']}: {e}")
+        return {"ok": False, "error": "No se pudo enviar el reporte. Intente de "
+                "nuevo más tarde."}, 500
+
+    app.logger.info(f"Diagnóstico enviado a {payload['correo']} (cc asesor)")
+    return {"ok": True}
+
+
 @app.route('/privacidad-datos')
 def privacidad_datos():
     return redirect(url_for('terminos') + '#privacidad', code=301)

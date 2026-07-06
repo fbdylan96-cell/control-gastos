@@ -37,6 +37,9 @@ CREATE TABLE core.clients (
 
     username TEXT,
     password_hash TEXT,
+    -- Última vez que el cliente cambió su contraseña (web app o reset por
+    -- email). NULL = nunca la cambió (sigue con la inicial).
+    password_changed_at TIMESTAMPTZ,
 
     active BOOLEAN NOT NULL DEFAULT FALSE,
     whatsapp_notification BOOLEAN NOT NULL DEFAULT FALSE,

@@ -88,3 +88,54 @@ def gen_password(nombre: str, apellidos: str) -> str:
     """
     full = (nombre.strip() + ' ' + apellidos.strip())
     return ''.join(w[0].lower() for w in full.split() if w)
+
+
+# ── Cambio / restablecimiento de contraseña ──────────────────────────────────
+
+def validar_nueva_contrasena(nueva: str, confirmacion: str) -> str | None:
+    """Política de contraseñas nuevas. Devuelve el mensaje de error o None si es válida."""
+    if len(nueva) < 8:
+        return "La nueva contraseña debe tener al menos 8 caracteres."
+    if not re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", nueva) or not re.search(r"\d", nueva):
+        return "La nueva contraseña debe incluir al menos una letra y un número."
+    if nueva != confirmacion:
+        return "La confirmación no coincide con la nueva contraseña."
+    return None
+
+
+# Rate limit en memoria por IP (aproximado con varios workers de gunicorn,
+# suficiente para frenar spam de correos de restablecimiento).
+_RATE_BUCKETS: dict = {}
+
+
+def rate_limit_ok(bucket: str, ip: str, max_hits: int = 5, window_s: int = 3600) -> bool:
+    import time
+    now = time.time()
+    key = (bucket, ip)
+    hits = [ts for ts in _RATE_BUCKETS.get(key, []) if now - ts < window_s]
+    if len(hits) >= max_hits:
+        _RATE_BUCKETS[key] = hits
+        return False
+    hits.append(now)
+    _RATE_BUCKETS[key] = hits
+    return True
+
+
+def make_reset_token(user_id: str, password_hash: str, salt: str) -> str:
+    """Token firmado para restablecer contraseña. Incluye un fragmento del hash
+    vigente: al cambiar la contraseña (por este u otro medio) el token muere solo."""
+    from flask import current_app
+    from itsdangerous import URLSafeTimedSerializer
+    s = URLSafeTimedSerializer(current_app.secret_key, salt=salt)
+    return s.dumps({"uid": str(user_id), "ph": (password_hash or "")[-16:]})
+
+
+def load_reset_token(token: str, salt: str, max_age_s: int = 3600) -> dict | None:
+    """Devuelve el payload del token o None si es inválido/expirado."""
+    from flask import current_app
+    from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+    s = URLSafeTimedSerializer(current_app.secret_key, salt=salt)
+    try:
+        return s.loads(token, max_age=max_age_s)
+    except (BadSignature, SignatureExpired):
+        return None

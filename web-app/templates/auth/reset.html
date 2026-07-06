@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nueva contraseña — neto</title>
+  <link rel="icon" href="{{ url_for('static', filename='rebranding/logos/favicon.ico') }}" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='rebranding/logos/favicon-32.png') }}" />
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='rebranding/logos/apple-touch-icon.png') }}" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet" />
+</head>
+<body>
+<div class="login-page">
+  <div class="login-card">
+
+    <img src="{{ url_for('static', filename='rebranding/logos/neto-logo-transparent-600w.png') }}"
+         alt="neto" class="login-logo" />
+
+    <div class="login-divider"></div>
+
+    {% if invalido %}
+      <div class="ei-alert ei-alert-danger" style="margin-bottom:1rem;">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        Este enlace ya no es válido: expiró (dura 1 hora) o la contraseña ya
+        fue cambiada. Podés solicitar uno nuevo.
+      </div>
+      <div style="text-align:center;">
+        <a href="{{ url_for(portal + '.olvido') }}" class="login-submit"
+           style="display:inline-block; text-decoration:none; text-align:center;">
+          Solicitar un enlace nuevo
+        </a>
+      </div>
+    {% elif ok %}
+      <div class="ei-alert ei-alert-success" style="margin-bottom:1rem;">
+        <i class="bi bi-check-circle-fill"></i>
+        Tu contraseña fue actualizada. Ya podés iniciar sesión con la nueva.
+      </div>
+      <div style="text-align:center;">
+        <a href="{{ url_for(portal + '.login') }}" class="login-submit"
+           style="display:inline-block; text-decoration:none; text-align:center;">
+          Ir a iniciar sesión
+        </a>
+      </div>
+    {% else %}
+      {% if error %}
+        <div class="ei-alert ei-alert-danger" style="margin-bottom:1rem;">
+          <i class="bi bi-exclamation-triangle-fill"></i>{{ error }}
+        </div>
+      {% endif %}
+
+      <p style="font-size:0.88rem; color:rgba(21,25,30,0.65); margin-bottom:1rem;">
+        Elegí tu nueva contraseña: mínimo 8 caracteres, con al menos una letra
+        y un número.
+      </p>
+
+      <form method="POST">
+        <label class="form-label-ei">Nueva contraseña</label>
+        <div class="login-input-wrap">
+          <i class="bi bi-lock login-input-icon"></i>
+          <input type="password" name="nueva" class="ei-input"
+                 placeholder="••••••••" minlength="8" required autofocus />
+        </div>
+
+        <label class="form-label-ei">Confirmar nueva contraseña</label>
+        <div class="login-input-wrap">
+          <i class="bi bi-lock-fill login-input-icon"></i>
+          <input type="password" name="confirmacion" class="ei-input"
+                 placeholder="••••••••" minlength="8" required />
+        </div>
+
+        <button type="submit" class="login-submit">
+          Guardar contraseña
+        </button>
+      </form>
+    {% endif %}
+
+    <p class="login-footer">neto by Empowered Investor &copy; {{ 2026 }}</p>
+  </div>
+</div>
+</body>
+</html>

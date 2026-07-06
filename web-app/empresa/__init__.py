@@ -1,5 +1,6 @@
 import io
 import logging
+import os
 import uuid
 from datetime import date, datetime, timedelta
 from functools import wraps
@@ -16,8 +17,11 @@ import alpaca_client
 from crypto import decrypt_secret
 from db import (get_connection, get_investment, insert_manual_transaction,
                 today_cr, touch_broker_credentials_used)
+from mailer import enviar_aviso_cambio_contrasena, enviar_link_reset_contrasena
 from tools import finance
-from utils import BANK_NOTIFICATION_SENDERS, gen_email_forward, gen_password
+from utils import (BANK_NOTIFICATION_SENDERS, gen_email_forward, gen_password,
+                   load_reset_token, make_reset_token, rate_limit_ok,
+                   validar_nueva_contrasena)
 
 empresa_bp = Blueprint('empresa', __name__)
 
@@ -91,6 +95,152 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("empresa.login"))
+
+
+# ── Contraseña: cambio y restablecimiento ────────────────────────────────────
+
+_RESET_SALT = "pwd-reset-empresa"
+
+
+def _client_ip():
+    # Detrás de nginx la IP real viene en X-Forwarded-For
+    return (request.headers.get("X-Forwarded-For", request.remote_addr or "?")
+            .split(",")[0].strip())
+
+
+def _actualizar_contrasena(conn, user_id, nueva):
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE core.clients
+            SET password_hash = %s, password_changed_at = now()
+            WHERE id = %s
+            """,
+            (generate_password_hash(nueva), user_id),
+        )
+    conn.commit()
+
+
+@empresa_bp.route("/cambiar-contrasena", methods=["GET", "POST"])
+@login_required
+def cambiar_contrasena():
+    error = None
+    ok = False
+    if request.method == "POST":
+        actual = request.form.get("actual", "")
+        nueva = request.form.get("nueva", "")
+        confirmacion = request.form.get("confirmacion", "")
+
+        conn = get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT password_hash, email_address, client_name FROM core.clients WHERE id = %s",
+                    (session["user_id"],),
+                )
+                user = cur.fetchone()
+
+            if not user or not user["password_hash"] or not check_password_hash(user["password_hash"], actual):
+                error = "La contraseña actual es incorrecta."
+            elif check_password_hash(user["password_hash"], nueva):
+                error = "La nueva contraseña no puede ser igual a la actual."
+            else:
+                error = validar_nueva_contrasena(nueva, confirmacion)
+
+            if error is None:
+                _actualizar_contrasena(conn, session["user_id"], nueva)
+                ok = True
+                try:
+                    enviar_aviso_cambio_contrasena(user["email_address"], user["client_name"])
+                except Exception as e:
+                    log.error(f"Aviso de cambio de contraseña no enviado a {user['email_address']}: {e}")
+        finally:
+            conn.close()
+
+    return render_template("empresa/cambiar_contrasena.html", error=error, ok=ok)
+
+
+@empresa_bp.route("/olvido", methods=["GET", "POST"])
+def olvido():
+    error = None
+    enviado = False
+    if request.method == "POST":
+        if not rate_limit_ok("olvido-empresa", _client_ip()):
+            error = "Demasiadas solicitudes desde esta conexión. Intente de nuevo en una hora."
+        else:
+            username = request.form.get("username", "").strip().lower()
+            conn = get_connection()
+            try:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute(
+                        """
+                        SELECT id, password_hash, email_address, client_name
+                        FROM core.clients
+                        WHERE username = %s
+                        """,
+                        (username,),
+                    )
+                    user = cur.fetchone()
+            finally:
+                conn.close()
+
+            if user and user["email_address"] and user["password_hash"]:
+                token = make_reset_token(user["id"], user["password_hash"], _RESET_SALT)
+                base = (os.environ.get("WEBAPP_URL") or request.url_root).rstrip("/")
+                link = base + url_for("empresa.reset_contrasena", token=token)
+                try:
+                    enviar_link_reset_contrasena(user["email_address"], user["client_name"], link)
+                except Exception as e:
+                    log.error(f"Correo de restablecimiento no enviado a {user['email_address']}: {e}")
+            # Siempre se confirma el envío, exista o no el usuario (evita
+            # que el formulario sirva para adivinar usuarios registrados).
+            enviado = True
+
+    return render_template("auth/olvido.html", portal="empresa", error=error, enviado=enviado)
+
+
+@empresa_bp.route("/reset/<token>", methods=["GET", "POST"])
+def reset_contrasena(token):
+    data = load_reset_token(token, _RESET_SALT)
+    user = None
+    if data:
+        conn = get_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT id, password_hash, email_address, client_name FROM core.clients WHERE id = %s",
+                    (data["uid"],),
+                )
+                user = cur.fetchone()
+        finally:
+            conn.close()
+        # El token lleva un fragmento del hash vigente al emitirlo: si la
+        # contraseña ya cambió (enlace usado u otro reset), el enlace muere.
+        if not user or (user["password_hash"] or "")[-16:] != data["ph"]:
+            user = None
+
+    if user is None:
+        return render_template("auth/reset.html", portal="empresa", invalido=True), 400
+
+    error = None
+    ok = False
+    if request.method == "POST":
+        nueva = request.form.get("nueva", "")
+        confirmacion = request.form.get("confirmacion", "")
+        error = validar_nueva_contrasena(nueva, confirmacion)
+        if error is None:
+            conn = get_connection()
+            try:
+                _actualizar_contrasena(conn, user["id"], nueva)
+            finally:
+                conn.close()
+            ok = True
+            try:
+                enviar_aviso_cambio_contrasena(user["email_address"], user["client_name"])
+            except Exception as e:
+                log.error(f"Aviso de cambio de contraseña no enviado a {user['email_address']}: {e}")
+
+    return render_template("auth/reset.html", portal="empresa", error=error, ok=ok)
 
 
 # ── Consentimiento ────────────────────────────────────────────────────────────

@@ -1,0 +1,53 @@
+{% extends "empresa/base.html" %}
+{% block title %}Cambiar contraseña — neto{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <i class="bi bi-key"></i>
+  Cambiar contraseña
+</div>
+
+<p style="font-size:0.85rem; color:rgba(21,25,30,0.55); margin-bottom:1rem;">
+  La nueva contraseña debe tener mínimo 8 caracteres, con al menos una letra y un número.
+  Te enviaremos un correo de confirmación al cambiarla.
+</p>
+
+<div class="ei-card" style="max-width:480px;">
+  <div class="ei-card-body">
+
+    {% if error %}
+      <div class="ei-alert ei-alert-danger" style="margin-bottom:1rem;">
+        <i class="bi bi-exclamation-triangle-fill"></i>{{ error }}
+      </div>
+    {% endif %}
+
+    {% if ok %}
+      <div class="ei-alert ei-alert-success" style="margin-bottom:1rem;">
+        <i class="bi bi-check-circle-fill"></i>
+        Tu contraseña fue actualizada correctamente.
+      </div>
+    {% else %}
+      <form method="POST" action="{{ url_for('empresa.cambiar_contrasena') }}">
+
+        <label class="form-label-ei">Contraseña actual</label>
+        <input type="password" name="actual" class="ei-input"
+               placeholder="••••••••" required autofocus autocomplete="current-password" />
+
+        <label class="form-label-ei" style="margin-top:0.85rem;">Nueva contraseña</label>
+        <input type="password" name="nueva" class="ei-input"
+               placeholder="••••••••" minlength="8" required autocomplete="new-password" />
+
+        <label class="form-label-ei" style="margin-top:0.85rem;">Confirmar nueva contraseña</label>
+        <input type="password" name="confirmacion" class="ei-input"
+               placeholder="••••••••" minlength="8" required autocomplete="new-password" />
+
+        <div style="margin-top:1.25rem;">
+          <button type="submit" class="btn-primary-ei">
+            <i class="bi bi-key"></i> Cambiar contraseña
+          </button>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

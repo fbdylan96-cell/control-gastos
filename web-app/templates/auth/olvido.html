@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Iniciar sesión — neto</title>
+  <title>Restablecer contraseña — neto</title>
   <link rel="icon" href="{{ url_for('static', filename='rebranding/logos/favicon.ico') }}" sizes="any" />
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='rebranding/logos/favicon-32.png') }}" />
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='rebranding/logos/apple-touch-icon.png') }}" />
@@ -25,37 +25,36 @@
       </div>
     {% endif %}
 
-    <form method="POST" action="{{ url_for('persona.login') }}">
-      <label class="form-label-ei">Usuario</label>
-      <div class="login-input-wrap">
-        <i class="bi bi-person login-input-icon"></i>
-        <input type="text" name="username" class="ei-input"
-               placeholder="tu usuario" required autofocus />
+    {% if enviado %}
+      <div class="ei-alert ei-alert-success" style="margin-bottom:1rem;">
+        <i class="bi bi-envelope-check-fill"></i>
+        Si el usuario existe, enviamos un correo con el enlace para restablecer
+        la contraseña. Revisá tu bandeja (y el spam) — el enlace vence en 1 hora.
       </div>
+    {% else %}
+      <p style="font-size:0.88rem; color:rgba(21,25,30,0.65); margin-bottom:1rem;">
+        Ingresá tu usuario y te enviaremos un enlace al correo registrado en tu
+        cuenta para que elijás una nueva contraseña.
+      </p>
 
-      <label class="form-label-ei">Contraseña</label>
-      <div class="login-input-wrap">
-        <i class="bi bi-lock login-input-icon"></i>
-        <input type="password" name="password" class="ei-input"
-               placeholder="••••••••" required />
-      </div>
+      <form method="POST" action="{{ url_for(portal + '.olvido') }}">
+        <label class="form-label-ei">Usuario</label>
+        <div class="login-input-wrap">
+          <i class="bi bi-person login-input-icon"></i>
+          <input type="text" name="username" class="ei-input"
+                 placeholder="tu usuario" required autofocus />
+        </div>
 
-      <button type="submit" class="login-submit">
-        Ingresar
-      </button>
-    </form>
-
-    <div style="text-align:center; margin-top:0.9rem;">
-      <a href="{{ url_for('persona.olvido') }}"
-         style="font-size:0.84rem; color:#1F4D8E; text-decoration:none;">
-        ¿Olvidaste tu contraseña?
-      </a>
-    </div>
+        <button type="submit" class="login-submit">
+          Enviar enlace
+        </button>
+      </form>
+    {% endif %}
 
     <div style="text-align:center; margin-top:1rem;">
-      <a href="{{ url_for('terminos') }}" target="_blank" rel="noopener"
+      <a href="{{ url_for(portal + '.login') }}"
          style="font-size:0.82rem; color:rgba(21,25,30,0.5); text-decoration:none;">
-        <i class="bi bi-file-text" style="margin-right:4px;"></i>Ver términos y condiciones
+        <i class="bi bi-arrow-left" style="margin-right:4px;"></i>Volver al inicio de sesión
       </a>
     </div>
 

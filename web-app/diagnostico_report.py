@@ -184,50 +184,58 @@ def sanitize_payload(data):
 
 
 # ── Clasificación general (flujo × patrimonio) ──────────────────────────────
-# 5 etapas expresadas en positivo, de mayor rango de mejora a más estable.
-# Misma lógica que clasificacionGeneral() en diagnostico-financiero.html.
+# Escala de 4 niveles expresada en positivo, de mayor rango de mejora a más
+# estable. El nivel 2 tiene dos variantes PARALELAS (no consecutivas): tener
+# una sola de las dos columnas en pie — el patrimonio (Reconstrucción) o el
+# flujo (Impulso). Nadie pasa de una variante a la otra: de ambas se salta al
+# nivel 3 al tener las dos en positivo.
 # Bordes: flujo ≥ 0 y patrimonio ≥ 0 cuentan como positivos; 20% = regla 50-30-20.
 
 NIVELES_CLASIFICACION = [
-    ("🌱", "Reorganización",
+    (1, "🌱", "Reorganización",
      "Dar este paso y ver los números completos ya es el punto de partida. El "
      "mayor rango de mejora está en el flujo mensual: pequeños ajustes liberan "
      "efectivo rápido, y de ahí se construye todo lo demás."),
-    ("🧱", "Reconstrucción",
+    (2, "🧱", "Reconstrucción",
      "Hay un patrimonio construido que respalda — eso es un logro real. El "
      "reto ahora es que el mes a mes no lo erosione: recuperar un flujo "
      "positivo es la forma de proteger lo ya construido."),
-    ("🚀", "Impulso",
+    (2, "🚀", "Impulso",
      "La dirección es la correcta: cada mes se genera excedente. Sostener ese "
      "ritmo irá reduciendo las deudas hasta darle vuelta al patrimonio — es "
      "cuestión de constancia, y la trayectoria es lo que más pesa."),
-    ("⚖️", "Estabilidad",
+    (3, "⚖️", "Estabilidad",
      "Flujo positivo y patrimonio a favor: la base está sólida. El siguiente "
      "nivel es llevar el excedente hacia el 20% del ingreso (la regla "
      "50-30-20) para acelerar las metas."),
-    ("🏆", "Libertad financiera",
+    (4, "🏆", "Libertad financiera",
      "Se vive la regla 50-30-20: se ahorra el 20% o más del ingreso con "
      "patrimonio positivo. La conversación ya no es de orden, sino de "
      "crecimiento: inversión y metas de largo plazo."),
 ]
 
+NIVEL_MAXIMO = 4
+
 
 def clasificacion_general(t):
-    """{nivel 1-5, emoji, nombre, desc} o None si no hay datos que clasificar."""
+    """{nivel 1-4, total 4, emoji, nombre, desc} o None si no hay datos."""
     if not (t["ingresos"] > 0 or t["gastos"] > 0 or t["activos"] > 0 or t["deudas"] > 0):
         return None
     fc_pos = t["flujo"] >= 0
     pn_pos = t["patrimonio"] >= 0
     if not fc_pos and not pn_pos:
-        nivel = 1
+        idx = 0  # Reorganización
     elif not fc_pos and pn_pos:
-        nivel = 2
+        idx = 1  # Reconstrucción (nivel 2, variante patrimonio)
     elif fc_pos and not pn_pos:
-        nivel = 3
+        idx = 2  # Impulso (nivel 2, variante flujo)
+    elif t["ingresos"] > 0 and t["flujo"] / t["ingresos"] >= 0.20:
+        idx = 4  # Libertad financiera
     else:
-        nivel = 5 if (t["ingresos"] > 0 and t["flujo"] / t["ingresos"] >= 0.20) else 4
-    emoji, nombre, desc = NIVELES_CLASIFICACION[nivel - 1]
-    return {"nivel": nivel, "emoji": emoji, "nombre": nombre, "desc": desc}
+        idx = 3  # Estabilidad
+    nivel, emoji, nombre, desc = NIVELES_CLASIFICACION[idx]
+    return {"nivel": nivel, "total": NIVEL_MAXIMO, "emoji": emoji,
+            "nombre": nombre, "desc": desc}
 
 
 def _totales(p):
@@ -302,7 +310,7 @@ def build_excel(p):
     c = clasificacion_general(t)
     if c:
         section("CLASIFICACIÓN GENERAL")
-        item("Nivel", f"{c['emoji']} Nivel {c['nivel']} de 5 — {c['nombre']}",
+        item("Nivel", f"{c['emoji']} Nivel {c['nivel']} de {c['total']} — {c['nombre']}",
              fmt="General", bold=True)
         item("Lectura", c["desc"], fmt="General")
 
@@ -486,7 +494,7 @@ def _texto_clasificacion(p):
     if not c:
         return ""
     return ("\n— CLASIFICACIÓN GENERAL —\n"
-            f"Nivel {c['nivel']} de 5 — {c['nombre']}. {c['desc']}\n")
+            f"Nivel {c['nivel']} de {c['total']} — {c['nombre']}. {c['desc']}\n")
 
 
 def _texto_personalidades(p):
@@ -515,11 +523,11 @@ def _html_clasificacion(t):
         return ""
     separador = '<td width="5" style="font-size:0;">&nbsp;</td>'
     partes = []
-    for i in range(1, 6):
+    for i in range(1, NIVEL_MAXIMO + 1):
         color = "#3A9C8E" if i <= c["nivel"] else "#E2E6EB"
         partes.append(f'<td height="8" bgcolor="{color}" '
                       'style="border-radius:4px;font-size:0;line-height:0;">&nbsp;</td>')
-        if i < 5:
+        if i < NIVEL_MAXIMO:
             partes.append(separador)
     segmentos = "".join(partes)
     return f"""
@@ -532,7 +540,7 @@ def _html_clasificacion(t):
             <div style="font-size:10px;font-weight:bold;letter-spacing:.06em;
                         text-transform:uppercase;color:#6B7280;">Clasificación general</div>
             <div style="font-size:18px;font-weight:bold;color:#1B1C20;padding-top:4px;">
-              {c["emoji"]} Nivel {c["nivel"]} de 5 — {esc(c["nombre"])}</div>
+              {c["emoji"]} Nivel {c["nivel"]} de {c["total"]} — {esc(c["nombre"])}</div>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
                    style="margin-top:10px;"><tr>{segmentos}</tr></table>
             <div style="font-size:12.5px;line-height:1.6;color:#4B5563;padding-top:10px;">

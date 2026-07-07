@@ -183,6 +183,53 @@ def sanitize_payload(data):
     return payload, None
 
 
+# ── Clasificación general (flujo × patrimonio) ──────────────────────────────
+# 5 etapas expresadas en positivo, de mayor rango de mejora a más estable.
+# Misma lógica que clasificacionGeneral() en diagnostico-financiero.html.
+# Bordes: flujo ≥ 0 y patrimonio ≥ 0 cuentan como positivos; 20% = regla 50-30-20.
+
+NIVELES_CLASIFICACION = [
+    ("🌱", "Reorganización",
+     "Dar este paso y ver los números completos ya es el punto de partida. Su "
+     "mayor rango de mejora está en el flujo mensual: pequeños ajustes liberan "
+     "efectivo rápido, y de ahí se construye todo lo demás."),
+    ("🧱", "Reconstrucción",
+     "Ha construido un patrimonio que lo respalda — eso es un logro real. El "
+     "reto ahora es que el mes a mes no lo erosione: recuperar un flujo "
+     "positivo es la forma de proteger lo que ya es suyo."),
+    ("🚀", "Impulso",
+     "Va en la dirección correcta: cada mes genera excedente. Sostener ese "
+     "ritmo irá reduciendo las deudas hasta darle vuelta al patrimonio — es "
+     "cuestión de constancia, y la trayectoria es lo que más pesa."),
+    ("⚖️", "Estabilidad",
+     "Flujo positivo y patrimonio a favor: la base está sólida. El siguiente "
+     "nivel es llevar el excedente hacia el 20% del ingreso (la regla "
+     "50-30-20) para acelerar sus metas."),
+    ("🏆", "Libertad financiera",
+     "Vive la regla 50-30-20: ahorra el 20% o más de su ingreso con patrimonio "
+     "positivo. La conversación ya no es de orden, sino de crecimiento: "
+     "inversión y metas de largo plazo."),
+]
+
+
+def clasificacion_general(t):
+    """{nivel 1-5, emoji, nombre, desc} o None si no hay datos que clasificar."""
+    if not (t["ingresos"] > 0 or t["gastos"] > 0 or t["activos"] > 0 or t["deudas"] > 0):
+        return None
+    fc_pos = t["flujo"] >= 0
+    pn_pos = t["patrimonio"] >= 0
+    if not fc_pos and not pn_pos:
+        nivel = 1
+    elif not fc_pos and pn_pos:
+        nivel = 2
+    elif fc_pos and not pn_pos:
+        nivel = 3
+    else:
+        nivel = 5 if (t["ingresos"] > 0 and t["flujo"] / t["ingresos"] >= 0.20) else 4
+    emoji, nombre, desc = NIVELES_CLASIFICACION[nivel - 1]
+    return {"nivel": nivel, "emoji": emoji, "nombre": nombre, "desc": desc}
+
+
 def _totales(p):
     tf = sum(r["amount"] for r in p["fijos"])
     tv = sum(r["amount"] for r in p["variables"])
@@ -251,6 +298,13 @@ def build_excel(p):
     item("Nombre completo", p["nombre"], fmt="General")
     item("Correo electrónico", p["correo"], fmt="General")
     item("Número celular", p["celular"], fmt="General")
+
+    c = clasificacion_general(t)
+    if c:
+        section("CLASIFICACIÓN GENERAL")
+        item("Nivel", f"{c['emoji']} Nivel {c['nivel']} de 5 — {c['nombre']}",
+             fmt="General", bold=True)
+        item("Lectura", c["desc"], fmt="General")
 
     section("RESUMEN — FLUJO MENSUAL")
     item("Ingresos", t["ingresos"])
@@ -426,6 +480,15 @@ def _html_personalidades(p):
       {''.join(bloques)}"""
 
 
+def _texto_clasificacion(p):
+    """Versión de texto plano de la clasificación general ('' si no hay datos)."""
+    c = clasificacion_general(_totales(p))
+    if not c:
+        return ""
+    return ("\n— CLASIFICACIÓN GENERAL —\n"
+            f"Nivel {c['nivel']} de 5 — {c['nombre']}. {c['desc']}\n")
+
+
 def _texto_personalidades(p):
     """Versión de texto plano del bloque de personalidades ('' si no hay quiz)."""
     resultados = _resultados_personalidades(p)
@@ -442,6 +505,41 @@ def _texto_personalidades(p):
             emoji2, titulo2, definicion2 = PERFILES_DEF[res["secundario"]]
             lineas.append(f"{nombre} — Rasgo secundario: {titulo2}. {definicion2}")
     return "\n".join(lineas) + "\n"
+
+
+def _html_clasificacion(t):
+    """Banner HTML de la clasificación general ('' si no hay datos)."""
+    esc = html_mod.escape
+    c = clasificacion_general(t)
+    if not c:
+        return ""
+    separador = '<td width="5" style="font-size:0;">&nbsp;</td>'
+    partes = []
+    for i in range(1, 6):
+        color = "#3A9C8E" if i <= c["nivel"] else "#E2E6EB"
+        partes.append(f'<td height="8" bgcolor="{color}" '
+                      'style="border-radius:4px;font-size:0;line-height:0;">&nbsp;</td>')
+        if i < 5:
+            partes.append(separador)
+    segmentos = "".join(partes)
+    return f"""
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+             style="margin:0 0 24px;">
+        <tr>
+          <td width="4" bgcolor="#3A9C8E" style="border-radius:4px 0 0 4px;font-size:0;">&nbsp;</td>
+          <td bgcolor="#F0F7F6" style="padding:16px 18px;border-radius:0 4px 4px 0;
+              font-family:Helvetica,Arial,sans-serif;">
+            <div style="font-size:10px;font-weight:bold;letter-spacing:.06em;
+                        text-transform:uppercase;color:#6B7280;">Clasificación general</div>
+            <div style="font-size:18px;font-weight:bold;color:#1B1C20;padding-top:4px;">
+              {c["emoji"]} Nivel {c["nivel"]} de 5 — {esc(c["nombre"])}</div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="margin-top:10px;"><tr>{segmentos}</tr></table>
+            <div style="font-size:12.5px;line-height:1.6;color:#4B5563;padding-top:10px;">
+              {esc(c["desc"])}</div>
+          </td>
+        </tr>
+      </table>"""
 
 
 def _build_html(p, fecha_larga, archivo):
@@ -506,6 +604,8 @@ def _build_html(p, fecha_larga, archivo):
         reporte completo en Excel con el detalle de sus gastos, ingresos,
         patrimonio y metas. Su asesor recibió una copia y lo contactará para
         coordinar la sesión de asesoría.</p>
+
+      {_html_clasificacion(t)}
 
       <!-- KPIs -->
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -595,7 +695,7 @@ def send_report(p):
         "Adjuntamos el reporte de su Diagnóstico Financiero Personal. "
         "Su asesor lo revisará y lo contactará para coordinar la sesión de "
         "asesoría.\n"
-        + _texto_personalidades(p) +
+        + _texto_clasificacion(p) + _texto_personalidades(p) +
         f"\nDatos de contacto registrados:\n"
         f"  • Correo: {p['correo']}\n"
         f"  • Celular: {p['celular']}\n\n"

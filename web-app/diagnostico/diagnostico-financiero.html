@@ -479,6 +479,8 @@ function goStep(n){
 document.querySelectorAll('.step').forEach(s=>s.addEventListener('click',()=>goStep(+s.dataset.step)));
 
 // ---------- Summary ----------
+// (La clasificación general flujo × patrimonio se calcula en el servidor y
+// solo se muestra en el correo, igual que las personalidades del dinero.)
 function buildSummary(){
   const t = recalc();
   const feMonto = parseAmt(document.getElementById('fe-monto').value);

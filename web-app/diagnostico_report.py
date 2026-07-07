@@ -190,25 +190,25 @@ def sanitize_payload(data):
 
 NIVELES_CLASIFICACION = [
     ("🌱", "Reorganización",
-     "Dar este paso y ver los números completos ya es el punto de partida. Su "
+     "Dar este paso y ver los números completos ya es el punto de partida. El "
      "mayor rango de mejora está en el flujo mensual: pequeños ajustes liberan "
      "efectivo rápido, y de ahí se construye todo lo demás."),
     ("🧱", "Reconstrucción",
-     "Ha construido un patrimonio que lo respalda — eso es un logro real. El "
+     "Hay un patrimonio construido que respalda — eso es un logro real. El "
      "reto ahora es que el mes a mes no lo erosione: recuperar un flujo "
-     "positivo es la forma de proteger lo que ya es suyo."),
+     "positivo es la forma de proteger lo ya construido."),
     ("🚀", "Impulso",
-     "Va en la dirección correcta: cada mes genera excedente. Sostener ese "
+     "La dirección es la correcta: cada mes se genera excedente. Sostener ese "
      "ritmo irá reduciendo las deudas hasta darle vuelta al patrimonio — es "
      "cuestión de constancia, y la trayectoria es lo que más pesa."),
     ("⚖️", "Estabilidad",
      "Flujo positivo y patrimonio a favor: la base está sólida. El siguiente "
      "nivel es llevar el excedente hacia el 20% del ingreso (la regla "
-     "50-30-20) para acelerar sus metas."),
+     "50-30-20) para acelerar las metas."),
     ("🏆", "Libertad financiera",
-     "Vive la regla 50-30-20: ahorra el 20% o más de su ingreso con patrimonio "
-     "positivo. La conversación ya no es de orden, sino de crecimiento: "
-     "inversión y metas de largo plazo."),
+     "Se vive la regla 50-30-20: se ahorra el 20% o más del ingreso con "
+     "patrimonio positivo. La conversación ya no es de orden, sino de "
+     "crecimiento: inversión y metas de largo plazo."),
 ]
 
 

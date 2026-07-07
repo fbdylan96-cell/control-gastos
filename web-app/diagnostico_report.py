@@ -256,13 +256,13 @@ def build_excel(p):
     item("Ingresos", t["ingresos"])
     item("Gastos fijos", t["fijos"])
     item("Gastos variables", t["variables"])
-    item("Gastos hormiga", t["hormiga"])
+    item("Gastos no necesarios", t["hormiga"])
     item("Cuotas de deudas", t["cuotas"])
     item("FLUJO DE CAJA", t["flujo"], bold=True, fill=_FILL_SUBTOTAL)
     if t["ingresos"] > 0:
         item("Carga de deuda (cuotas / ingreso)", t["cuotas"] / t["ingresos"],
              fmt="0.0%")
-        item("Gastos hormiga (% del ingreso)", t["hormiga"] / t["ingresos"],
+        item("Gastos no necesarios (% del ingreso)", t["hormiga"] / t["ingresos"],
              fmt="0.0%")
         item("Tasa de ahorro (flujo / ingreso)", t["flujo"] / t["ingresos"],
              fmt="0.0%")
@@ -280,7 +280,7 @@ def build_excel(p):
 
     detalle("GASTOS FIJOS", p["fijos"], t["fijos"])
     detalle("GASTOS VARIABLES", p["variables"], t["variables"])
-    detalle("GASTOS HORMIGA", p["hormiga"], t["hormiga"])
+    detalle("GASTOS NO NECESARIOS", p["hormiga"], t["hormiga"])
     detalle("INGRESOS MENSUALES", p["ingresos"], t["ingresos"])
     detalle("ACTIVOS", p["activos"], t["activos"])
 

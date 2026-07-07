@@ -188,11 +188,11 @@ textarea{resize:vertical;min-height:64px}
     </div>
 
     <div class="card">
-      <h3>Gastos hormiga <span class="tag warn">pequeños pero constantes</span></h3>
+      <h3>Gastos no necesarios <span class="tag warn">se pueden recortar</span></h3>
       <p class="hint">Cafés, snacks, apps y suscripciones, delivery, antojos. Sea honesto — aquí suele esconderse el 10-15% del ingreso.</p>
       <div id="rows-hormiga"></div>
-      <button class="add-row" onclick="addRow('hormiga')">+ Agregar gasto hormiga</button>
-      <div class="subtotal"><span>Subtotal hormiga</span><span class="val" id="sub-hormiga">₡0</span></div>
+      <button class="add-row" onclick="addRow('hormiga')">+ Agregar gasto no necesario</button>
+      <div class="subtotal"><span>Subtotal no necesarios</span><span class="val" id="sub-hormiga">₡0</span></div>
     </div>
 
     <div class="nav-btns">
@@ -493,7 +493,7 @@ function buildSummary(){
     {lbl:'Patrimonio neto', val:fmt(t.patri), sub:'Activos − deudas', cls: t.patri>=0?'good':'bad'},
     {lbl:'Carga de deuda', val:pctDeuda.toFixed(0)+'%', sub:'Cuotas / ingreso · ideal < 35%', cls: pctDeuda<35?'good':(pctDeuda<45?'mid':'bad')},
     {lbl:'Fondo de emergencia', val:mesesFE.toFixed(1)+' meses', sub:'Meta: 3–6 meses de gastos', cls: mesesFE>=3?'good':(mesesFE>=1?'mid':'bad')},
-    {lbl:'Gastos hormiga', val:pctHormiga.toFixed(0)+'%', sub:'del ingreso mensual', cls: pctHormiga<8?'good':(pctHormiga<15?'mid':'bad')}
+    {lbl:'Gastos no necesarios', val:pctHormiga.toFixed(0)+'%', sub:'del ingreso mensual', cls: pctHormiga<8?'good':(pctHormiga<15?'mid':'bad')}
   ];
   document.getElementById('kpis').innerHTML = kpis.map(k=>
     `<div class="kpi ${k.cls}"><div class="lbl">${k.lbl}</div><div class="val">${k.val}</div><div class="sub">${k.sub}</div></div>`).join('');
@@ -502,7 +502,7 @@ function buildSummary(){
   const cats = [
     {n:'Gastos fijos', v:t.tf, c:'#3A9C8E'},
     {n:'Gastos variables', v:t.tv, c:'#EFA91A'},
-    {n:'Gastos hormiga', v:t.th, c:'#B3402E'},
+    {n:'Gastos no necesarios', v:t.th, c:'#B3402E'},
     {n:'Cuotas de deudas', v:t.tc, c:'#5B4B8A'}
   ];
   const max = Math.max(t.ti, t.gastos, 1);
@@ -521,7 +521,7 @@ function buildSummary(){
   else if(pctDeuda >= 30) alerts.push('🟡 <b>Carga de deuda moderada:</b> vale la pena revisar tasas y plazos.');
   if(mesesFE < 1) alerts.push('🔴 <b>Sin colchón de emergencia:</b> cualquier imprevisto se financia con deuda.');
   else if(mesesFE < 3) alerts.push('🟡 <b>Fondo de emergencia insuficiente:</b> meta de 3–6 meses de gastos.');
-  if(pctHormiga >= 12) alerts.push('🟡 <b>Gastos hormiga elevados ('+pctHormiga.toFixed(0)+'% del ingreso):</b> oportunidad rápida de liberación de flujo.');
+  if(pctHormiga >= 12) alerts.push('🟡 <b>Gastos no necesarios elevados ('+pctHormiga.toFixed(0)+'% del ingreso):</b> oportunidad rápida de liberación de flujo.');
   const segs = [...document.querySelectorAll('input[name=seg]:checked')].map(x=>x.value);
   if(segs.includes('Ninguno') || segs.length===0) alerts.push('🟡 <b>Sin coberturas de seguro reportadas:</b> revisar protección básica según dependientes.');
   const ret = document.getElementById('retiro').value;

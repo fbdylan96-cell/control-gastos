@@ -70,7 +70,8 @@ section.phase.visible{display:block}
 .tag.gold{background:#F6EFDD;color:var(--gold)}
 
 /* Rows */
-.row{display:grid;grid-template-columns:1fr 150px 34px;gap:10px;margin-bottom:8px;align-items:center}
+.row{display:grid;grid-template-columns:1fr 118px 58px 34px;gap:10px;margin-bottom:8px;align-items:center}
+.cur-sel{border:1px solid var(--line);border-radius:7px;padding:9px 4px;font-family:var(--mono);font-size:13px;background:#FDFDFB;width:100%;text-align:center}
 .row input[type=text]{border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-family:var(--sans);font-size:14px;width:100%;background:#FDFDFB}
 .row input.amount{font-family:var(--mono);font-size:14px;text-align:right;border:1px solid var(--line);border-radius:7px;padding:9px 11px;width:100%;background:#FDFDFB}
 .row input:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
@@ -82,9 +83,9 @@ section.phase.visible{display:block}
 .subtotal .val{font-family:var(--mono)}
 
 /* Debt rows */
-.row.debt{grid-template-columns:1.4fr 110px 80px 110px 34px}
+.row.debt{grid-template-columns:1.3fr 100px 70px 100px 58px 34px}
 .row.debt input{font-size:13px}
-.debt-head{display:grid;grid-template-columns:1.4fr 110px 80px 110px 34px;gap:10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px}
+.debt-head{display:grid;grid-template-columns:1.3fr 100px 70px 100px 58px 34px;gap:10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px}
 
 /* Checkboxes / selects */
 .chk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-top:8px}
@@ -99,7 +100,7 @@ select,textarea{border:1px solid var(--line);border-radius:7px;padding:9px 11px;
 textarea{resize:vertical;min-height:64px}
 .field-label{font-size:12.5px;font-weight:600;color:var(--muted);display:block;margin:12px 0 5px}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-@media(max-width:640px){.two-col{grid-template-columns:1fr}.row.debt{grid-template-columns:1fr 90px 34px}.row.debt input:nth-child(3),.row.debt input:nth-child(4){display:none}.debt-head{display:none}}
+@media(max-width:640px){.two-col{grid-template-columns:1fr}.row.debt{grid-template-columns:1fr 90px 50px 34px}.row.debt input:nth-child(3),.row.debt input:nth-child(4){display:none}.debt-head{display:none}}
 
 /* Nav buttons */
 .nav-btns{display:flex;justify-content:space-between;margin-top:22px}
@@ -168,7 +169,8 @@ textarea{resize:vertical;min-height:64px}
   <section class="phase visible" id="phase0">
     <div class="phase-intro">
       <h2>¿En qué se va su dinero cada mes?</h2>
-      <p>No necesita cifras exactas — un estimado mensual honesto es suficiente. Si un gasto es anual (ej. marchamo), divídalo entre 12.</p>
+      <p>No necesita cifras exactas — un estimado mensual honesto es suficiente. Si un gasto es anual (ej. marchamo), divídalo entre 12.
+      Puede ingresar cada monto en colones (₡) o dólares ($); los totales siempre se muestran en colones, al tipo de cambio más reciente.</p>
     </div>
 
     <div class="card">
@@ -205,7 +207,8 @@ textarea{resize:vertical;min-height:64px}
   <section class="phase" id="phase1">
     <div class="phase-intro">
       <h2>Su fotografía financiera</h2>
-      <p>Ingresos, lo que tiene (activos) y lo que debe (pasivos). Con esto calculamos su patrimonio neto y flujo de caja.</p>
+      <p>Ingresos, lo que tiene (activos) y lo que debe (pasivos). Con esto calculamos su patrimonio neto y flujo de caja.
+      Cada monto puede ir en colones (₡) o dólares ($); los totales se muestran en colones.</p>
     </div>
 
     <div class="card">
@@ -227,7 +230,7 @@ textarea{resize:vertical;min-height:64px}
     <div class="card">
       <h3>Deudas / pasivos <span class="tag warn">lo que debe</span></h3>
       <p class="hint">Incluya saldo total pendiente, tasa de interés anual y la cuota mensual de cada deuda.</p>
-      <div class="debt-head"><span>Deuda</span><span>Saldo total</span><span>Tasa %</span><span>Cuota/mes</span><span></span></div>
+      <div class="debt-head"><span>Deuda</span><span>Saldo total</span><span>Tasa %</span><span>Cuota/mes</span><span>Moneda</span><span></span></div>
       <div id="rows-deudas"></div>
       <button class="add-row" onclick="addDebtRow()">+ Agregar deuda</button>
       <div class="subtotal"><span>Total deudas</span><span class="val" id="sub-deudas">₡0</span></div>
@@ -255,8 +258,14 @@ textarea{resize:vertical;min-height:64px}
         <option value="si">Sí</option>
         <option value="no">No</option>
       </select>
-      <label class="field-label">Monto aproximado disponible (₡)</label>
-      <input type="text" class="amount" id="fe-monto" placeholder="0" style="border:1px solid var(--line);border-radius:7px;padding:9px 11px;width:100%;font-family:var(--mono);text-align:right;background:#FDFDFB">
+      <label class="field-label">Monto aproximado disponible</label>
+      <div style="display:grid;grid-template-columns:1fr 70px;gap:10px;">
+        <input type="text" class="amount" id="fe-monto" placeholder="0" style="border:1px solid var(--line);border-radius:7px;padding:9px 11px;width:100%;font-family:var(--mono);text-align:right;background:#FDFDFB">
+        <select class="cur-sel" id="fe-moneda" onchange="recalc()">
+          <option value="crc">₡</option>
+          <option value="usd" disabled>$</option>
+        </select>
+      </div>
     </div>
 
     <div class="card">
@@ -399,21 +408,41 @@ function parseAmt(v){
   return isNaN(n) ? 0 : n;
 }
 
+// ---------- Tipo de cambio USD→CRC ----------
+// Los inputs aceptan ₡ o $; todos los agregados se muestran en colones usando
+// el tipo de cambio más reciente de core.exchange_rates (vía el servidor).
+// Si el tipo de cambio no está disponible, la opción $ queda deshabilitada.
+let TC = null;
+function toCRC(n, cur){ return cur === 'usd' ? n * (TC || 0) : n; }
+function curSelHTML(cat, id){
+  return `<select class="cur-sel" onchange="upd('${cat}','${id}','currency',this.value)">
+    <option value="crc">₡</option>
+    <option value="usd" ${TC ? '' : 'disabled'}>$</option>
+  </select>`;
+}
+fetch('/diagnostico/tipo-cambio').then(r=>r.json()).then(d=>{
+  if(d && d.usd_crc){
+    TC = d.usd_crc;
+    document.querySelectorAll('.cur-sel option[value=usd]').forEach(o=>o.disabled=false);
+  }
+}).catch(()=>{});
+
 // ---------- Simple rows ----------
 function addRow(cat, name=''){
   const id = 'r'+(idc++);
-  state[cat].push({id, name, amount:0});
+  state[cat].push({id, name, amount:0, currency:'crc'});
   const div = document.createElement('div');
   div.className = 'row'; div.id = id;
   div.innerHTML = `
     <input type="text" placeholder="Descripción" value="${name.replace(/"/g,'&quot;')}" oninput="upd('${cat}','${id}','name',this.value)">
     <input type="text" class="amount" placeholder="0" inputmode="numeric" oninput="upd('${cat}','${id}','amount',this.value)">
+    ${curSelHTML(cat, id)}
     <button class="del" title="Eliminar" onclick="delRow('${cat}','${id}')">✕</button>`;
   document.getElementById('rows-'+cat).appendChild(div);
 }
 function addDebtRow(name=''){
   const id = 'r'+(idc++);
-  state.deudas.push({id, name, saldo:0, tasa:0, cuota:0});
+  state.deudas.push({id, name, saldo:0, tasa:0, cuota:0, currency:'crc'});
   const div = document.createElement('div');
   div.className = 'row debt'; div.id = id;
   div.innerHTML = `
@@ -421,13 +450,14 @@ function addDebtRow(name=''){
     <input type="text" class="amount" placeholder="0" inputmode="numeric" oninput="upd('deudas','${id}','saldo',this.value)">
     <input type="text" class="amount" placeholder="%" inputmode="decimal" oninput="upd('deudas','${id}','tasa',this.value)">
     <input type="text" class="amount" placeholder="0" inputmode="numeric" oninput="upd('deudas','${id}','cuota',this.value)">
+    ${curSelHTML('deudas', id)}
     <button class="del" title="Eliminar" onclick="delRow('deudas','${id}')">✕</button>`;
   document.getElementById('rows-deudas').appendChild(div);
 }
 function upd(cat, id, field, value){
   const item = state[cat].find(x=>x.id===id);
   if(!item) return;
-  item[field] = (field==='name') ? value : parseAmt(value);
+  item[field] = (field==='name' || field==='currency') ? value : parseAmt(value);
   recalc();
 }
 function delRow(cat, id){
@@ -436,8 +466,8 @@ function delRow(cat, id){
   recalc();
 }
 
-// ---------- Totals ----------
-function sum(cat, field='amount'){ return state[cat].reduce((a,x)=>a+(x[field]||0),0); }
+// ---------- Totals (siempre en colones) ----------
+function sum(cat, field='amount'){ return state[cat].reduce((a,x)=>a+toCRC(x[field]||0, x.currency),0); }
 
 function recalc(){
   const tf = sum('fijos'), tv = sum('variables'), th = sum('hormiga');
@@ -483,7 +513,8 @@ document.querySelectorAll('.step').forEach(s=>s.addEventListener('click',()=>goS
 // solo se muestra en el correo, igual que las personalidades del dinero.)
 function buildSummary(){
   const t = recalc();
-  const feMonto = parseAmt(document.getElementById('fe-monto').value);
+  const feMonto = toCRC(parseAmt(document.getElementById('fe-monto').value),
+                        document.getElementById('fe-moneda').value);
   const gastosBasicos = t.tf + t.tv; // proxy for essential expenses
   const mesesFE = gastosBasicos>0 ? feMonto/gastosBasicos : 0;
   const pctDeuda = t.ti>0 ? (t.tc/t.ti)*100 : 0;
@@ -662,7 +693,7 @@ async function enviarReporte(){
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)){ setStatus('Ingrese un correo electrónico válido.', 'err'); return; }
   if(celular.replace(/\D/g,'').length < 8){ setStatus('Ingrese un número celular válido (mínimo 8 dígitos).', 'err'); return; }
 
-  const strip = r => ({name:r.name, amount:r.amount});
+  const strip = r => ({name:r.name, amount:r.amount, currency:r.currency});
   const payload = {
     nombre, correo, celular,
     fijos: state.fijos.map(strip),
@@ -670,9 +701,10 @@ async function enviarReporte(){
     hormiga: state.hormiga.map(strip),
     ingresos: state.ingresos.map(strip),
     activos: state.activos.map(strip),
-    deudas: state.deudas.map(d=>({name:d.name, saldo:d.saldo, tasa:d.tasa, cuota:d.cuota})),
+    deudas: state.deudas.map(d=>({name:d.name, saldo:d.saldo, tasa:d.tasa, cuota:d.cuota, currency:d.currency})),
     fe_tiene: document.getElementById('fe-tiene').value,
     fe_monto: parseAmt(document.getElementById('fe-monto').value),
+    fe_moneda: document.getElementById('fe-moneda').value,
     seguros: [...document.querySelectorAll('input[name=seg]:checked')].map(x=>x.value),
     retiro: document.getElementById('retiro').selectedOptions[0]?.value ? document.getElementById('retiro').selectedOptions[0].text : '',
     metas: [1,2,3].map(i=>document.getElementById('meta'+i).value),

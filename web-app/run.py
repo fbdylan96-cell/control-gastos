@@ -62,6 +62,39 @@ def diagnostico():
     )
 
 
+# Tipo de cambio USD→CRC para el formulario del diagnóstico (inputs en dólares).
+# Usa el corte más reciente de core.exchange_rates vía compute_amount_local
+# (mismo criterio que el pipeline). Cache en memoria: las tasas cambian 1 vez/día.
+_TC_CACHE = {"t": 0.0, "data": None}
+_TC_CACHE_TTL = 3600  # segundos
+
+
+def _tipo_cambio_usd():
+    """{'usd_crc': float|None, 'fecha': str|None} con cache de 1 hora."""
+    import time
+    if _TC_CACHE["data"] and time.time() - _TC_CACHE["t"] < _TC_CACHE_TTL:
+        return _TC_CACHE["data"]
+    from db import compute_amount_local, get_connection
+    try:
+        conn = get_connection()
+        try:
+            monto, _, fecha = compute_amount_local(conn, 1.0, "USD")
+        finally:
+            conn.close()
+    except Exception as e:
+        app.logger.error(f"Diagnóstico: no se pudo leer el tipo de cambio: {e}")
+        return {"usd_crc": None, "fecha": None}  # sin cachear el fallo
+    data = {"usd_crc": float(monto) if monto else None,
+            "fecha": str(fecha) if fecha else None}
+    _TC_CACHE.update(t=time.time(), data=data)
+    return data
+
+
+@app.route('/diagnostico/tipo-cambio')
+def diagnostico_tipo_cambio():
+    return _tipo_cambio_usd()
+
+
 # Rate limit del envío de diagnósticos (endpoint público que manda correos):
 # máx. 5 envíos por IP por hora, en memoria (aproximado con varios workers).
 _DIAG_RATE = {}
@@ -83,7 +116,8 @@ def _diag_rate_ok(ip):
 
 @app.route('/diagnostico/enviar', methods=['POST'])
 def diagnostico_enviar():
-    from diagnostico_report import sanitize_payload, send_report
+    from diagnostico_report import (aplicar_tipo_cambio, sanitize_payload,
+                                    send_report, usa_usd)
 
     # Detrás de nginx la IP real viene en X-Forwarded-For
     ip = (request.headers.get('X-Forwarded-For', request.remote_addr or '?')
@@ -96,6 +130,15 @@ def diagnostico_enviar():
     payload, error = sanitize_payload(data)
     if error:
         return {"ok": False, "error": error}, 400
+
+    # Montos en dólares: se convierten a colones con el tipo de cambio más
+    # reciente antes de calcular agregados (todo el reporte va en colones).
+    if usa_usd(payload):
+        tc = _tipo_cambio_usd()
+        if not tc["usd_crc"]:
+            return {"ok": False, "error": "No se pudo obtener el tipo de cambio "
+                    "para convertir los montos en dólares. Intente más tarde."}, 503
+        aplicar_tipo_cambio(payload, tc["usd_crc"], tc["fecha"])
 
     try:
         send_report(payload)

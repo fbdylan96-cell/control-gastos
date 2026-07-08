@@ -129,15 +129,21 @@ def _clean_personalidades(raw):
     return personas
 
 
+def _clean_currency(value):
+    cur = str(value or "crc").strip().lower()
+    return cur if cur in ("crc", "usd") else "crc"
+
+
 def _clean_rows(raw, fields=("amount",)):
-    """Normaliza una lista [{name, <montos>}] recortando filas y valores."""
+    """Normaliza una lista [{name, <montos>, currency}] recortando filas y valores."""
     rows = []
     if not isinstance(raw, list):
         return rows
     for item in raw[:_MAX_ROWS]:
         if not isinstance(item, dict):
             continue
-        row = {"name": _clean_text(item.get("name"))}
+        row = {"name": _clean_text(item.get("name")),
+               "currency": _clean_currency(item.get("currency"))}
         for f in fields:
             row[f] = _clean_amount(item.get(f))
         if row["name"] or any(row[f] for f in fields):
@@ -173,6 +179,7 @@ def sanitize_payload(data):
         "deudas": _clean_rows(data.get("deudas"), fields=("saldo", "tasa", "cuota")),
         "fe_tiene": _clean_text(data.get("fe_tiene"), 10),
         "fe_monto": _clean_amount(data.get("fe_monto")),
+        "fe_moneda": _clean_currency(data.get("fe_moneda")),
         "seguros": [_clean_text(s, 60) for s in (data.get("seguros") or [])[:20]
                     if _clean_text(s, 60)],
         "retiro": _clean_text(data.get("retiro"), 120),
@@ -181,6 +188,52 @@ def sanitize_payload(data):
         "personalidades": _clean_personalidades(data.get("personalidades")),
     }
     return payload, None
+
+
+# ── Conversión USD → CRC ─────────────────────────────────────────────────────
+# Los inputs del formulario aceptan colones o dólares; todos los agregados y
+# el reporte van en colones. La conversión usa el tipo de cambio más reciente
+# de core.exchange_rates (lo obtiene run.py vía db.compute_amount_local).
+
+_CATS_MONTOS = ("fijos", "variables", "hormiga", "ingresos", "activos")
+
+
+def usa_usd(p):
+    """True si el payload trae algún monto en dólares."""
+    if p.get("fe_moneda") == "usd" and p.get("fe_monto"):
+        return True
+    for cat in _CATS_MONTOS:
+        if any(r.get("currency") == "usd" for r in p[cat]):
+            return True
+    return any(d.get("currency") == "usd" for d in p["deudas"])
+
+
+def aplicar_tipo_cambio(p, tc_usd, tc_fecha=None):
+    """Convierte in-place los montos en USD a colones y anota el monto original
+    en la descripción (transparencia para el asesor). Deja constancia del tipo
+    de cambio usado en p['tc_usd'] / p['tc_fecha'] para el Excel."""
+    for cat in _CATS_MONTOS:
+        for r in p[cat]:
+            if r.get("currency") == "usd":
+                if r["amount"]:
+                    r["name"] = ((r["name"] or "(sin descripción)")
+                                 + f" [US$ {r['amount']:,.2f}]")
+                    r["amount"] = round(r["amount"] * tc_usd, 2)
+                r["currency"] = "crc"
+    for d in p["deudas"]:
+        if d.get("currency") == "usd":
+            if d["saldo"] or d["cuota"]:
+                d["name"] = ((d["name"] or "(sin nombre)")
+                             + f" [US$: saldo {d['saldo']:,.2f}, cuota {d['cuota']:,.2f}]")
+                d["saldo"] = round(d["saldo"] * tc_usd, 2)
+                d["cuota"] = round(d["cuota"] * tc_usd, 2)
+            d["currency"] = "crc"
+    if p.get("fe_moneda") == "usd":
+        p["fe_monto"] = round(p["fe_monto"] * tc_usd, 2)
+        p["fe_moneda"] = "crc"
+    p["tc_usd"] = float(tc_usd)
+    p["tc_fecha"] = str(tc_fecha) if tc_fecha else None
+    return p
 
 
 # ── Clasificación general (flujo × patrimonio) ──────────────────────────────
@@ -306,6 +359,10 @@ def build_excel(p):
     item("Nombre completo", p["nombre"], fmt="General")
     item("Correo electrónico", p["correo"], fmt="General")
     item("Número celular", p["celular"], fmt="General")
+    if p.get("tc_usd"):
+        fecha_tc = f" ({p['tc_fecha']})" if p.get("tc_fecha") else ""
+        item("Tipo de cambio aplicado",
+             f"US$ 1 = ₡{p['tc_usd']:,.2f}{fecha_tc}", fmt="General")
 
     c = clasificacion_general(t)
     if c:

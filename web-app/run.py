@@ -4,7 +4,7 @@ import sys
 
 from dotenv import find_dotenv, load_dotenv
 from flask import (Flask, redirect, render_template, request,
-                   send_from_directory, url_for)
+                   send_from_directory, session, url_for)
 
 load_dotenv(find_dotenv())
 
@@ -60,6 +60,46 @@ def diagnostico():
         os.path.join(os.path.dirname(os.path.abspath(__file__)), 'diagnostico'),
         'diagnostico-financiero.html',
     )
+
+
+# Estrategias de Inversión (calculadora Streamlit): acceso exclusivo del asesor.
+# La app va proxied por nginx directo a :8501 sin pasar por Flask, así que nginx
+# valida cada request con auth_request → GET /calculadora-auth (204/401) y ante
+# 401 redirige a /calculadora-acceso. Se usa la MISMA contraseña y flag de
+# sesión que el Panel de Administración (admin_authenticated): un solo login
+# del asesor habilita ambos.
+
+@app.route('/calculadora-auth')
+def calculadora_auth():
+    if session.get("admin_authenticated"):
+        return "", 204
+    return "", 401
+
+
+@app.route('/calculadora-acceso', methods=['GET', 'POST'])
+def calculadora_acceso():
+    from utils import rate_limit_ok
+
+    if session.get("admin_authenticated"):
+        return redirect('/calculadora/')
+
+    error = None
+    if request.method == 'POST':
+        ip = (request.headers.get('X-Forwarded-For', request.remote_addr or '?')
+              .split(',')[0].strip())
+        if not rate_limit_ok("calculadora-acceso", ip, max_hits=10):
+            error = "Demasiados intentos. Espere una hora e intente de nuevo."
+        else:
+            expected = os.environ.get("ADMIN_PASSWORD", "")
+            if not expected:
+                error = "ADMIN_PASSWORD no está configurado en el servidor."
+            elif request.form.get("password", "") == expected:
+                session["admin_authenticated"] = True
+                return redirect('/calculadora/')
+            else:
+                error = "Contraseña incorrecta."
+
+    return render_template('auth/calculadora_acceso.html', error=error)
 
 
 # Tipo de cambio USD→CRC para el formulario del diagnóstico (inputs en dólares).

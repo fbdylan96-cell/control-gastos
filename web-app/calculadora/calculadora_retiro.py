@@ -119,7 +119,10 @@ btv2.episodios_para_grafico = st.cache_data(**_CACHE_KW)(btv2.episodios_para_gra
 # IDENTIDAD DE MARCA — Empowered Investor
 # ----------------------------------------------------------
 ASSETS_DIR = _CORE_DIR / "assets"
-LOGO_PATH = ASSETS_DIR / "logo.png"
+# Marca de ondas transparente (headers); el emblema circular queda solo como
+# favicon de pestaña porque es cuadrado.
+LOGO_PATH = ASSETS_DIR / "Logo_EmpoweredInvestor_transparente.png"
+FAVICON_PATH = ASSETS_DIR / "logo.png"
 
 BRAND_BG = "#14161c"
 BRAND_BG_SOFT = "#1c1f27"
@@ -132,7 +135,7 @@ PLOTLY_GRIDCOLOR = "rgba(245,241,232,0.10)"
 
 st.set_page_config(
     page_title="Retiro Empoderado",
-    page_icon=str(LOGO_PATH) if LOGO_PATH.exists() else "💰",
+    page_icon=str(FAVICON_PATH) if FAVICON_PATH.exists() else "💰",
     layout="wide",
 )
 if LOGO_PATH.exists():

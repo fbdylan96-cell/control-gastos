@@ -91,9 +91,9 @@ AMBAR = "#e0a020"
 AZUL = "#4c7ef3"
 TENUE = "#8a94a6"
 
-# Logo: compartido en calculadora-core. Capturas CCSS: propias del wizard
-# (assets/ local; si no existen, la guía se muestra solo con texto).
-_LOGO = _CORE_DIR / "assets" / "logo.png"
+# Logo: marca de ondas transparente compartida en calculadora-core. Capturas
+# CCSS: propias del wizard (assets/ local; si no existen, la guía es solo texto).
+_LOGO = _CORE_DIR / "assets" / "Logo_EmpoweredInvestor_transparente.png"
 _CCSS_IMG = Path(__file__).resolve().parent / "assets" / "ccss_proyeccion_pension.png"
 _CCSS_HOME = Path(__file__).resolve().parent / "assets" / "ccss_oficina_virtual_home.png"
 CCSS_URL = "https://aissfa.ccss.sa.cr/afiliacion/index.xhtml?faces-redirect=true?faces-redirect=true"
@@ -446,7 +446,7 @@ def grafico_crecimiento(r: dict):
 # ===========================================================================
 if ss.paso == 0:
     if _LOGO.exists():
-        st.image(str(_LOGO), width=180)   # centrado por CSS ([data-testid="stImage"] img {margin:0 auto})
+        st.image(str(_LOGO), width=240)   # centrado por CSS; marca ancha (~2.6:1), 240px ≈ 91px de alto
     st.markdown('<div class="wz-hero">¿Vas a poder retirarte con lo que querés? 🎯</div>', unsafe_allow_html=True)
     st.markdown('<div class="wz-sub">La mayoría no tiene ni idea de cuánto le va a dar la pensión. En 2 minutos te decimos '
                 'tu número — y cuánto te falta (o te sobra) para vivir el retiro que querés. Gratis y sin registrarte.<br>'

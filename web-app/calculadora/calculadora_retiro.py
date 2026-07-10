@@ -21,8 +21,15 @@ Se ejecuta con:
     streamlit run calculadora_retiro.py
 """
 import base64
+import sys
 from datetime import date, timedelta
 from pathlib import Path
+
+# Los motores (src/) y assets de marca viven en calculadora-core/, compartidos
+# con el wizard público "Tu brecha de retiro" (calculadora-financiera/).
+_CORE_DIR = Path(__file__).resolve().parent.parent / "calculadora-core"
+if str(_CORE_DIR) not in sys.path:
+    sys.path.insert(0, str(_CORE_DIR))
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -111,7 +118,7 @@ btv2.episodios_para_grafico = st.cache_data(**_CACHE_KW)(btv2.episodios_para_gra
 # ----------------------------------------------------------
 # IDENTIDAD DE MARCA — Empowered Investor
 # ----------------------------------------------------------
-ASSETS_DIR = Path(__file__).parent / "assets"
+ASSETS_DIR = _CORE_DIR / "assets"
 LOGO_PATH = ASSETS_DIR / "logo.png"
 
 BRAND_BG = "#14161c"

@@ -40,8 +40,18 @@ class BacParser:
             return self._parse_sinpe(t)
 
         # BAC Notificación de Transferencia
-        if re.search(r"notificaci[oó]n\s+de\s+transferencia", subj, re.IGNORECASE):
-            return self._parse_transfer_notification(t)
+        # ".{1,2}" tolerates the accented "ó" arriving as NFC (1 char), NFD
+        # (o + combining accent, 2 chars) or mojibake "oì" from forwards (2 chars).
+        if re.search(r"notificaci.{1,2}n\s+de\s+transferencia", subj, re.IGNORECASE):
+            return self._parse_transfer_notification(t, subj)
+
+        # BAC Transferencia entre cuentas: "Ha hecho una transferencia por CRC X"
+        if re.search(
+            r"ha\s+hecho\s+una\s+transferencia"
+            r"|se\s+ha\s+realizado\s+una\s+transferencia\s+de\s+su\s+cuenta",
+            t, re.IGNORECASE,
+        ):
+            return self._parse_transfer_simple(t)
 
         # Generic: any "Comercio:" line (e.g. insurance, other payments)
         if re.search(r"Comercio:", t, re.IGNORECASE):
@@ -85,7 +95,7 @@ class BacParser:
             "desc_guess": f"SINPE Móvil: {merchant}" if payee else "SINPE Móvil BAC",
         }
 
-    def _parse_transfer_notification(self, t):
+    def _parse_transfer_notification(self, t, subj=""):
         currency, amount = parse_amount_currency(t)
         m = re.search(
             r"por\s+concepto\s+de:\s*(.+?)(?=\s*(el\s+n[uú]mero\s+de\s+referencia"
@@ -97,13 +107,30 @@ class BacParser:
             concept = re.sub(r"\s+", " ", concept).strip()
         else:
             concept = None
-        merchant = "Transferencia BAC"
+        # Forwarded subjects carry the counterparty:
+        # "RV: Notificación de transferencia de: LUIS ADOLFO GARRO CARVAJAL"
+        m = re.search(r"transferencia\s+de:\s*(.+)$", subj or "", re.IGNORECASE)
+        sender = smart_title_case(m.group(1).strip()) if m else None
+        merchant = sender or "Transferencia BAC"
         desc = f"Transferencia BAC: {concept}" if concept else "Transferencia BAC"
         return {
             "merchant_guess": merchant,
             "amount_guess": amount,
             "currency_guess": currency or "CRC",
             "desc_guess": desc,
+        }
+
+    def _parse_transfer_simple(self, t):
+        """Account-to-account transfer: 'Ha hecho una transferencia por CRC X…'.
+
+        This format carries no concept/description, only amount and account data.
+        """
+        currency, amount = parse_amount_currency(t)
+        return {
+            "merchant_guess": "Transferencia BAC",
+            "amount_guess": amount,
+            "currency_guess": currency or "CRC",
+            "desc_guess": "Transferencia BAC",
         }
 
     def _parse_generic_comercio(self, t):

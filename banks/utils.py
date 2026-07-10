@@ -29,7 +29,9 @@ def normalize_number(s):
             # 1.234,56 → European format
             x = x.replace(".", "").replace(",", ".")
     elif has_comma and not has_dot:
-        if re.search(r",(\d{2})$", x):
+        # 1-2 trailing digits after the comma → decimal comma ("164,5" / "152,63");
+        # 3 digits → thousands separator ("41,000")
+        if re.search(r",(\d{1,2})$", x):
             x = x.replace(",", ".")
         else:
             x = x.replace(",", "")
@@ -50,17 +52,17 @@ def parse_amount_currency(text):
     """
     t = normalize_whitespace(str(text or ""))
 
-    # "por USD 20.00" / "por CRC 9,900.00"
+    # "por USD 20.00" / "por CRC 9,900.00" / "por CRC 110,510.4" (1-2 decimals)
     m = re.search(
-        r"\bpor\s+(CRC|USD|EUR)\s*([\d]{1,3}(?:[.,][\d]{3})*(?:[.,][\d]{2})?)\b",
+        r"\bpor\s+(CRC|USD|EUR)\s*([\d]{1,3}(?:[.,][\d]{3})*(?:[.,][\d]{1,2})?)\b",
         t, re.IGNORECASE,
     )
     if m:
         return m.group(1).upper(), normalize_number(m.group(2))
 
-    # "por un monto de 41.000,00 CRC"
+    # "por un monto de 41.000,00 CRC" / "por un monto de 169.5 USD"
     m = re.search(
-        r"por\s+un\s+monto\s+de\s*[:\-]?\s*([\d]{1,3}(?:[.,][\d]{3})*(?:[.,][\d]{2})?)\s*(CRC|USD|EUR)\b",
+        r"por\s+un\s+monto\s+de\s*[:\-]?\s*([\d]{1,3}(?:[.,][\d]{3})*(?:[.,][\d]{1,2})?)\s*(CRC|USD|EUR)\b",
         t, re.IGNORECASE,
     )
     if m:
@@ -73,19 +75,19 @@ def parse_amount_currency(text):
 
     # "CRC: 10,202.50" / "USD 99.00"
     m = re.search(
-        r"\b(CRC|USD|EUR)\b\s*[:\-]?\s*([\d]{1,3}(?:[.,][\d]{3})*(?:[.,][\d]{2})?)\b",
+        r"\b(CRC|USD|EUR)\b\s*[:\-]?\s*([\d]{1,3}(?:[.,][\d]{3})*(?:[.,][\d]{1,2})?)\b",
         t, re.IGNORECASE,
     )
     if m:
         return m.group(1).upper(), normalize_number(m.group(2))
 
     # ₡
-    m = re.search(r"₡\s*([\d]{1,3}(?:[.,][\d]{3})*(?:[.,][\d]{2})?)", t)
+    m = re.search(r"₡\s*([\d]{1,3}(?:[.,][\d]{3})*(?:[.,][\d]{1,2})?)", t)
     if m:
         return "CRC", normalize_number(m.group(1))
 
     # $
-    m = re.search(r"\$\s*([\d]{1,3}(?:[.,][\d]{3})*(?:[.,][\d]{2})?)", t)
+    m = re.search(r"\$\s*([\d]{1,3}(?:[.,][\d]{3})*(?:[.,][\d]{1,2})?)", t)
     if m:
         return "USD", normalize_number(m.group(1))
 

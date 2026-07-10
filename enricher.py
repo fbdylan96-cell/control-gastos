@@ -16,6 +16,7 @@ from banks.bac import BacParser
 from banks.bcr import BcrParser
 from banks.davibank import DavibankParser
 from banks.grupomutual import GrupoMutualParser
+from banks.mucap import MucapParser
 from banks.promerica import PromericaParser
 from banks.utils import clean_merchant_key
 
@@ -31,6 +32,7 @@ _BANK_PARSERS = [
     DavibankParser(),
     PromericaParser(),
     GrupoMutualParser(),
+    MucapParser(),
 ]
 
 # Keywords used to detect which bank sent the email.
@@ -41,6 +43,7 @@ _BANK_KEYWORDS = {
     "promerica": [r"prom[eé]rica"],
     "davibank": [r"davibank", r"davivienda"],
     "grupomutual": [r"grupo\s*mutual", r"grupomutual"],
+    "mucap": [r"\bmucap\b"],
 }
 
 # ---------------------------------------------------------------------------
@@ -67,8 +70,14 @@ def detect_transaction_type(subject: str, body_condensed: str) -> str:
     text = f"{subject or ''} {body_condensed or ''}".lower()
 
     debit_patterns = [r"\bcompra\b", r"\bgasto\b", r"\bd[eé]bito\b", r"\bdebitado\b", r"\bdebit[oó]\b", r"\btarjeta BCR\b",
-                      r"(?:enviad[oa]|envi[oó])\s+(?:una\s+)?transferencia"]
-    credit_patterns = [r"\bcr[eé]dito\b", r"\brecibido\b"]
+                      r"(?:enviad[oa]|envi[oó])\s+(?:una\s+)?transferencia",
+                      # MUCAP: recibo de servicio pagado
+                      r"ha\s+sido\s+cancelado\s+exitosamente",
+                      # MUCAP: "Envío de transferencia SINPE Móvil" (subject)
+                      r"env[ií]o\s+de\s+(?:una\s+)?transferencia"]
+    credit_patterns = [r"\bcr[eé]dito\b", r"\brecibido\b",
+                       # MUCAP: transferencia SINPE entrante (los débitos se evalúan primero)
+                       r"se\s+acredit[oó]\s+a\s+su\s+cuenta"]
 
     for pat in debit_patterns:
         if re.search(pat, text, re.IGNORECASE):

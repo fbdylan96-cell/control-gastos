@@ -76,6 +76,10 @@ BANK_NOTIFICATION_SENDERS = [
             "MutualEnLinea@grupomutual.fi.cr",
         ],
     },
+    {
+        "bank": "MUCAP",
+        "emails": ["info@mucap.fi.cr"],
+    },
 ]
 
 

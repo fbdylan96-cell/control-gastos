@@ -2,7 +2,7 @@
 
 ## Descripción
 
-Plataforma multi-tenant de seguimiento de gastos que procesa notificaciones bancarias recibidas por correo electrónico. El sistema lee correos de Gmail, extrae la información de cada transacción, la almacena en PostgreSQL, la enriquece con parsers por banco (BAC, BCR, Promérica, DAVIbank) o con IA como respaldo, la clasifica en categorías, y notifica al cliente por correo y/o WhatsApp para que confirme o reclasifique. Incluye además un chat de consulta por WhatsApp con un agente de IA (Claude) que responde preguntas en lenguaje natural sobre los gastos del cliente, aplicaciones web para personas, empresas y administración, y un módulo opcional de portafolio de inversión (Alpaca, solo lectura).
+Plataforma multi-tenant de seguimiento de gastos que procesa notificaciones bancarias recibidas por correo electrónico. El sistema lee correos de Gmail, extrae la información de cada transacción, la almacena en PostgreSQL, la enriquece con parsers por banco (BAC, BCR, Promérica, DAVIbank, Grupo Mutual, MUCAP) o con IA como respaldo, la clasifica en categorías, y notifica al cliente por correo y/o WhatsApp para que confirme o reclasifique. Incluye además un chat de consulta por WhatsApp con un agente de IA (Claude) que responde preguntas en lenguaje natural sobre los gastos del cliente, aplicaciones web para personas, empresas y administración, y un módulo opcional de portafolio de inversión (Alpaca, solo lectura).
 
 ## Pipeline de procesamiento
 
@@ -31,7 +31,7 @@ Gmail (label: 'Finanzas Personales')
 | `gmail_client.py` | Cliente Gmail API (OAuth 2.0): lectura de correos y envío de notificaciones |
 | `parser.py` | Extracción del cuerpo del correo (HTML → texto) |
 | `enricher.py` | Detección de banco, extracción de campos, FX a colones, detección de duplicados |
-| `banks/` | Parsers por banco: `bac.py`, `bcr.py`, `davibank.py`, `promerica.py` + utilidades de normalización de comercios |
+| `banks/` | Parsers por banco: `bac.py`, `bcr.py`, `davibank.py`, `grupomutual.py`, `mucap.py`, `promerica.py` + utilidades de normalización de comercios |
 | `classifier.py` | Motor de clasificación: reglas en BD + OpenAI con catálogo global de pistas comercio→categoría |
 | `notifier.py` | Notificaciones por email con enlaces de reclasificación firmados (HMAC-SHA256) |
 | `whatsapp_client.py` | Wrapper de Meta WhatsApp Cloud API: plantillas, mensajes de lista, texto libre, verificación de firma de webhooks |

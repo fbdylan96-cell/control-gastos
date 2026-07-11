@@ -26,7 +26,7 @@ from datetime import date
 from pathlib import Path
 
 # Los motores (src/) y assets de marca viven en calculadora-core/, compartidos
-# con la calculadora del asesor (calculadora/calculadora_retiro.py).
+# con la calculadora del asesor (calculadora-estrategia/calculadora_retiro.py).
 _CORE_DIR = Path(__file__).resolve().parent.parent / "calculadora-core"
 if str(_CORE_DIR) not in sys.path:
     sys.path.insert(0, str(_CORE_DIR))

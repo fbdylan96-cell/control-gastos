@@ -4,7 +4,7 @@ Motores de cálculo y assets de marca **compartidos** por las apps Streamlit de 
 
 | Consumidor | App | Acceso |
 |---|---|---|
-| `calculadora/calculadora_retiro.py` | Estrategias de Inversión (`/calculadora/`) | Exclusivo del asesor (contraseña admin vía nginx `auth_request`) |
+| `calculadora-estrategia/calculadora_retiro.py` | Estrategias de Inversión (`/calculadora/`) | Exclusivo del asesor (contraseña admin vía nginx `auth_request`) |
 | `calculadora-financiera/retiro_wizard.py` | Tu brecha de retiro (`/brecha/`) | Público (lead magnet) |
 
 ## Contenido

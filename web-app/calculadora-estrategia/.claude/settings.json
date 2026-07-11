@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(streamlit run *)",
+      "Bash(echo \"started with pid $!\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8501 --max-time 5)",
+      "Bash(python -c ' *)"
+    ]
+  }
+}

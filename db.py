@@ -1,4 +1,5 @@
 import os
+from datetime import date
 
 import psycopg2
 from dotenv import load_dotenv
@@ -258,40 +259,45 @@ def get_fx_conversion(conn, currency_guess):
     """Return (fx_rate, fx_rate_date) for converting amount_guess in `currency_guess` to CRC.
 
     fx_rate is the composite rate such that amount_local = amount_guess * fx_rate.
-    Uses the latest available rate_date in core.exchange_rates.
+    CRC is an identity conversion and never touches the table. For other currencies
+    uses the most recent rate_date where BOTH the CRC and the target rates are
+    non-NULL — a rate set can arrive incomplete (BCCR outage 2026-07-09 dejó 43/44
+    monedas en NULL y rompió todas las conversiones durante 24 h).
     NOTE: this assumes emails arrive in near-real-time. If backfilling old emails ever
     becomes a use case, switch to "latest rate on or before transactions_raw.local_date".
 
     Returns (None, None) when conversion is impossible:
       - currency_guess is falsy
-      - core.exchange_rates is empty
-      - CRC or currency_guess rate is NULL on the latest rate_date
-      - currency_guess is not present in the table
+      - no rate_date has both CRC and currency_guess non-NULL
     """
     if not currency_guess:
         return None, None
 
     cg = currency_guess.upper()
+    if cg == "CRC":
+        return 1.0, date.today()
+
     with conn.cursor() as cur:
         cur.execute(
             """
-            WITH latest AS (
-                SELECT MAX(rate_date) AS d FROM core.exchange_rates
-            )
-            SELECT crc.rate_vs_usd, fx.rate_vs_usd, latest.d
-            FROM latest
-            LEFT JOIN core.exchange_rates crc
-              ON crc.rate_date = latest.d AND crc.currency = 'CRC'
-            LEFT JOIN core.exchange_rates fx
-              ON fx.rate_date  = latest.d AND fx.currency  = %s
+            SELECT crc.rate_vs_usd, fx.rate_vs_usd, crc.rate_date
+            FROM core.exchange_rates crc
+            JOIN core.exchange_rates fx
+              ON fx.rate_date = crc.rate_date
+             AND fx.currency = %s
+             AND fx.rate_vs_usd IS NOT NULL
+            WHERE crc.currency = 'CRC'
+              AND crc.rate_vs_usd IS NOT NULL
+            ORDER BY crc.rate_date DESC
+            LIMIT 1
             """,
             (cg,),
         )
         row = cur.fetchone()
-        if not row or row[2] is None:
+        if not row:
             return None, None
         crc_rate, fx_rate_src, rate_date = row
-        if crc_rate is None or fx_rate_src is None or float(fx_rate_src) == 0:
+        if float(fx_rate_src) == 0:
             return None, None
         return float(crc_rate) / float(fx_rate_src), rate_date
 

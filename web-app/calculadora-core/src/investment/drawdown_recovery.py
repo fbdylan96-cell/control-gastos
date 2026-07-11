@@ -208,6 +208,9 @@ def backtest_buy_the_dip(
     aporte_inicial: float,
     aporte_periodico: float,
     frecuencia: str,
+    esperar_profit: bool = True,
+    ganancia_objetivo_pct: float | None = None,
+    filtro_riesgo: pd.Series | None = None,
 ) -> BacktestDipResultado:
     """
     Simula la estrategia realista: los aportes (misma periodicidad y monto del
@@ -222,13 +225,23 @@ def backtest_buy_the_dip(
     si está en pérdida — nunca se queda parqueado mientras ya hay una posición
     abierta.
 
-    La venta ya NO es automática a los `horizonte_dias_habiles`: ese horizonte
-    es el plazo MÍNIMO de esperar, pero solo se vende de verdad la primera vez,
-    en o después de ese plazo, en que la posición esté en GANANCIA (valor de
-    mercado > lo invertido). Si al llegar al horizonte todavía está en
-    pérdida, se sigue esperando (y los aportes que sigan llegando continúan
-    promediando el precio a la baja) hasta que la posición sea rentable — o
-    hasta el final de los datos, lo que ocurra primero.
+    La venta depende de `esperar_profit`:
+      • `True` (por defecto): `horizonte_dias_habiles` es el plazo MÍNIMO; solo
+        se vende la primera vez, en o después de ese plazo, en que la posición
+        esté en GANANCIA (valor de mercado > lo invertido). Si al llegar al
+        horizonte todavía está en pérdida, se sigue esperando (y los aportes que
+        sigan llegando promedian el precio a la baja) hasta que sea rentable — o
+        hasta el final de los datos.
+      • `False`: se vende EXACTAMENTE al llegar al horizonte, esté en ganancia o
+        en pérdida (el horizonte es un plazo fijo, no un mínimo).
+
+    Si `ganancia_objetivo_pct` se pasa (no None), se IGNORA el horizonte/esperar_profit
+    y la posición se vende el primer día en que su ganancia alcanza ese porcentaje.
+
+    Si `filtro_riesgo` se pasa (serie booleana, se alinea por ffill al índice de precios),
+    actúa como filtro de RÉGIMEN: los días marcados como False (p.ej. momentum absoluto
+    negativo) bloquean nuevas compras y fuerzan la salida a efectivo de cualquier posición
+    abierta. Los días True dejan operar normalmente.
     """
     idx = precio_objetivo.index
     n = len(idx)
@@ -244,6 +257,12 @@ def backtest_buy_the_dip(
 
     set_posiciones_senal = {pos for f in fechas_disparo if (pos := int(idx.searchsorted(f))) < n}
     valores = precio_objetivo.to_numpy(dtype=float)
+
+    # Filtro de régimen (booleano) alineado por ffill; NaN inicial (sin historia) = True.
+    if filtro_riesgo is not None and not filtro_riesgo.empty:
+        _filtro_arr = (filtro_riesgo.astype(float).reindex(idx, method="ffill").fillna(1.0).to_numpy() > 0.5)
+    else:
+        _filtro_arr = None
 
     operaciones: list[OperacionDip] = []
     en_posicion = False
@@ -280,7 +299,23 @@ def backtest_buy_the_dip(
             else:
                 cash_parqueado += monto_aporte
 
-        if not en_posicion and i in set_posiciones_senal and cash_parqueado > 0:
+        regimen_ok = True if _filtro_arr is None else bool(_filtro_arr[i])
+
+        # Filtro de régimen OFF: se fuerza la salida a efectivo de la posición abierta.
+        if not regimen_ok and en_posicion:
+            valor_salida = shares_posicion * precio
+            cash_parqueado += valor_salida
+            operaciones.append(
+                OperacionDip(
+                    idx[i_entrada], fecha, precio_entrada, precio,
+                    monto_invertido_posicion, valor_salida, False,
+                )
+            )
+            en_posicion = False
+            shares_posicion = 0.0
+            monto_invertido_posicion = 0.0
+
+        if regimen_ok and not en_posicion and i in set_posiciones_senal and cash_parqueado > 0:
             en_posicion = True
             i_entrada = i
             precio_entrada = precio
@@ -290,9 +325,19 @@ def backtest_buy_the_dip(
             i_salida_objetivo = i + horizonte_dias_habiles
             fechas_compra.append(fecha)
 
-        if en_posicion and i_salida_objetivo is not None and i >= i_salida_objetivo:
+        if en_posicion:
             valor_actual_posicion = shares_posicion * precio
-            if valor_actual_posicion > monto_invertido_posicion:
+            vender = False
+            if ganancia_objetivo_pct is not None:
+                # Modo por ganancia: vende el primer día que la posición alcanza el % objetivo,
+                # sin importar el horizonte de tiempo.
+                objetivo = monto_invertido_posicion * (1.0 + ganancia_objetivo_pct / 100.0)
+                vender = valor_actual_posicion >= objetivo
+            elif i_salida_objetivo is not None and i >= i_salida_objetivo:
+                # Modo por tiempo: con esperar_profit vende solo si está en ganancia; sin él,
+                # vende exactamente al llegar al horizonte esté como esté.
+                vender = (not esperar_profit) or valor_actual_posicion > monto_invertido_posicion
+            if vender:
                 cash_parqueado += valor_actual_posicion
                 operaciones.append(
                     OperacionDip(
@@ -303,7 +348,7 @@ def backtest_buy_the_dip(
                 en_posicion = False
                 shares_posicion = 0.0
                 monto_invertido_posicion = 0.0
-            # si todavía está en pérdida, no se vende — se sigue esperando y promediando
+            # (todavía sin cumplir la condición de venta) → se sigue esperando y promediando
 
         if en_posicion:
             valor_hoy = cash_parqueado + shares_posicion * precio
@@ -566,3 +611,360 @@ def sweep_filtro_vix(
             progreso_callback(i + 1, total)
 
     return pd.DataFrame(filas)
+
+
+# ---------------------------------------------------------------------------
+# Señal de VIX (umbral único + dirección + frecuencia de chequeo)
+# ---------------------------------------------------------------------------
+
+FRECUENCIAS_CHEQUEO_VIX: dict[str, str | None] = {"Diario": None, "Semanal": "W", "Mensual": "ME"}
+
+
+def fechas_disparo_vix(
+    vix: pd.Series, umbral: float, direccion: str = "arriba", frecuencia: str = "Diario"
+) -> pd.DatetimeIndex:
+    """
+    Fechas en que el VIX CRUZA `umbral` en la dirección indicada, chequeando a la
+    cadencia elegida (para no disparar por ruido intradía/diario):
+      • direccion="arriba": el VIX pasa de estar por debajo a estar en/por encima
+        del umbral (pico de miedo → señal de compra contrarian).
+      • direccion="abajo": el VIX pasa de estar por encima a estar en/por debajo
+        del umbral (el mercado se calma).
+    `frecuencia`: "Diario" (sin remuestreo), "Semanal" (viernes) o "Mensual" (fin de
+    mes) — se toma el último valor del VIX de cada periodo antes de evaluar el cruce.
+    Igual que `fechas_disparo_caida`, cada cruce cuenta como un solo evento.
+    """
+    if vix.empty:
+        return pd.DatetimeIndex([])
+    s = vix.dropna().sort_index()
+    freq = FRECUENCIAS_CHEQUEO_VIX.get(frecuencia)
+    if freq is not None:
+        s = s.resample(freq).last().dropna()
+    if len(s) == 0:
+        return pd.DatetimeIndex([])
+    prev = s.shift(1)
+    if direccion == "abajo":
+        cruza = (s <= umbral) & (prev > umbral)
+    else:
+        cruza = (s >= umbral) & (prev < umbral)
+    return pd.DatetimeIndex(s.index[cruza.fillna(False)])
+
+
+def backtest_vix_umbral_unico(
+    precio_objetivo: pd.Series,
+    vix: pd.Series,
+    umbral: float,
+    direccion_compra: str,
+    frecuencia: str,
+    aporte_inicial: float,
+    aporte_periodico: float,
+    frecuencia_aporte: str,
+    filtro_riesgo: pd.Series | None = None,
+) -> BacktestDipResultado:
+    """
+    Estrategia de VIX con UN SOLO umbral que sirve de entrada Y de salida (el mismo
+    número), sin horizonte de tiempo:
+      • direccion_compra="abajo": compra cuando el VIX está por DEBAJO del umbral y
+        vende cuando vuelve a subir por ENCIMA.
+      • direccion_compra="arriba": compra cuando el VIX está por ENCIMA del umbral y
+        vende cuando cae por DEBAJO.
+    El VIX se evalúa a la cadencia `frecuencia` (Diario/Semanal/Mensual): se remuestrea
+    y se propaga (ffill) al índice diario de precios. Los aportes se manejan igual que en
+    `backtest_filtro_vix` (parqueo fuera del mercado, promedian dentro).
+    """
+    idx = precio_objetivo.index
+    n = len(idx)
+    if n == 0:
+        return BacktestDipResultado()
+
+    s = vix.dropna().sort_index()
+    freq = FRECUENCIAS_CHEQUEO_VIX.get(frecuencia)
+    if freq is not None:
+        s = s.resample(freq).last().dropna()
+    vix_check = s.reindex(idx, method="ffill").to_numpy(dtype=float)
+
+    if filtro_riesgo is not None and not filtro_riesgo.empty:
+        _filtro_arr = (filtro_riesgo.astype(float).reindex(idx, method="ffill").fillna(1.0).to_numpy() > 0.5)
+    else:
+        _filtro_arr = None
+
+    abajo = direccion_compra == "abajo"
+
+    def _comprar(v: float) -> bool:
+        return (not pd.isna(v)) and (v <= umbral if abajo else v >= umbral)
+
+    def _vender(v: float) -> bool:
+        return (not pd.isna(v)) and (v > umbral if abajo else v < umbral)
+
+    eventos_aporte = fechas_aportes_periodicos(precio_objetivo, aporte_inicial, aporte_periodico, frecuencia_aporte)
+    aportes_por_posicion: dict[int, float] = {}
+    for fecha, monto in eventos_aporte:
+        pos = int(idx.searchsorted(fecha))
+        if pos < n:
+            aportes_por_posicion[pos] = aportes_por_posicion.get(pos, 0.0) + monto
+
+    valores = precio_objetivo.to_numpy(dtype=float)
+
+    operaciones: list[OperacionDip] = []
+    en_posicion = False
+    i_entrada: int | None = None
+    precio_entrada: float | None = None
+    shares_posicion = 0.0
+    monto_invertido_posicion = 0.0
+
+    cash_parqueado = 0.0
+    total_aportado = 0.0
+    serie_valor_vals: list[float] = []
+    flujos_caja: list[tuple] = []
+    aportado_vals: list[float] = []
+    aportado_acumulado = 0.0
+    fechas_aportes: list = []
+    fechas_compra: list = []
+
+    for i in range(n):
+        fecha = idx[i]
+        precio = valores[i]
+        v_hoy = vix_check[i]
+
+        if i in aportes_por_posicion:
+            monto_aporte = aportes_por_posicion[i]
+            total_aportado += monto_aporte
+            aportado_acumulado += monto_aporte
+            flujos_caja.append((fecha.date(), -monto_aporte))
+            fechas_aportes.append(fecha)
+            if en_posicion:
+                if precio > 0:
+                    shares_posicion += monto_aporte / precio
+                monto_invertido_posicion += monto_aporte
+                fechas_compra.append(fecha)
+            else:
+                cash_parqueado += monto_aporte
+
+        regimen_ok = True if _filtro_arr is None else bool(_filtro_arr[i])
+        if not regimen_ok and en_posicion:  # filtro OFF → salir a efectivo
+            valor_salida = shares_posicion * precio
+            cash_parqueado += valor_salida
+            operaciones.append(
+                OperacionDip(
+                    idx[i_entrada], fecha, precio_entrada, precio,
+                    monto_invertido_posicion, valor_salida, False,
+                )
+            )
+            en_posicion = False
+            shares_posicion = 0.0
+            monto_invertido_posicion = 0.0
+
+        if regimen_ok and not en_posicion and _comprar(v_hoy) and cash_parqueado > 0:
+            en_posicion = True
+            i_entrada = i
+            precio_entrada = precio
+            monto_invertido_posicion = cash_parqueado
+            shares_posicion = cash_parqueado / precio if precio > 0 else 0.0
+            cash_parqueado = 0.0
+            fechas_compra.append(fecha)
+        elif en_posicion and _vender(v_hoy):
+            valor_al_salir = shares_posicion * precio
+            cash_parqueado += valor_al_salir
+            operaciones.append(
+                OperacionDip(
+                    idx[i_entrada], fecha, precio_entrada, precio,
+                    monto_invertido_posicion, valor_al_salir, False,
+                )
+            )
+            en_posicion = False
+            shares_posicion = 0.0
+            monto_invertido_posicion = 0.0
+
+        valor_hoy = cash_parqueado + (shares_posicion * precio if en_posicion else 0.0)
+        serie_valor_vals.append(valor_hoy)
+        aportado_vals.append(aportado_acumulado)
+
+    if en_posicion:
+        valor_al_salir = shares_posicion * valores[-1]
+        operaciones.append(
+            OperacionDip(
+                idx[i_entrada], idx[-1], precio_entrada, valores[-1],
+                monto_invertido_posicion, valor_al_salir, True,
+            )
+        )
+
+    valor_final = serie_valor_vals[-1] if serie_valor_vals else 0.0
+    flujos_caja_finales = list(flujos_caja)
+    if flujos_caja_finales:
+        flujos_caja_finales.append((idx[-1].date(), valor_final))
+    retorno_anualizado_pct = xirr(flujos_caja_finales) * 100.0 if len(flujos_caja_finales) >= 2 else 0.0
+
+    ganadoras = sum(1 for op in operaciones if op.retorno_pct > 0)
+    pct_ganadoras = (ganadoras / len(operaciones) * 100.0) if operaciones else 0.0
+
+    return BacktestDipResultado(
+        operaciones=operaciones,
+        serie_valor=pd.Series(serie_valor_vals, index=idx),
+        serie_aportado=pd.Series(aportado_vals, index=idx),
+        fechas_aportes=fechas_aportes,
+        fechas_compra=fechas_compra,
+        total_aportado=total_aportado,
+        valor_final=valor_final,
+        retorno_anualizado_pct=retorno_anualizado_pct,
+        n_operaciones=len(operaciones),
+        pct_operaciones_ganadoras=pct_ganadoras,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Buy the dip por TRAMOS: (umbral de caída → tiempo N a holdear), concurrentes
+# ---------------------------------------------------------------------------
+
+def _xirr_desde_aportado(serie_aportado: pd.Series, valor_final: float) -> float:
+    """XIRR (%) reconstruyendo los flujos desde los incrementos del aportado acumulado."""
+    if serie_aportado.empty:
+        return 0.0
+    incr = serie_aportado.diff()
+    if len(incr) > 0:
+        incr.iloc[0] = serie_aportado.iloc[0]  # el primer nivel es el primer aporte
+    flujos = [(f.date(), -float(v)) for f, v in incr.items() if v and v > 0]
+    if flujos:
+        flujos.append((serie_aportado.index[-1].date(), float(valor_final)))
+    return xirr(flujos) * 100.0 if len(flujos) >= 2 else 0.0
+
+
+def combinar_estrategias(componentes: list[tuple[pd.Series, pd.Series, float]]) -> BacktestDipResultado:
+    """
+    Combina varias estrategias en una sola cartera repartiendo capital por peso.
+    `componentes`: lista de (serie_valor, serie_aportado, peso). Como los motores
+    de este módulo son LINEALES en el monto aportado, invertir un `peso` (fracción)
+    del plan en una estrategia = multiplicar su serie de valor y de aportado por ese
+    peso. Se alinean todas al índice unión (ffill) y se suman; el XIRR se recomputa
+    sobre el flujo combinado. Componentes con peso ≤ 0 o serie vacía se ignoran.
+    """
+    activos = [(sv, sa, w) for sv, sa, w in componentes if w and w > 0 and sv is not None and not sv.empty]
+    if not activos:
+        return BacktestDipResultado()
+
+    idx = activos[0][0].index
+    for sv, _, _ in activos[1:]:
+        idx = idx.union(sv.index)
+
+    val = pd.Series(0.0, index=idx)
+    apo = pd.Series(0.0, index=idx)
+    for sv, sa, w in activos:
+        val = val.add(sv.reindex(idx).ffill().fillna(0.0) * w, fill_value=0.0)
+        sa_al = sa.reindex(idx).ffill().fillna(0.0) if sa is not None and not sa.empty else pd.Series(0.0, index=idx)
+        apo = apo.add(sa_al * w, fill_value=0.0)
+
+    valor_final = float(val.iloc[-1]) if len(val) else 0.0
+    total_aportado = float(apo.iloc[-1]) if len(apo) else 0.0
+    return BacktestDipResultado(
+        serie_valor=val,
+        serie_aportado=apo,
+        total_aportado=total_aportado,
+        valor_final=valor_final,
+        retorno_anualizado_pct=_xirr_desde_aportado(apo, valor_final),
+    )
+
+
+def backtest_buy_the_dip_tramos(
+    precio_objetivo: pd.Series,
+    precio_senal: pd.Series,
+    tramos: list[tuple[float, int]],
+    aporte_inicial: float,
+    aporte_periodico: float,
+    frecuencia: str,
+    esperar_profit: bool = True,
+    ganancia_objetivo_pct: float | None = None,
+    filtro_riesgo: pd.Series | None = None,
+) -> BacktestDipResultado:
+    """
+    Estrategia de buy-the-dip con VARIOS tramos concurrentes. `tramos` es una lista
+    de (umbral_pct, N_dias_habiles): cada tramo compra cuando la señal cae por debajo
+    de SU umbral y holdea SU tiempo N (con el mismo `esperar_profit`). El capital se
+    reparte por igual entre los tramos (cada uno recibe aporte/n), y cada tramo corre
+    como un buy-the-dip independiente — así conviven varias posiciones a la vez. El
+    resultado es la suma de todos los tramos.
+    """
+    tramos_validos = [(float(u), int(h)) for u, h in tramos if h and int(h) > 0]
+    if not tramos_validos or precio_objetivo.empty:
+        return BacktestDipResultado()
+
+    n_t = len(tramos_validos)
+    ai, ap = aporte_inicial / n_t, aporte_periodico / n_t
+    sub_resultados: list[BacktestDipResultado] = []
+    for umbral, horizonte in tramos_validos:
+        fechas = fechas_disparo_caida(precio_senal, umbral)
+        sub_resultados.append(
+            backtest_buy_the_dip(
+                precio_objetivo, fechas, horizonte, ai, ap, frecuencia,
+                esperar_profit, ganancia_objetivo_pct, filtro_riesgo,
+            )
+        )
+
+    combinado = combinar_estrategias(
+        [(r.serie_valor, r.serie_aportado, 1.0) for r in sub_resultados]
+    )
+    combinado.operaciones = [op for r in sub_resultados for op in r.operaciones]
+    combinado.n_operaciones = len(combinado.operaciones)
+    ganadoras = sum(1 for op in combinado.operaciones if op.retorno_pct > 0)
+    combinado.pct_operaciones_ganadoras = (
+        ganadoras / len(combinado.operaciones) * 100.0 if combinado.operaciones else 0.0
+    )
+    combinado.fechas_compra = sorted(f for r in sub_resultados for f in r.fechas_compra)
+    combinado.fechas_aportes = sorted(set(f for r in sub_resultados for f in r.fechas_aportes))
+    return combinado
+
+
+# ---------------------------------------------------------------------------
+# DCA sobre una serie de RETORNOS (para llevar Momentum/Faber al marco de aportes)
+# ---------------------------------------------------------------------------
+
+def dca_sobre_retornos(
+    retornos_mensuales: pd.Series,
+    aporte_inicial: float,
+    aporte_periodico: float,
+    frecuencia: str,
+) -> BacktestDipResultado:
+    """
+    Aplica el MISMO plan de aportes periódicos que el resto del tab, pero sobre una
+    serie de RETORNOS MENSUALES de una estrategia (p.ej. Momentum de ETFs o Faber),
+    que no está expresada como aportes sino como rendimiento de $1. Convención: cada
+    mes el capital ya invertido rinde el retorno del mes y DESPUÉS entra el aporte de
+    ese mes (contribución a fin de periodo). Devuelve un `BacktestDipResultado` con la
+    serie de valor, la de aportado acumulado y el XIRR, para poder combinarlo con las
+    demás estrategias en `combinar_estrategias`.
+    """
+    r = retornos_mensuales.dropna().sort_index()
+    if r.empty:
+        return BacktestDipResultado()
+
+    every_n = FREQ_TO_MONTHS.get(frecuencia, 1)
+    valor = 0.0
+    aportado = 0.0
+    serie_valor_vals: list[float] = []
+    serie_aportado_vals: list[float] = []
+    flujos: list[tuple] = []
+    for i, (fecha, ret) in enumerate(r.items()):
+        valor *= (1.0 + float(ret))
+        monto = 0.0
+        if i == 0 and aporte_inicial > 0:
+            monto += aporte_inicial
+        if i > 0 and aporte_periodico > 0 and (every_n <= 1 or i % every_n == 0):
+            monto += aporte_periodico
+        if monto > 0:
+            valor += monto
+            aportado += monto
+            flujos.append((fecha.date(), -monto))
+        serie_valor_vals.append(valor)
+        serie_aportado_vals.append(aportado)
+
+    valor_final = serie_valor_vals[-1] if serie_valor_vals else 0.0
+    flujos_finales = list(flujos)
+    if flujos_finales:
+        flujos_finales.append((r.index[-1].date(), valor_final))
+    retorno_anualizado_pct = xirr(flujos_finales) * 100.0 if len(flujos_finales) >= 2 else 0.0
+
+    return BacktestDipResultado(
+        serie_valor=pd.Series(serie_valor_vals, index=r.index),
+        serie_aportado=pd.Series(serie_aportado_vals, index=r.index),
+        total_aportado=aportado,
+        valor_final=valor_final,
+        retorno_anualizado_pct=retorno_anualizado_pct,
+    )

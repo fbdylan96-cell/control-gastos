@@ -3243,7 +3243,7 @@ de **desempleo (FRED)** para los módulos macro, ni de **VIX3M** para la estruct
     _lb_map = {"12 meses": (12, False), "6 meses": (6, False), "12-1 (excluye el último mes)": (12, True)}
     _lb, _excl = _lb_map[lookback_lbl]
     try:
-        res_dm = btv2.backtest_dual_momentum(_lb, excluir_ultimo=_excl)
+        res_dm = btv2.backtest_dual_momentum(lookback=_lb, excluir_ultimo=_excl)
     except Exception as e:  # pragma: no cover
         res_dm = None
         st.error(f"No se pudo correr el dual momentum: {e}")
@@ -3323,7 +3323,7 @@ de **desempleo (FRED)** para los módulos macro, ni de **VIX3M** para la estruct
         return df.style.format(fmt, na_rep="—")
 
     st.markdown("**A) Nivel absoluto del VIX**")
-    st.dataframe(_fmt_tabla_vix(btv2.resumen_señal_a()), width="stretch", hide_index=True)
+    st.dataframe(_fmt_tabla_vix(btv2.resumen_señal_a(ticker="SPY")), width="stretch", hide_index=True)
     st.caption(
         "👀 Ojo al patrón: un VIX 'moderado' (25–30) no ha sido buena señal — muchas veces es el "
         "**inicio** del problema, no el fondo. El **miedo extremo (VIX ≥ 35–40)** es el que "
@@ -3331,9 +3331,9 @@ de **desempleo (FRED)** para los módulos macro, ni de **VIX3M** para la estruct
     )
 
     st.markdown("**B) Percentil rodante de 5 años**")
-    st.dataframe(_fmt_tabla_vix(btv2.resumen_señal_b()), width="stretch", hide_index=True)
+    st.dataframe(_fmt_tabla_vix(btv2.resumen_señal_b(ticker="SPY")), width="stretch", hide_index=True)
     with st.expander("Sensibilidad a la ventana del percentil (3 / 5 / 10 años, umbral ≥ 90)"):
-        st.dataframe(_fmt_tabla_vix(btv2.resumen_señal_b_ventanas(90)), width="stretch", hide_index=True)
+        st.dataframe(_fmt_tabla_vix(btv2.resumen_señal_b_ventanas(ticker="SPY", umbral=90)), width="stretch", hide_index=True)
         st.caption(
             "El resultado depende de la ventana (más corta = más señales, mejores números aquí). Esa "
             "dependencia es una señal de fragilidad: no hay un número mágico."
@@ -3344,7 +3344,7 @@ de **desempleo (FRED)** para los módulos macro, ni de **VIX3M** para la estruct
         "Cuando el VIX de corto plazo supera al de 3 meses (ratio > 1), el mercado teme **más el ahora "
         "que el futuro** — históricamente, capitulación. Solo disponible desde ~2009 (inicio del VIX3M)."
     )
-    st.dataframe(_fmt_tabla_vix(btv2.resumen_señal_c()), width="stretch", hide_index=True)
+    st.dataframe(_fmt_tabla_vix(btv2.resumen_señal_c(ticker="SPY")), width="stretch", hide_index=True)
 
     st.markdown("**🔗 ¿Son señales distintas o la misma contada tres veces?**")
     st.caption(
@@ -3352,7 +3352,7 @@ de **desempleo (FRED)** para los módulos macro, ni de **VIX3M** para la estruct
         "celda = probabilidad de que la señal de la **columna** esté activa dado que la de la **fila** lo "
         "está."
     )
-    mat_solap = btv2.matriz_solapamiento_vix()
+    mat_solap = btv2.matriz_solapamiento_vix(ticker="SPY")
     st.dataframe(mat_solap.style.format("{:.0f}%").background_gradient(cmap="Blues", vmin=0, vmax=100), width="stretch")
     st.caption(
         "La backwardation (C) suele ser la más **independiente**: se solapa poco con las otras, así que "
@@ -3360,8 +3360,8 @@ de **desempleo (FRED)** para los módulos macro, ni de **VIX3M** para la estruct
     )
 
     st.markdown("**🗓️ Episodios de cada señal sobre el SPY**")
-    epis = btv2.episodios_para_grafico()
-    spy_epis = epis["spy"]
+    epis = btv2.episodios_para_grafico(ticker="SPY")
+    spy_epis = epis["precio"]
     fig_vix = go.Figure()
     fig_vix.add_trace(go.Scatter(
         x=spy_epis.index, y=spy_epis.values, mode="lines", name="SPY",

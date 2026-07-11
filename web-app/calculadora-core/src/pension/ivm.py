@@ -48,11 +48,13 @@ TABLA_CUANTIA_BASICA = [
     (None, 43.0),
 ]
 
-# Valores de referencia 2026 citados en documentación oficial de la CCSS
-# (BMC IVM ₡324,590 → mínimo 50% ≈ ₡162,295; máximo sin postergación
-# ₡1,666,062). Verificar contra el acuerdo más reciente de la CCSS.
+# Valores de referencia 2026 (fuente: referencia_ivm_2026.md / acuerdos CCSS 2026):
+#   • Pensión mínima 2026:            ₡162,295
+#   • Pensión máxima sin postergación: ₡1,765,859  (actualizado 2026; antes ₡1,666,062)
+# El tope máximo se aplica SIEMPRE al final del cálculo (ver calcular_pension_ivm:
+# monto_mensual = max(mínimo, min(bruto, máximo))).
 MONTO_MINIMO_DEFAULT = 162_295.0
-MONTO_MAXIMO_DEFAULT = 1_666_062.0
+MONTO_MAXIMO_DEFAULT = 1_765_859.0
 
 
 @dataclass

@@ -121,8 +121,11 @@ def update_reclassification(conn, notification_id: str, category: str, subcatego
 def compute_amount_local(conn, amount, currency):
     """Convert `amount` in `currency` to CRC. Returns (amount_local, fx_rate, fx_rate_date).
 
-    CRC is identity (fx_rate=1). For USD/EUR uses the latest core.exchange_rates
-    cross-section (amount_local = amount * rate_vs_usd[CRC] / rate_vs_usd[currency]).
+    CRC is identity (fx_rate=1). For other currencies uses the most recent
+    rate_date where BOTH the CRC and the target rates are non-NULL — the same
+    robustness as the pipeline's get_fx_conversion: a rate set can arrive
+    incomplete (BCCR outages 2026-07-09 and 2026-07-20+ dejaron cross-sections
+    con solo USD, y mirar únicamente MAX(rate_date) rompía la conversión).
     Returns (None, None, None) when conversion isn't possible.
     """
     if amount is None or not currency:
@@ -133,19 +136,24 @@ def compute_amount_local(conn, amount, currency):
     with conn.cursor() as cur:
         cur.execute(
             """
-            WITH latest AS (SELECT MAX(rate_date) AS d FROM core.exchange_rates)
-            SELECT crc.rate_vs_usd, fx.rate_vs_usd, latest.d
-            FROM latest
-            LEFT JOIN core.exchange_rates crc ON crc.rate_date = latest.d AND crc.currency = 'CRC'
-            LEFT JOIN core.exchange_rates fx  ON fx.rate_date  = latest.d AND fx.currency  = %s
+            SELECT crc.rate_vs_usd, fx.rate_vs_usd, crc.rate_date
+            FROM core.exchange_rates crc
+            JOIN core.exchange_rates fx
+              ON fx.rate_date = crc.rate_date
+             AND fx.currency = %s
+             AND fx.rate_vs_usd IS NOT NULL
+            WHERE crc.currency = 'CRC'
+              AND crc.rate_vs_usd IS NOT NULL
+            ORDER BY crc.rate_date DESC
+            LIMIT 1
             """,
             (cg,),
         )
         row = cur.fetchone()
-    if not row or row[2] is None:
+    if not row:
         return None, None, None
     crc_rate, fx_src, rate_date = row
-    if crc_rate is None or fx_src is None or float(fx_src) == 0:
+    if float(fx_src) == 0:
         return None, None, None
     fx_rate = float(crc_rate) / float(fx_src)
     return round(float(amount) * fx_rate, 2), fx_rate, rate_date

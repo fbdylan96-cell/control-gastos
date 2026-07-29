@@ -22,7 +22,7 @@ from dotenv import find_dotenv, load_dotenv
 load_dotenv(find_dotenv())
 
 from db import get_connection
-from exchange_rate_update import get_latest_rates
+from exchange_rate_update import CRITICAL_CURRENCIES, get_latest_rates
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("rate_scheduler")
@@ -106,15 +106,23 @@ def run_rate_update():
         conn.close()
 
     if missing:
-        _send_alert_email(
-            f"⚠ Tipos de cambio: {len(missing)} monedas sin dato del BCCR ({today})",
-            "El BCCR no devolvió tasa para estas monedas hoy (NO se insertaron "
-            "como NULL; las conversiones usan la última fecha con datos válidos):\n\n"
-            f"{', '.join(missing)}\n\n"
-            f"Se insertaron correctamente {len(valid)} de {len(rates)} monedas.\n"
-            "Si CRC o USD están en la lista, revisar el BCCR y el job: "
-            "sudo journalctl -u rate-scheduler",
-        )
+        # Solo alertar por correo cuando falta una moneda CRÍTICA (CRC/EUR):
+        # el servicio legacy del BCCR está caído desde 2026-07-20 y las otras
+        # 41 monedas faltan TODOS los días — alertar por ellas es puro ruido.
+        # La lista completa de faltantes queda en el log de arriba.
+        critical_missing = sorted(c for c in missing if c in CRITICAL_CURRENCIES)
+        if critical_missing:
+            _send_alert_email(
+                f"⚠ Tipos de cambio: monedas CRÍTICAS sin dato ({today}): "
+                f"{', '.join(critical_missing)}",
+                "Ni el BCCR ni el fallback de Hacienda devolvieron tasa para "
+                "estas monedas críticas (NO se insertaron como NULL; las "
+                "conversiones usan la última fecha con datos válidos):\n\n"
+                f"Críticas faltantes: {', '.join(critical_missing)}\n"
+                f"Faltantes totales: {', '.join(missing)}\n\n"
+                f"Se insertaron correctamente {len(valid)} de {len(rates)} monedas.\n"
+                "Revisar: sudo journalctl -u rate-scheduler",
+            )
 
 
 def main():

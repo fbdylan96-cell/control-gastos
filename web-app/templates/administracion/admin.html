@@ -479,6 +479,10 @@
                     <input type="checkbox" id="iInvChk">
                     <label for="iInvChk">Cliente de inversión (Alpaca)</label>
                 </div>
+                <div class="check-row">
+                    <input type="checkbox" id="iAdvChk">
+                    <label for="iAdvChk">Cliente de asesoría (seguimiento Neto)</label>
+                </div>
             </div>
 
             <div class="action-bar">
@@ -769,6 +773,10 @@ function addMember() {
                 <input type="checkbox" id="m${idx}InvChk">
                 <label for="m${idx}InvChk">Cliente de inversión (Alpaca)</label>
             </div>
+            <div class="check-row">
+                <input type="checkbox" id="m${idx}AdvChk">
+                <label for="m${idx}AdvChk">Cliente de asesoría (seguimiento Neto)</label>
+            </div>
         </div>
 
         <div class="check-row" style="margin-top:4px; padding:10px 12px; background:#fff3cd; border-radius:6px; border:1px solid #ffc107;">
@@ -795,6 +803,7 @@ function submitIndividuo() {
     const emailChk  = document.getElementById('iEmailChk').checked;
     const waChk     = document.getElementById('iWaChk').checked;
     const invChk    = document.getElementById('iInvChk').checked;
+    const advChk    = document.getElementById('iAdvChk').checked;
     const phone     = document.getElementById('iPhone').value.trim();
 
     if (!nombre)    return toast('Por favor ingresa el Nombre.', 'error');
@@ -812,6 +821,7 @@ function submitIndividuo() {
         email_notification:    emailChk,
         whatsapp_notification: waChk,
         investment_client:     invChk,
+        advisory_client:       advChk,
         business_admin:        false,
     });
 
@@ -836,6 +846,7 @@ function submitEmpresa() {
         const waChk      = document.getElementById(`m${idx}WaChk`).checked;
         const adminChk   = document.getElementById(`m${idx}AdminChk`).checked;
         const invChk     = document.getElementById(`m${idx}InvChk`).checked;
+        const advChk     = document.getElementById(`m${idx}AdvChk`).checked;
         const email      = document.getElementById(`m${idx}Email`).value.trim();
         const phone      = document.getElementById(`m${idx}Phone`).value.trim();
 
@@ -844,7 +855,7 @@ function submitEmpresa() {
         if (!email)         return toast(`Miembro #${idx}: ingresa el correo electrónico.`, 'error');
         if (waChk && !phone) return toast(`Miembro #${idx}: ingresa el número de teléfono.`, 'error');
 
-        members.push({ nombre, apellidos, emailChk, waChk, adminChk, invChk, email, phone });
+        members.push({ nombre, apellidos, emailChk, waChk, adminChk, invChk, advChk, email, phone });
     }
 
     pendingAction = async () => {
@@ -860,6 +871,7 @@ function submitEmpresa() {
                 email_notification:    m.emailChk,
                 whatsapp_notification: m.waChk,
                 investment_client:     m.invChk,
+                advisory_client:       m.advChk,
                 business_admin:        m.adminChk,
             });
         }
@@ -930,6 +942,7 @@ function resetForms() {
     document.getElementById('iEmailChk').checked = false;
     document.getElementById('iWaChk').checked    = false;
     document.getElementById('iInvChk').checked   = false;
+    document.getElementById('iAdvChk').checked   = false;
     document.getElementById('iWaFld').classList.remove('show');
     document.getElementById('iPreviewWrap').style.display = 'none';
 
@@ -986,6 +999,13 @@ async function loadClients() {
                         ${c.investment_enabled ? 'Sí' : 'No'}
                     </button>
                 </td>
+                <td>
+                    <button class="toggle-btn ${c.advisory_enabled ? 'tbtn-deactivate' : 'tbtn-activate'}"
+                            onclick="toggleAdvisory('${c.id}', ${c.advisory_enabled})"
+                            title="${c.advisory_enabled ? 'Desactivar seguimiento de asesoría' : 'Activar seguimiento de asesoría'}">
+                        ${c.advisory_enabled ? 'Sí' : 'No'}
+                    </button>
+                </td>
             </tr>`;
         }).join('');
 
@@ -1003,6 +1023,7 @@ async function loadClients() {
                         <th>Username</th>
                         <th>Teléfono</th>
                         <th>Inversión</th>
+                        <th>Asesoría</th>
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>
@@ -1074,6 +1095,17 @@ async function toggleInvestment(clientId, current) {
     }
 }
 
+// ════════════ TOGGLE ADVISORY CLIENT ════════════
+async function toggleAdvisory(clientId, current) {
+    try {
+        await api('PATCH', `${API_BASE}/api/clients/${clientId}`, { advisory_client: !current });
+        toast(current ? 'Seguimiento de asesoría desactivado.' : 'Seguimiento de asesoría activado.', 'success');
+        loadClients();
+    } catch (err) {
+        toast('Error: ' + err.message, 'error');
+    }
+}
+
 // ════════════ MODIFICAR DATOS ════════════
 async function loadEditClients() {
     const wrap = document.getElementById('editWrap');
@@ -1121,6 +1153,11 @@ function editCard(c) {
                        onchange="document.getElementById('ed_alpaca_${c.id}').style.display = this.checked ? '' : 'none'">
                 <label for="ed_inv_${c.id}">Cliente de inversión (Alpaca)</label>
             </div>
+            <div class="check-row">
+                <input type="checkbox" id="ed_adv_${c.id}" ${c.advisory_enabled ? 'checked' : ''}
+                       onchange="document.getElementById('ed_advplan_${c.id}').style.display = this.checked ? '' : 'none'">
+                <label for="ed_adv_${c.id}">Cliente de asesoría (seguimiento Neto)</label>
+            </div>
         </div>
 
         <div class="notif-section" id="ed_alpaca_${c.id}" style="${c.investment_enabled ? '' : 'display:none;'}">
@@ -1148,6 +1185,102 @@ function editCard(c) {
                 ? `<button class="btn btn-outline btn-sm" style="margin-top:8px;"
                            onclick="clearAlpacaCreds('${c.id}')">🗑 Borrar credenciales</button>`
                 : ''}
+        </div>
+
+        <div class="notif-section" id="ed_advplan_${c.id}" style="${c.advisory_enabled ? '' : 'display:none;'}">
+            <div class="notif-title">Plan de asesoría</div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="ed_ap_start_${c.id}">Inicio del programa</label>
+                    <input type="date" id="ed_ap_start_${c.id}" value="${c.advisory_program_start || ''}">
+                </div>
+                <div class="form-group">
+                    <label for="ed_ap_track_${c.id}">Inicio del seguimiento</label>
+                    <input type="date" id="ed_ap_track_${c.id}" value="${c.advisory_tracking_start || ''}">
+                </div>
+                <div class="form-group">
+                    <label for="ed_ap_end_${c.id}">Fin del programa</label>
+                    <input type="date" id="ed_ap_end_${c.id}" value="${c.advisory_program_end || ''}">
+                </div>
+            </div>
+            <p style="font-size:11px; color:var(--gray-500); margin:0 0 10px;">
+                Sin <strong>inicio del seguimiento</strong> (mes baseline) no se envía ningún mensaje.
+                Se fija en la reunión de activación.
+            </p>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="ed_ap_obj_${c.id}">Objetivo</label>
+                    <select id="ed_ap_obj_${c.id}"
+                            style="width:100%; padding:10px 13px; border:1.5px solid var(--gray-300); border-radius:var(--radius-sm); font-size:14px; color:var(--gray-800); background:var(--white);">
+                        ${['', 'control_gasto', 'fondo_emergencia', 'pago_deuda', 'compra_activo', 'inversion'].map(v => {
+                            const labels = { '': 'Sin definir', control_gasto: 'Control del gasto',
+                                             fondo_emergencia: 'Fondo de emergencia', pago_deuda: 'Pago de deuda',
+                                             compra_activo: 'Compra de activo', inversion: 'Inversión' };
+                            return `<option value="${v}" ${(c.advisory_objective || '') === v ? 'selected' : ''}>${labels[v]}</option>`;
+                        }).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="ed_ap_dow_${c.id}">Día del resumen semanal</label>
+                    <select id="ed_ap_dow_${c.id}"
+                            style="width:100%; padding:10px 13px; border:1.5px solid var(--gray-300); border-radius:var(--radius-sm); font-size:14px; color:var(--gray-800); background:var(--white);">
+                        ${['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'].map((d, i) =>
+                            `<option value="${i}" ${c.advisory_weekly_send_dow === i ? 'selected' : ''}>${d}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="ed_ap_rate_${c.id}">Meta tasa de ahorro (%)</label>
+                    <input type="number" id="ed_ap_rate_${c.id}" min="0" max="100" step="0.5"
+                           value="${c.advisory_target_savings_rate ?? ''}" placeholder="ej. 20">
+                </div>
+                <div class="form-group">
+                    <label for="ed_ap_goal_${c.id}">Meta fondo de emergencia (₡)</label>
+                    <input type="number" id="ed_ap_goal_${c.id}" min="0" step="1000"
+                           value="${c.advisory_emergency_fund_goal ?? ''}" placeholder="ej. 900000">
+                </div>
+                <div class="form-group">
+                    <label for="ed_ap_cur_${c.id}">Saldo actual del fondo (₡)</label>
+                    <input type="number" id="ed_ap_cur_${c.id}" min="0" step="1000"
+                           value="${c.advisory_emergency_fund_current ?? ''}" placeholder="0">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="ed_ap_inc_${c.id}">Ingreso mensual declarado (₡)</label>
+                <input type="number" id="ed_ap_inc_${c.id}" min="0" step="1000"
+                       value="${c.advisory_declared_monthly_income ?? ''}"
+                       placeholder="Vacío = usar los ingresos capturados por Neto">
+            </div>
+            <p style="font-size:11px; color:var(--gray-500); margin:0 0 10px;">
+                Usar solo si el banco del cliente no notifica los depósitos por correo.
+            </p>
+
+            <div class="notif-title" style="margin-top:4px;">Módulos de seguimiento</div>
+            <div class="check-row">
+                <input type="checkbox" id="ed_ap_wk_${c.id}" ${c.advisory_weekly_summary_enabled ? 'checked' : ''}>
+                <label for="ed_ap_wk_${c.id}">Resumen semanal de presupuesto</label>
+            </div>
+            <div class="check-row">
+                <input type="checkbox" id="ed_ap_fund_${c.id}" ${c.advisory_fund_tracking_enabled ? 'checked' : ''}>
+                <label for="ed_ap_fund_${c.id}">Fondo de emergencia / tasa de ahorro (mensual)</label>
+            </div>
+            <div class="check-row">
+                <input type="checkbox" id="ed_ap_alert_${c.id}" ${c.advisory_budget_alerts_enabled ? 'checked' : ''}>
+                <label for="ed_ap_alert_${c.id}">Alertas de presupuesto (80% y 100%)</label>
+            </div>
+
+            <div class="form-group" style="margin-top:10px;">
+                <label for="ed_ap_notes_${c.id}">Notas del asesor</label>
+                <textarea id="ed_ap_notes_${c.id}" rows="2"
+                          style="width:100%; padding:10px 13px; border:1.5px solid var(--gray-300); border-radius:var(--radius-sm); font-size:14px; color:var(--gray-800); resize:vertical;"
+                          placeholder="Contexto para reuniones y PDF mensual">${escHtml(c.advisory_notes || '')}</textarea>
+            </div>
         </div>
 
         <div class="notif-section">
@@ -1180,6 +1313,7 @@ async function saveEditClient(id) {
     const email = document.getElementById(`ed_email_${id}`).checked;
     const wa    = document.getElementById(`ed_wa_${id}`).checked;
     const inv   = document.getElementById(`ed_inv_${id}`).checked;
+    const adv   = document.getElementById(`ed_adv_${id}`).checked;
     const akeyEl = document.getElementById(`ed_akey_${id}`);
     const asecEl = document.getElementById(`ed_asec_${id}`);
     const akey = akeyEl ? akeyEl.value.trim() : '';
@@ -1187,6 +1321,9 @@ async function saveEditClient(id) {
 
     if (wa && !phone) {
         return toast('Para notificar por WhatsApp se requiere un número de teléfono.', 'error');
+    }
+    if (adv && !(wa && phone)) {
+        return toast('Para la asesoría se requiere teléfono y notificación por WhatsApp activada.', 'error');
     }
     if ((akey || asec) && !(akey && asec)) {
         return toast('Para cargar credenciales de Alpaca se requieren API Key ID y Secret juntos.', 'error');
@@ -1200,10 +1337,28 @@ async function saveEditClient(id) {
         email_notification:    email,
         whatsapp_notification: wa,
         investment_client:     inv,
+        advisory_client:       adv,
     };
     if (akey && asec) {
         payload.alpaca_api_key = akey;
         payload.alpaca_api_secret = asec;
+    }
+    if (adv) {
+        payload.advisory_plan = {
+            program_start:           document.getElementById(`ed_ap_start_${id}`).value,
+            tracking_start:          document.getElementById(`ed_ap_track_${id}`).value,
+            program_end:             document.getElementById(`ed_ap_end_${id}`).value,
+            objective:               document.getElementById(`ed_ap_obj_${id}`).value,
+            weekly_send_dow:         parseInt(document.getElementById(`ed_ap_dow_${id}`).value, 10),
+            target_savings_rate:     document.getElementById(`ed_ap_rate_${id}`).value,
+            emergency_fund_goal:     document.getElementById(`ed_ap_goal_${id}`).value,
+            emergency_fund_current:  document.getElementById(`ed_ap_cur_${id}`).value,
+            declared_monthly_income: document.getElementById(`ed_ap_inc_${id}`).value,
+            weekly_summary_enabled:  document.getElementById(`ed_ap_wk_${id}`).checked,
+            fund_tracking_enabled:   document.getElementById(`ed_ap_fund_${id}`).checked,
+            budget_alerts_enabled:   document.getElementById(`ed_ap_alert_${id}`).checked,
+            notes:                   document.getElementById(`ed_ap_notes_${id}`).value.trim(),
+        };
     }
 
     try {

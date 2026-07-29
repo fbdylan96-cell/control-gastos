@@ -17,7 +17,10 @@ import re
 import sys
 import urllib.parse
 import uuid
+from datetime import datetime
 from pathlib import Path
+
+import pytz
 
 from flask import Blueprint, abort, request
 
@@ -28,6 +31,7 @@ _PARENT = Path(__file__).resolve().parent.parent
 if str(_PARENT) not in sys.path:
     sys.path.insert(0, str(_PARENT))
 import whatsapp_client  # noqa: E402
+from tools.finance import get_income_expense_summary, get_top_spending  # noqa: E402
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +42,13 @@ INDIVIDUAL_BIZ_ID = "00000000-0000-0000-0000-000000009999"
 WEBAPP_BASE_URL = "https://gastos.empoweredinvestor.trade"
 URL_PERSONA = f"{WEBAPP_BASE_URL}/persona/"
 URL_EMPRESA = f"{WEBAPP_BASE_URL}/empresa/"
+
+CR_TZ = pytz.timezone("America/Costa_Rica")
+MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+            "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+# Advisory weekly summary → 'Ver componentes del gasto': cap on breakdown rows
+# so the reply stays readable; the remainder is aggregated into one line.
+BREAKDOWN_MAX_ROWS = 12
 
 # Consultation chat: max user messages accepted per client per hour. Bounds
 # Anthropic API spend per client; the worker is the one paying the LLM cost.
@@ -88,9 +99,12 @@ def _parse_row_id(raw: str) -> dict | None:
 
 
 def _parse_button_payload(payload: str) -> dict | None:
-    """Parse a quick-reply button payload set by whatsapp_notifier._button_payloads.
+    """Parse a quick-reply button payload.
 
-    Returns {"action": "rc"|"go", "notification_id": "..."} or None on mismatch.
+    Transaction templates (whatsapp_notifier._button_payloads) use
+    'rc|nid=...' / 'go|nid=...' → {"action", "notification_id"}.
+    The advisory weekly summary (advisory_scheduler) uses 'ad|cid=...'
+    → {"action": "ad", "client_id": "..."}. Returns None on mismatch.
     """
     if not payload:
         return None
@@ -98,13 +112,15 @@ def _parse_button_payload(payload: str) -> dict | None:
     if len(parts) < 2:
         return None
     action = parts[0]
-    if action not in ("rc", "go"):
+    if action not in ("rc", "go", "ad"):
         return None
-    nid = ""
-    for p in parts[1:]:
-        if p.startswith("nid="):
-            nid = p[4:].strip()
-            break
+    fields = dict(p.split("=", 1) for p in parts[1:] if "=" in p)
+    if action == "ad":
+        cid = fields.get("cid", "").strip()
+        if not cid:
+            return None
+        return {"action": "ad", "client_id": cid}
+    nid = fields.get("nid", "").strip()
     if not nid:
         return None
     return {"action": action, "notification_id": nid}
@@ -403,6 +419,65 @@ def _send_webapp_url(conn, to: str, notification_id: str) -> None:
     whatsapp_client.send_text(to, url)
 
 
+def _fmt_crc(amount) -> str:
+    return f"₡{float(amount):,.0f}"
+
+
+def _handle_breakdown_tap(conn, from_phone: str, client_id: str) -> None:
+    """Advisory weekly summary → 'Ver componentes del gasto' (Fase 5).
+
+    The payload's client_id is only honored when the tapping phone belongs to
+    that client — scope is enforced server-side, same discipline as the
+    consultation chat. The reply is a deterministic free-text message inside
+    the 24 h window (no template, no LLM cost); afterwards the client can keep
+    asking in the AI chat.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            r"""
+            SELECT id FROM core.clients
+            WHERE id = %s AND active = TRUE
+              AND phone_number IS NOT NULL
+              AND regexp_replace(phone_number, '\D', '', 'g') = %s
+            """,
+            (client_id, re.sub(r"\D", "", from_phone or "")),
+        )
+        if cur.fetchone() is None:
+            log.warning(f"  Breakdown tap: phone {from_phone} does not match "
+                        f"client {client_id} — ignoring")
+            return
+
+    today = datetime.now(CR_TZ).date()
+    month_start = today.replace(day=1)
+    rows = get_top_spending(
+        conn, individual_id=client_id,
+        date_from=month_start, date_to=today, limit=BREAKDOWN_MAX_ROWS,
+    )
+    if not rows:
+        whatsapp_client.send_text(
+            from_phone, "Aún no hay gastos registrados este mes.", preview_url=False
+        )
+        return
+
+    total = get_income_expense_summary(
+        conn, individual_id=client_id, date_from=month_start, date_to=today,
+    )["gastos"]
+
+    lines = [f"📊 *Componentes del gasto — {MESES_ES[today.month - 1]}*", ""]
+    listed = 0.0
+    for r in rows:
+        label = (f"{r['category']} / {r['subcategory']}"
+                 if r["subcategory"] else (r["category"] or "Sin categoría"))
+        lines.append(f"• {label}: {_fmt_crc(r['total'])} ({r['share_pct']:.0f}%)")
+        listed += r["total"]
+    resto = total - listed
+    if resto > 0.5:  # more categories than the cap — aggregate the tail
+        lines.append(f"• Resto: {_fmt_crc(resto)}")
+    lines += ["", f"Total del mes: {_fmt_crc(total)}"]
+
+    whatsapp_client.send_text(from_phone, "\n".join(lines), preview_url=False)
+
+
 # ---------------------------------------------------------------------------
 # Webhook routes
 # ---------------------------------------------------------------------------
@@ -490,12 +565,16 @@ def _handle_message(msg: dict, from_phone: str | None) -> None:
     conn = get_connection()
     try:
         if msg_type == "button":
-            # Template quick-reply tap (Reclasificar / Ir a aplicación)
+            # Template quick-reply tap (Reclasificar / Ir a aplicación /
+            # Ver componentes del gasto)
             payload = (msg.get("button") or {}).get("payload", "")
             text = (msg.get("button") or {}).get("text", "")
             parsed = _parse_button_payload(payload)
             if not parsed:
                 log.info(f"  Unrecognized button payload: {payload!r}")
+                return
+            if parsed["action"] == "ad":
+                _handle_breakdown_tap(conn, from_phone, parsed["client_id"])
                 return
             nid = parsed["notification_id"]
             _update_whatsapp_action(conn, nid, text or parsed["action"])
@@ -535,6 +614,9 @@ def _handle_message(msg: dict, from_phone: str | None) -> None:
                 payload = btn.get("id", "")
                 parsed = _parse_button_payload(payload)
                 if parsed:
+                    if parsed["action"] == "ad":
+                        _handle_breakdown_tap(conn, from_phone, parsed["client_id"])
+                        return
                     nid = parsed["notification_id"]
                     _update_whatsapp_action(conn, nid, btn.get("title") or parsed["action"])
                     if parsed["action"] == "rc":

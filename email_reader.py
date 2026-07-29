@@ -3,6 +3,7 @@ import time
 
 from dotenv import load_dotenv
 
+import advisory_alerts
 import classifier
 import db
 import enricher
@@ -198,6 +199,9 @@ def run_once(service, conn):
     if messages or swept:
         notifier.run_notifications(conn, service)
         whatsapp_notifier.run_whatsapp_notifications(conn)
+        # Advisory (Fase 4): re-evaluate budget thresholds now that new
+        # transactions are classified. Never raises.
+        advisory_alerts.run_budget_alerts(conn)
 
     return [m["id"] for m in messages]
 

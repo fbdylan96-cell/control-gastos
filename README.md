@@ -36,11 +36,13 @@ Gmail (label: 'Finanzas Personales')
 | `notifier.py` | Notificaciones por email con enlaces de reclasificación firmados (HMAC-SHA256) |
 | `whatsapp_client.py` | Wrapper de Meta WhatsApp Cloud API: plantillas, mensajes de lista, texto libre, verificación de firma de webhooks |
 | `whatsapp_notifier.py` | Envío de notificaciones de transacción por WhatsApp |
+| `advisory_alerts.py` | Alertas de presupuesto (80%/100%) por WhatsApp para clientes con plan de asesoría; se evalúan tras clasificar cada lote de transacciones |
 | `db.py` | Helpers de acceso a PostgreSQL del pipeline |
 | `tools/finance.py` | Portafolio de funciones de consulta financiera parametrizadas (resúmenes de ingresos/gastos, top de gastos, gasto mensual por categoría, presupuestos). Sin efectos secundarios; alimentan los dashboards web y el agente de WhatsApp |
 | `tools/agent.py` | Agente de IA (Claude, tool-use sobre `tools/finance.py`) que responde consultas financieras en lenguaje natural. El scope se inyecta server-side: el modelo nunca puede consultar datos de otro cliente |
 | `whatsapp_agent_worker.py` | Proceso worker (systemd) del chat de consulta: reclama mensajes encolados por el webhook (`FOR UPDATE SKIP LOCKED`), corre el agente y responde por WhatsApp. Ver `WHATSAPP_AI_CHAT_SETUP.md` |
 | `rate_scheduler.py` / `exchange_rate_update.py` | Actualización diaria (L-V 23:30) de tipos de cambio desde el BCCR → `core.exchange_rates` |
+| `advisory_scheduler.py` | Seguimiento de asesoría por WhatsApp: resumen semanal de presupuesto y seguimiento mensual del fondo de emergencia para clientes con plan (`core.client_advisory_plans`); idempotente vía `core.advisory_message_log`. Ver `PLAN_asesoria.md` |
 | `create.sql` | Esquema completo de la base de datos (fuente de verdad de nombres de columnas) |
 | `web-app/` | Aplicación Flask (ver abajo) |
 | `META_WHATSAPP_SETUP.md` | Guía de configuración de Meta WhatsApp Cloud API en producción |
@@ -197,6 +199,17 @@ Proceso independiente que corre de lunes a viernes a las 23:30.
 
 ```bash
 python rate_scheduler.py
+```
+
+### Scheduler de seguimiento de asesoría
+
+Proceso independiente (correr bajo systemd; ver `PLAN_asesoria.md`). Envía por
+WhatsApp el resumen semanal de presupuesto (diario 17:00 CR, filtrado por el día
+configurado en cada plan) y el seguimiento mensual del fondo de emergencia
+(día 1, 9:00 CR, sobre el mes anterior cerrado).
+
+```bash
+python advisory_scheduler.py
 ```
 
 ## Documentación adicional

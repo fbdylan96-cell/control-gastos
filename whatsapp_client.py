@@ -69,19 +69,30 @@ def send_template(
     language_code: str,
     body_params: list[str],
     button_payloads: list[str] | None = None,
+    header_params: list[str] | None = None,
 ) -> dict:
     """Send an approved template message.
 
     body_params: ordered list of variable values for the template body ({{1}}, {{2}}, ...).
     button_payloads: ordered payloads for QUICK_REPLY buttons (index 0, 1, ...).
                      Pass None or empty list if the template has no quick-reply buttons.
+    header_params: ordered values for the template header (text) variables. The
+                   header is a separate Meta component with its own {{n}}
+                   numbering, independent from the body's. Pass None or empty
+                   list if the template has no header variables.
     """
-    components: list[dict] = [
+    components: list[dict] = []
+    if header_params:
+        components.append({
+            "type": "header",
+            "parameters": [{"type": "text", "text": str(p)} for p in header_params],
+        })
+    components.append(
         {
             "type": "body",
             "parameters": [{"type": "text", "text": str(p)} for p in body_params],
         }
-    ]
+    )
     for idx, payload in enumerate(button_payloads or []):
         components.append({
             "type": "button",

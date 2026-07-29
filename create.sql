@@ -476,3 +476,82 @@ ON CONFLICT (code) DO NOTHING;
 INSERT INTO core.discount_codes (id, code, description, discount_pct)
 VALUES (gen_random_uuid(), 'dylanmosquera', 'Socio — cortesía 100%', 100)
 ON CONFLICT (code) DO NOTHING;
+
+
+-- ============================================================================
+-- Asesoría Financiera Personal (medium ticket) — seguimiento automatizado
+-- Ver advisory_schema.sql para la migración aditiva e idempotente que se corre
+-- sobre la base existente, y PLAN_asesoria.md para el diseño completo.
+-- Los envíos de WhatsApp usan las plantillas Meta aprobadas:
+--   seguimiento_semanal_presupuesto, seguimiento_fondo_emergencia,
+--   seguimiento_fondo_emergencia_noexcedente, alerta_presupuesto,
+--   alerta_presupuesto_superado.
+-- ============================================================================
+
+DROP TABLE IF EXISTS core.advisory_message_log CASCADE;
+DROP TABLE IF EXISTS core.client_advisory_plans CASCADE;
+
+-- Plan de asesoría, una fila por cliente (patrón client_investment).
+--   * enabled                — interruptor maestro del seguimiento; los tres
+--                              módulos filtran además por su propio flag.
+--   * tracking_start         — NULL durante el mes baseline: ningún job envía
+--                              nada hasta que el asesor lo fija en la reunión
+--                              de activación.
+--   * emergency_fund_current — saldo actual del fondo; lo actualiza el asesor
+--                              manualmente (el fondo vive en una cuenta que
+--                              Neto no ve).
+--   * declared_monthly_income— sustituye a los ingresos capturados por el
+--                              pipeline cuando el banco del cliente no
+--                              notifica créditos por correo. NULL = usar lo
+--                              capturado.
+--   * weekly_send_dow        — día del envío semanal: 0=domingo … 6=sábado.
+-- Completar la meta del fondo NO desactiva fund_tracking_enabled
+-- automáticamente: es decisión del asesor desde administracion.
+CREATE TABLE core.client_advisory_plans (
+    client_id               UUID PRIMARY KEY REFERENCES core.clients(id) ON DELETE CASCADE,
+
+    enabled                 BOOLEAN NOT NULL DEFAULT FALSE,
+
+    -- Programa
+    program_start           DATE NOT NULL,
+    tracking_start          DATE,
+    program_end             DATE,
+
+    -- Objetivos (reunión inicial)
+    objective               TEXT
+        CONSTRAINT chk_advisory_objective CHECK (objective IN
+            ('control_gasto', 'fondo_emergencia', 'pago_deuda', 'compra_activo', 'inversion')),
+    target_savings_rate     NUMERIC(5,2),      -- meta de tasa de ahorro (%)
+    emergency_fund_goal     NUMERIC(14,2),     -- meta del fondo (CRC)
+    emergency_fund_current  NUMERIC(14,2) NOT NULL DEFAULT 0,
+    declared_monthly_income NUMERIC(14,2),
+
+    -- Módulos de seguimiento independientes
+    weekly_send_dow         SMALLINT NOT NULL DEFAULT 1
+        CONSTRAINT chk_weekly_send_dow CHECK (weekly_send_dow BETWEEN 0 AND 6),
+    weekly_summary_enabled  BOOLEAN NOT NULL DEFAULT TRUE,
+    fund_tracking_enabled   BOOLEAN NOT NULL DEFAULT TRUE,
+    budget_alerts_enabled   BOOLEAN NOT NULL DEFAULT TRUE,
+
+    notes                   TEXT,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Log de envíos del seguimiento: la PK compuesta ES la garantía de idempotencia
+-- (disparo único por período). Todo envío hace INSERT ... ON CONFLICT DO NOTHING
+-- y solo manda el WhatsApp si la fila se insertó — un reinicio del scheduler o
+-- una transacción re-procesada nunca duplican mensajes.
+-- period_key por tipo:
+--   weekly_summary → 'IYYY-"W"IW' (ej. '2026-W30')
+--   monthly_fund   → 'YYYY-MM'    (ej. '2026-07', el mes reportado)
+--   budget_80/100  → 'YYYY-MM:<categoria>' (ej. '2026-07:Restaurantes')
+CREATE TABLE core.advisory_message_log (
+    client_id     UUID NOT NULL REFERENCES core.clients(id) ON DELETE CASCADE,
+    message_type  TEXT NOT NULL
+        CONSTRAINT chk_advisory_msg_type CHECK (message_type IN
+            ('weekly_summary', 'monthly_fund', 'budget_80', 'budget_100')),
+    period_key    TEXT NOT NULL,
+    sent_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (client_id, message_type, period_key)
+);

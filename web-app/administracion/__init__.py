@@ -101,12 +101,28 @@ def get_clients():
                        COALESCE(ci.enabled, FALSE) AS investment_enabled,
                        (ci.api_key_cipher IS NOT NULL) AS alpaca_credentials_set,
                        s.status AS sub_status, COALESCE(s.comp, FALSE) AS sub_comp,
-                       s.trial_end, s.current_period_end, p.name AS plan_name
+                       s.trial_end, s.current_period_end, p.name AS plan_name,
+                       COALESCE(ap.enabled, FALSE) AS advisory_enabled,
+                       (ap.client_id IS NOT NULL)  AS advisory_plan_exists,
+                       ap.program_start            AS advisory_program_start,
+                       ap.tracking_start           AS advisory_tracking_start,
+                       ap.program_end              AS advisory_program_end,
+                       ap.objective                AS advisory_objective,
+                       ap.target_savings_rate      AS advisory_target_savings_rate,
+                       ap.emergency_fund_goal      AS advisory_emergency_fund_goal,
+                       ap.emergency_fund_current   AS advisory_emergency_fund_current,
+                       ap.declared_monthly_income  AS advisory_declared_monthly_income,
+                       COALESCE(ap.weekly_send_dow, 1)           AS advisory_weekly_send_dow,
+                       COALESCE(ap.weekly_summary_enabled, TRUE) AS advisory_weekly_summary_enabled,
+                       COALESCE(ap.fund_tracking_enabled, TRUE)  AS advisory_fund_tracking_enabled,
+                       COALESCE(ap.budget_alerts_enabled, TRUE)  AS advisory_budget_alerts_enabled,
+                       ap.notes                    AS advisory_notes
                 FROM   core.clients c
                 JOIN   core.businesses b ON b.id = c.business_id
                 LEFT   JOIN core.client_investment ci ON ci.client_id = c.id
                 LEFT   JOIN core.client_subscriptions s ON s.client_id = c.id
                 LEFT   JOIN core.subscription_plans p ON p.id = s.plan_id
+                LEFT   JOIN core.client_advisory_plans ap ON ap.client_id = c.id
                 ORDER  BY c.created_at DESC
             """)
             rows = [dict(r) for r in cur.fetchall()]
@@ -117,6 +133,12 @@ def get_clients():
             r['trial_end'] = r['trial_end'].isoformat() if r.get('trial_end') else None
             r['current_period_end'] = (r['current_period_end'].isoformat()
                                        if r.get('current_period_end') else None)
+            for f in ('advisory_program_start', 'advisory_tracking_start',
+                      'advisory_program_end'):
+                r[f] = r[f].isoformat() if r.get(f) else None
+            for f in ('advisory_target_savings_rate', 'advisory_emergency_fund_goal',
+                      'advisory_emergency_fund_current', 'advisory_declared_monthly_income'):
+                r[f] = float(r[f]) if r.get(f) is not None else None
         return jsonify(rows)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -175,6 +197,18 @@ def post_client():
                     VALUES (%s, TRUE)
                     ON CONFLICT (client_id) DO UPDATE
                         SET enabled = TRUE, updated_at = now()
+                    """,
+                    (cid,),
+                )
+            if body.get('advisory_client'):
+                # The plan is created disabled: the advisor configures goals and
+                # flips the master switch from Modificar Datos / the Asesoría
+                # column once the client is ready (see PLAN_asesoria.md).
+                cur.execute(
+                    """
+                    INSERT INTO core.client_advisory_plans (client_id, program_start, enabled)
+                    VALUES (%s, CURRENT_DATE, FALSE)
+                    ON CONFLICT (client_id) DO NOTHING
                     """,
                     (cid,),
                 )
@@ -262,6 +296,84 @@ def patch_client(client_id):
                     """,
                     (client_id, bool(body['investment_client'])),
                 )
+
+            if 'advisory_client' in body:
+                advisory_enable = bool(body['advisory_client'])
+                if advisory_enable:
+                    # Guardrail: the follow-up runs over WhatsApp, so enabling
+                    # it without a reachable number would silently send nothing.
+                    cur.execute(
+                        "SELECT phone_number, whatsapp_notification FROM core.clients WHERE id = %s",
+                        (client_id,),
+                    )
+                    row = cur.fetchone()
+                    if row is None:
+                        conn.rollback()
+                        conn.close()
+                        return jsonify({'error': 'client not found'}), 404
+                    if not (row[0] and row[1]):
+                        conn.rollback()
+                        conn.close()
+                        return jsonify({'error': 'Para habilitar la asesoría el cliente '
+                                                 'necesita número de teléfono y la notificación '
+                                                 'por WhatsApp activada.'}), 400
+                cur.execute(
+                    """
+                    INSERT INTO core.client_advisory_plans (client_id, program_start, enabled)
+                    VALUES (%s, CURRENT_DATE, %s)
+                    ON CONFLICT (client_id) DO UPDATE
+                        SET enabled = EXCLUDED.enabled, updated_at = now()
+                    """,
+                    (client_id, advisory_enable),
+                )
+
+            # Advisory plan fields (Modificar Datos → "Plan de asesoría").
+            # Runs after the advisory upsert so enabling + configuring works in
+            # a single PATCH. Keys map to fixed column names (never
+            # user-supplied), so the dynamic SET is injection-safe.
+            advisory_plan = body.get('advisory_plan')
+            if isinstance(advisory_plan, dict):
+                plan_editable = {
+                    'program_start': 'program_start',
+                    'tracking_start': 'tracking_start',
+                    'program_end': 'program_end',
+                    'objective': 'objective',
+                    'target_savings_rate': 'target_savings_rate',
+                    'emergency_fund_goal': 'emergency_fund_goal',
+                    'emergency_fund_current': 'emergency_fund_current',
+                    'declared_monthly_income': 'declared_monthly_income',
+                    'weekly_send_dow': 'weekly_send_dow',
+                    'weekly_summary_enabled': 'weekly_summary_enabled',
+                    'fund_tracking_enabled': 'fund_tracking_enabled',
+                    'budget_alerts_enabled': 'budget_alerts_enabled',
+                    'notes': 'notes',
+                }
+                plan_sets, plan_params = [], []
+                for key, col in plan_editable.items():
+                    if key not in advisory_plan:
+                        continue
+                    value = advisory_plan[key]
+                    if value == '':
+                        value = None
+                    # program_start is NOT NULL — an emptied date input must
+                    # not wipe it.
+                    if key == 'program_start' and value is None:
+                        continue
+                    plan_sets.append(f"{col} = %s")
+                    plan_params.append(value)
+                if plan_sets:
+                    plan_sets.append("updated_at = now()")
+                    plan_params.append(client_id)
+                    cur.execute(
+                        f"UPDATE core.client_advisory_plans SET {', '.join(plan_sets)} "
+                        "WHERE client_id = %s",
+                        plan_params,
+                    )
+                    if not cur.rowcount:
+                        conn.rollback()
+                        conn.close()
+                        return jsonify({'error': 'El cliente no tiene plan de asesoría. '
+                                                 'Marcá "Cliente de asesoría" primero.'}), 400
 
             # Alpaca API credentials (write-only: never echoed back by any GET).
             # Runs after the investment upsert so enabling + loading keys works

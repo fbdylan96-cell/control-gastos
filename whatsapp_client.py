@@ -40,16 +40,18 @@ def normalize_phone(raw: str) -> str | None:
 
     Requirements (per PROMPT_requests.md):
       - Must start with '+'
-      - Spaces are stripped
+      - Common separators (spaces, hyphens, dots, parentheses) are stripped —
+        phone_number is free text in the admin UI, and '+506 7059-5217' left a
+        client without WhatsApp for weeks (incidente 2026-07-29).
     Meta requires digits-only (no '+'), so we drop it before returning.
     Returns None when the input is empty or invalid.
     """
     if not raw:
         return None
-    no_ws = re.sub(r"\s+", "", raw)
-    if not no_ws.startswith("+"):
+    no_sep = re.sub(r"[\s\-().]+", "", raw)
+    if not no_sep.startswith("+"):
         return None
-    digits = no_ws[1:]
+    digits = no_sep[1:]
     if not digits.isdigit() or len(digits) < 8:
         return None
     return digits

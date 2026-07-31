@@ -30,6 +30,66 @@ def get_connection():
     )
 
 
+# ── Base de datos de la asesoría (asesoria_db) ────────────────────────────────
+# Separada de la de Neto app por diseño: los diagnósticos son datos de
+# prospectos (no de clientes) y alimentan los reportes del servicio de
+# asesoría. Esquema en asesoria_schema.sql (raíz del repo).
+
+def get_asesoria_connection():
+    if os.environ.get("IS_PROD_DB", "0").strip() == "1":
+        return psycopg2.connect(os.environ["ASESORIA_DB_URL"])
+    return psycopg2.connect(
+        host=os.environ["DB_HOST"],
+        port=int(os.environ.get("DB_PORT", 5432)),
+        dbname=os.environ.get("ASESORIA_DB_NAME", "asesoria_db"),
+        user=os.environ["DB_USER"],
+        password=os.environ["DB_PASSWORD"],
+    )
+
+
+def save_diagnostico(payload, ip=None):
+    """Persist a sanitized /diagnostico submission in asesoria_db.
+
+    Stores the full post-conversion payload as JSONB plus the searchable
+    columns. Returns the new row id (str). Raises on failure — the caller
+    (run.py) treats persistence as best-effort so a DB hiccup never blocks
+    the prospect's report.
+    """
+    conn = get_asesoria_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO diagnosticos
+                    (nombre, correo, celular, tc_usd, tc_fecha, ip, payload)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (payload["nombre"], payload["correo"], payload["celular"],
+                 payload.get("tc_usd"), payload.get("tc_fecha"), ip,
+                 psycopg2.extras.Json(payload)),
+            )
+            diag_id = str(cur.fetchone()[0])
+        conn.commit()
+        return diag_id
+    finally:
+        conn.close()
+
+
+def mark_diagnostico_sent(diag_id):
+    """Flag a diagnostico row after the Excel report email went out."""
+    conn = get_asesoria_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE diagnosticos SET report_sent = TRUE WHERE id = %s",
+                (str(diag_id),),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def get_notifications_past_window(conn):
     """Return notifications where the 24hr window is closed and rules not yet ingested."""
     with conn.cursor() as cur:

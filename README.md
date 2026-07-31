@@ -144,6 +144,11 @@ WEBAPP_URL=https://tu-dominio.com
 SECRET_KEY=otra-cadena-aleatoria
 ADMIN_PASSWORD=password-del-panel-admin
 
+# Asesoría (base de datos separada de Neto app — ver asesoria_schema.sql)
+# En prod (IS_PROD_DB=1): URL completa a asesoria_db en la misma instancia RDS.
+# En dev local se usa ASESORIA_DB_NAME (default asesoria_db) con DB_HOST/USER/PASSWORD.
+ASESORIA_DB_URL=postgresql://usuario:password@host:5432/asesoria_db
+
 # Meta WhatsApp Cloud API (ver META_WHATSAPP_SETUP.md)
 META_WA_PHONE_ID=...
 META_WA_TOKEN=...

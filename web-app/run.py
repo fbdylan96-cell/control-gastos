@@ -180,6 +180,17 @@ def diagnostico_enviar():
                     "para convertir los montos en dólares. Intente más tarde."}, 503
         aplicar_tipo_cambio(payload, tc["usd_crc"], tc["fecha"])
 
+    # Persistencia en asesoria_db (base separada de Neto app): el payload
+    # completo alimenta los reportes de la asesoría. Best-effort: un fallo de
+    # BD se loguea fuerte pero NUNCA bloquea el reporte del prospecto.
+    from db import mark_diagnostico_sent, save_diagnostico
+    diag_id = None
+    try:
+        diag_id = save_diagnostico(payload, ip)
+    except Exception as e:
+        app.logger.error(f"Diagnóstico: fallo guardando en asesoria_db "
+                         f"({payload['correo']}): {e}")
+
     try:
         send_report(payload)
     except Exception as e:
@@ -188,7 +199,15 @@ def diagnostico_enviar():
         return {"ok": False, "error": "No se pudo enviar el reporte. Intente de "
                 "nuevo más tarde."}, 500
 
-    app.logger.info(f"Diagnóstico enviado a {payload['correo']} (cc asesor)")
+    if diag_id:
+        try:
+            mark_diagnostico_sent(diag_id)
+        except Exception as e:
+            app.logger.error(f"Diagnóstico: fallo marcando report_sent "
+                             f"({diag_id}): {e}")
+
+    app.logger.info(f"Diagnóstico enviado a {payload['correo']} (cc asesor)"
+                    + (f" | guardado id={diag_id}" if diag_id else " | NO guardado"))
     return {"ok": True}
 
 

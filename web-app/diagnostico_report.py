@@ -1,8 +1,10 @@
 """Diagnóstico Financiero: generación del reporte Excel y envío por correo.
 
-Los datos vienen del formulario público /diagnostico/ (sin login) y NO se
-guardan en la base de datos: se arma un .xlsx en memoria y se envía por SMTP
-(neto@investorcr.com) al cliente y al asesor.
+Los datos vienen del formulario público /diagnostico/ (sin login). El payload
+sanitizado se persiste en asesoria_db (base SEPARADA de la de Neto app — ver
+asesoria_schema.sql; lo hace run.py vía db.save_diagnostico) para los reportes
+del servicio de asesoría, y además se arma un .xlsx en memoria que se envía
+por SMTP (neto@investorcr.com) al cliente y al asesor.
 
 Variables de entorno requeridas (.env de la raíz, ya presentes en el server):
   SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD

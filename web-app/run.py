@@ -76,12 +76,20 @@ def calculadora_auth():
     return "", 401
 
 
+def _safe_next(default='/calculadora/'):
+    """Destino post-login: solo rutas internas (evita open redirect)."""
+    nxt = request.args.get('next') or request.form.get('next') or ''
+    if nxt.startswith('/') and not nxt.startswith('//'):
+        return nxt
+    return default
+
+
 @app.route('/calculadora-acceso', methods=['GET', 'POST'])
 def calculadora_acceso():
     from utils import rate_limit_ok
 
     if session.get("admin_authenticated"):
-        return redirect('/calculadora/')
+        return redirect(_safe_next())
 
     error = None
     if request.method == 'POST':
@@ -95,7 +103,7 @@ def calculadora_acceso():
                 error = "ADMIN_PASSWORD no está configurado en el servidor."
             elif request.form.get("password", "") == expected:
                 session["admin_authenticated"] = True
-                return redirect('/calculadora/')
+                return redirect(_safe_next())
             else:
                 error = "Contraseña incorrecta."
 
@@ -209,6 +217,44 @@ def diagnostico_enviar():
     app.logger.info(f"Diagnóstico enviado a {payload['correo']} (cc asesor)"
                     + (f" | guardado id={diag_id}" if diag_id else " | NO guardado"))
     return {"ok": True}
+
+
+# ── Hoja de Ruta Financiera (uso exclusivo del asesor) ───────────────────────
+# Dashboard de la primera reunión de asesoría: carga por correo el último
+# diagnóstico guardado en asesoria_db y construye la ruta (baby steps
+# adaptados). Protegido con la MISMA sesión del asesor que /calculadora/
+# (admin_authenticated) porque muestra datos de prospectos.
+
+@app.route('/ruta')
+@app.route('/ruta/')
+def ruta_financiera():
+    if not session.get("admin_authenticated"):
+        return redirect('/calculadora-acceso?next=/ruta')
+    return send_from_directory(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'diagnostico'),
+        'ruta-financiera.html',
+    )
+
+
+@app.route('/ruta/api/diagnostico')
+def ruta_api_diagnostico():
+    if not session.get("admin_authenticated"):
+        return {"ok": False, "error": "No autorizado."}, 401
+    correo = (request.args.get('correo') or '').strip().lower()
+    if not correo or '@' not in correo:
+        return {"ok": False, "error": "Ingrese un correo válido."}, 400
+    from db import get_diagnostico_by_correo
+    try:
+        diag = get_diagnostico_by_correo(correo)
+    except Exception as e:
+        app.logger.error(f"Ruta: fallo leyendo diagnóstico de {correo}: {e}")
+        return {"ok": False, "error": "Error consultando la base de datos."}, 500
+    if not diag:
+        return {"ok": False, "error": "No hay diagnósticos guardados para ese "
+                "correo."}, 404
+    return {"ok": True, "id": diag["id"],
+            "created_at": diag["created_at"].isoformat(),
+            "total": diag["total"], "payload": diag["payload"]}
 
 
 @app.route('/privacidad-datos')

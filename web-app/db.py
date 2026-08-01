@@ -90,6 +90,35 @@ def mark_diagnostico_sent(diag_id):
         conn.close()
 
 
+def get_diagnostico_by_correo(correo):
+    """Latest diagnostico submission for an email (dashboard de ruta).
+
+    Returns {'id', 'created_at', 'payload', 'total'} — total = how many
+    submissions exist for that email — or None when there is none.
+    """
+    conn = get_asesoria_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, created_at, payload,
+                       count(*) OVER () AS total
+                FROM diagnosticos
+                WHERE correo = %s
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (str(correo or "").strip().lower(),),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return {"id": str(row[0]), "created_at": row[1], "payload": row[2],
+                "total": int(row[3])}
+    finally:
+        conn.close()
+
+
 def get_notifications_past_window(conn):
     """Return notifications where the 24hr window is closed and rules not yet ingested."""
     with conn.cursor() as cur:

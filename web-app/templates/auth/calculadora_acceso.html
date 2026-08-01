@@ -26,6 +26,7 @@
     {% endif %}
 
     <form method="POST" action="{{ url_for('calculadora_acceso') }}">
+      <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
       <label class="form-label-ei">Contraseña del administrador</label>
       <div class="login-input-wrap">
         <i class="bi bi-lock login-input-icon"></i>

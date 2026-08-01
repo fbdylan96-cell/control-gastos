@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hoja de Ruta Financiera — neto</title>
+<link rel="icon" href="/static/rebranding/logos/favicon.ico" sizes="any">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Paleta de marca neto — misma que diagnostico-financiero.html */
+:root{
+  --ink:#1B1C20;
+  --forest:#1B1C20;
+  --paper:#F4F6F9;
+  --card:#FFFFFF;
+  --line:#E2E6EB;
+  --accent:#3A9C8E;
+  --accent-soft:rgba(58,156,142,0.12);
+  --gold:#EFA91A;
+  --red:#B3402E;
+  --muted:#6B7280;
+  --blue:#1F4D8E;
+  --mono:'IBM Plex Mono',monospace;
+  --sans:'Inter',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-height:1.5;padding-bottom:60px}
+.wrap{max-width:920px;margin:0 auto;padding:0 20px}
+
+header{background:var(--forest);color:#fff;padding:22px 0 20px}
+header .wrap{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+.brand{display:flex;align-items:center;gap:14px}
+.brand-logo{background:#fff;border-radius:8px;padding:4px 8px;display:flex;align-items:center}
+.brand-logo img{height:38px;width:auto;display:block}
+.brand h1{font-size:22px;font-weight:800;letter-spacing:-0.02em}
+.brand p{font-size:13px;opacity:.75;margin-top:2px}
+.advisor-tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:rgba(239,169,26,.18);color:var(--gold);padding:5px 12px;border-radius:20px}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+.card h3{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap}
+.card .hint{font-size:12.5px;color:var(--muted);margin-bottom:14px}
+.tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:3px 8px;border-radius:20px;background:var(--accent-soft);color:var(--accent)}
+.tag.warn{background:#FBEEE9;color:var(--red)}
+.tag.gold{background:#F6EFDD;color:var(--gold)}
+.tag.blue{background:rgba(31,77,142,.10);color:var(--blue)}
+
+/* Loader */
+.loader-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.loader-row input{flex:1;min-width:240px;border:1px solid var(--line);border-radius:7px;padding:11px 13px;font-family:var(--sans);font-size:14px;background:#FDFDFB}
+.loader-row input:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+.btn{font-family:var(--sans);font-weight:700;font-size:14px;padding:11px 22px;border-radius:8px;cursor:pointer;border:none}
+.btn.primary{background:var(--forest);color:#fff}
+.btn.primary:hover{background:var(--accent)}
+.btn.primary:disabled{opacity:.55;cursor:wait}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--ink)}
+.load-status{font-size:13.5px;font-weight:600;margin-top:10px;display:none}
+.load-status.ok{display:block;color:var(--accent)}
+.load-status.err{display:block;color:var(--red)}
+
+/* Resumen */
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.sum-item{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.sum-item .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700}
+.sum-item .amt{font-family:var(--mono);font-size:17px;font-weight:600;margin-top:3px}
+.amt.pos{color:var(--accent)}
+.amt.neg{color:var(--red)}
+
+/* Stepper */
+.stepper{display:flex;gap:0;margin:20px 0 8px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card)}
+.step{flex:1;padding:11px 6px;text-align:center;font-size:11.5px;font-weight:600;color:var(--muted);cursor:pointer;border-right:1px solid var(--line);transition:all .15s}
+.step:last-child{border-right:none}
+.step .num{display:block;font-family:var(--mono);font-size:10.5px;margin-bottom:2px;opacity:.7}
+.step.active{background:var(--forest);color:#fff}
+.step.done{color:var(--accent)}
+@media(max-width:760px){.step{font-size:0}.step .num{font-size:11px;margin:0}}
+
+section.phase{display:none;margin-top:18px}
+section.phase.visible{display:block}
+.phase-intro{margin:6px 0 16px}
+.phase-intro h2{font-size:20px;font-weight:800;letter-spacing:-0.02em}
+.phase-intro p{font-size:14px;color:var(--muted);margin-top:4px;max-width:680px}
+
+/* Tables */
+table.data{width:100%;border-collapse:collapse;font-size:13.5px}
+table.data th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+table.data td{padding:8px;border-bottom:1px solid var(--line)}
+table.data td.num,table.data th.num{text-align:right;font-family:var(--mono)}
+table.data tr:last-child td{border-bottom:none}
+table.data tr.total td{font-weight:700;border-top:2px solid var(--ink);border-bottom:none}
+.pri-badge{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:700;background:var(--forest);color:#fff;border-radius:50%;width:22px;height:22px;line-height:22px;text-align:center;margin-right:8px}
+
+/* Progress bars */
+.pbar{background:var(--paper);border:1px solid var(--line);border-radius:20px;height:22px;overflow:hidden;position:relative;margin:8px 0}
+.pbar .fill{background:var(--accent);height:100%;border-radius:20px;transition:width .4s;min-width:0}
+.pbar .fill.gold{background:var(--gold)}
+.pbar .plabel{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;font-family:var(--mono)}
+
+/* Inputs de simuladores */
+.sim-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:10px 0 14px}
+.sim-grid label{font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px}
+.sim-grid input,.sim-grid select{width:100%;border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-family:var(--mono);font-size:14px;background:#FDFDFB}
+.sim-grid input:focus,.sim-grid select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.result-big{font-family:var(--mono);font-size:26px;font-weight:600;color:var(--accent);margin:6px 0}
+.result-line{font-size:13.5px;margin:4px 0}
+.result-line b{font-family:var(--mono)}
+
+.chip{display:inline-block;font-size:12.5px;font-weight:600;border:1px solid var(--line);border-radius:20px;padding:5px 12px;margin:3px 4px 3px 0;background:#FDFDFB}
+.chip.have{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.chip.miss{border-color:#F0C9BE;background:#FBEEE9;color:var(--red)}
+
+ul.tips{margin:8px 0 0 18px;font-size:13.5px}
+ul.tips li{margin-bottom:6px}
+.note{font-size:12.5px;color:var(--muted);background:var(--paper);border-left:3px solid var(--gold);padding:10px 12px;border-radius:0 8px 8px 0;margin-top:12px}
+.chk-inline{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.chk-inline input{accent-color:var(--accent)}
+
+.nav-btns{display:flex;justify-content:space-between;margin-top:20px}
+#appArea{display:none}
+@media print{
+  header,.stepper,.nav-btns,#loaderCard,.btn{display:none !important}
+  section.phase{display:block !important;page-break-inside:avoid;margin-top:14px}
+  body{background:#fff;padding-bottom:0}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="brand">
+      <div class="brand-logo"><img src="/static/rebranding/logos/logo-dark.png" alt="neto"
+           onerror="this.parentElement.innerHTML='<strong style=&quot;color:#1B1C20;font-size:20px&quot;>neto</strong>'"></div>
+      <div>
+        <h1>Hoja de Ruta Financiera</h1>
+        <p>Planificación por pasos para la primera reunión de asesoría</p>
+      </div>
+    </div>
+    <span class="advisor-tag">Uso del asesor</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- Cargar diagnóstico -->
+  <div class="card" id="loaderCard" style="margin-top:22px">
+    <h3>📥 Cargar diagnóstico</h3>
+    <p class="hint">Ingrese el correo con el que el prospecto envió su Diagnóstico Financiero. Se carga el envío más reciente.</p>
+    <div class="loader-row">
+      <input type="email" id="correoInput" placeholder="correo@ejemplo.com" onkeydown="if(event.key==='Enter')cargar()">
+      <button class="btn primary" id="btnCargar" onclick="cargar()">Cargar</button>
+      <button class="btn ghost" onclick="window.print()" title="Imprimir / guardar PDF">🖨</button>
+    </div>
+    <div class="load-status" id="loadStatus"></div>
+  </div>
+
+  <div id="appArea">
+
+    <!-- Resumen -->
+    <div class="card" style="padding:14px 20px">
+      <h3 id="clienteNombre" style="font-size:17px"></h3>
+      <p class="hint" id="clienteMeta" style="margin-bottom:0"></p>
+    </div>
+    <div class="summary" id="summaryGrid"></div>
+
+    <!-- Stepper -->
+    <div class="stepper" id="stepper"></div>
+
+    <!-- Paso 0 -->
+    <section class="phase" data-step="0">
+      <div class="phase-intro">
+        <h2>Paso 0 · Antes de empezar</h2>
+        <p>El diagnóstico captura ingresos <b>netos</b> (lo que llega a la cuenta). Para planificar —
+           especialmente el 15% de retiro del Paso 4 — estimamos el salario <b>bruto</b> de cada fuente,
+           incluyendo a la pareja si se incluyó en el diagnóstico.</p>
+      </div>
+      <div class="card">
+        <h3>Salario bruto estimado <span class="tag">CCSS + renta 2026</span></h3>
+        <p class="hint">Desmarque «Es salario» en fuentes que no llevan cargas sociales (alquileres, negocios propios, etc.).</p>
+        <table class="data" id="tablaBruto"></table>
+        <div class="note">Estimación con deducción obrera CCSS de <span id="ccssPct"></span> e impuesto al
+          salario por tramos de Hacienda. Los tramos se actualizan cada enero — verificar antes de usar en reunión.</div>
+      </div>
+      <div class="card" id="perfilesCard" style="display:none">
+        <h3>🧠 Personalidades del dinero</h3>
+        <p class="hint">Del quiz del diagnóstico — útil para adaptar el tono de la conversación.</p>
+        <div id="perfilesBody"></div>
+      </div>
+    </section>
+
+    <!-- Paso 1 -->
+    <section class="phase" data-step="1">
+      <div class="phase-intro">
+        <h2>Paso 1 · Primera defensa: fondo inicial de $1,000</h2>
+        <p>Antes de atacar deudas, un colchón mínimo de <b>$1,000</b> evita que cualquier imprevisto
+           se convierta en deuda nueva. Se guarda en un instrumento líquido y seguro, no en efectivo.</p>
+      </div>
+      <div class="card">
+        <h3>Progreso hacia la meta</h3>
+        <div class="result-line">Meta: <b id="meta1000"></b> <span class="hint" id="tcNota"></span></div>
+        <div class="result-line">Fondo actual declarado: <b id="feActual"></b></div>
+        <div class="pbar"><div class="fill" id="p1Fill"></div><div class="plabel" id="p1Label"></div></div>
+        <div class="result-line" id="p1Falta"></div>
+      </div>
+      <div class="card">
+        <h3>Dónde guardarlo <span class="tag gold">Ahorro seguro</span></h3>
+        <ul class="tips">
+          <li><b>Multimoney Smart</b> — cuenta de rendimiento con liquidez inmediata, sin monto mínimo;
+              ideal para el fondo inicial en colones o dólares.</li>
+          <li><b>High-Yield Cash Program de Alpaca</b> — efectivo en USD generando rendimiento dentro de la
+              cuenta de inversión; disponible con el servicio de inversión de neto.</li>
+        </ul>
+        <div class="note">Criterio: liquidez en ≤48 h y cero riesgo de capital. El rendimiento es secundario
+          en este paso — la función del fondo es estar disponible.</div>
+      </div>
+    </section>
+
+    <!-- Paso 2 -->
+    <section class="phase" data-step="2">
+      <div class="phase-intro">
+        <h2>Paso 2 · Eliminar fugas: plan de pago de deudas</h2>
+        <p>Método <b>bola de nieve</b>: se paga el mínimo de todo y el excedente ataca la deuda más pequeña.
+           Cada deuda cancelada libera su cuota para la siguiente. Además, se acumula un porcentaje del
+           excedente y cada 3–6 meses se hace una amortización extraordinaria.</p>
+      </div>
+      <div class="card">
+        <h3>Deudas por prioridad <span class="tag warn">menor saldo primero</span></h3>
+        <table class="data" id="tablaDeudas"></table>
+      </div>
+      <div class="card" id="simDeudaCard">
+        <h3>Simulador de amortización extraordinaria</h3>
+        <p class="hint">Porcentaje del excedente mensual que se aparta; cada N meses lo acumulado se abona
+           a la deuda prioritaria del momento.</p>
+        <div class="sim-grid">
+          <div><label>% del excedente apartado</label><input type="number" id="simPct" value="50" min="0" max="100" step="5" oninput="simDeudas()"></div>
+          <div><label>Cadencia del abono</label><select id="simCad" onchange="simDeudas()"><option value="3">Cada 3 meses</option><option value="6">Cada 6 meses</option></select></div>
+          <div><label>Excedente mensual (editable)</label><input type="number" id="simFlujo" step="10000" oninput="simDeudas()"></div>
+        </div>
+        <div id="simDeudaOut"></div>
+      </div>
+    </section>
+
+    <!-- Paso 3 -->
+    <section class="phase" data-step="3">
+      <div class="phase-intro">
+        <h2>Paso 3 · Fondo de emergencia completo (3–6 meses)</h2>
+        <p>Con las deudas de consumo eliminadas, el fondo crece hasta cubrir <b>3 a 6 meses de gastos</b>
+           reales (gastos + cuotas). Ese es el verdadero colchón que protege el plan completo.</p>
+      </div>
+      <div class="card">
+        <h3>Meta del fondo completo</h3>
+        <div class="result-line">Gastos mensuales reales: <b id="p3Gastos"></b></div>
+        <div class="result-line">Rango meta: <b id="p3Rango"></b></div>
+        <div class="pbar"><div class="fill" id="p3Fill"></div><div class="plabel" id="p3Label"></div></div>
+        <div class="result-line" id="p3Detalle"></div>
+        <div class="note"><b>Asociación solidarista:</b> punto de conversación — el ahorro obrero más el aporte
+          patronal puede complementar el fondo, pero su liquidez depende del reglamento de cada asociación
+          (retiros parciales, plazos). Verificar antes de contarlo como colchón.</div>
+      </div>
+    </section>
+
+    <!-- Paso 4 -->
+    <section class="phase" data-step="4">
+      <div class="phase-intro">
+        <h2>Paso 4 · Retiro: invertir 15% del ingreso</h2>
+        <p>Con colchón completo, el <b>15% del ingreso bruto del hogar</b> va a inversión para el retiro,
+           por encima de los regímenes obligatorios (IVM + ROP).</p>
+      </div>
+      <div class="card">
+        <h3>Calculadora de retiro</h3>
+        <div class="result-line">Ingreso bruto estimado del hogar: <b id="p4Bruto"></b> → 15% = <b id="p4Sugerido"></b>/mes</div>
+        <div class="sim-grid">
+          <div><label>Aporte mensual (₡)</label><input type="number" id="simAporte" step="10000" oninput="simRetiro()"></div>
+          <div><label>Rendimiento anual (%)</label><input type="number" id="simRend" value="8" min="0" max="20" step="0.5" oninput="simRetiro()"></div>
+          <div><label>Años</label><input type="number" id="simAnios" value="25" min="1" max="50" oninput="simRetiro()"></div>
+        </div>
+        <div class="result-big" id="p4FV"></div>
+        <div class="result-line hint">Valor futuro estimado con interés compuesto mensual. <span id="p4Tabla"></span></div>
+      </div>
+    </section>
+
+    <!-- Paso 5 -->
+    <section class="phase" data-step="5">
+      <div class="phase-intro">
+        <h2>Paso 5 · Pagar la casa antes de tiempo</h2>
+        <p>Un prepago anual a la hipoteca (u otra deuda grande) recorta años de cuotas e intereses.
+           Proyección de cuánto se ahorra abonando una cantidad fija cada año.</p>
+      </div>
+      <div class="card" id="simCasaCard">
+        <h3>Proyección de prepago anual</h3>
+        <div class="sim-grid">
+          <div><label>Deuda</label><select id="simCasaDeuda" onchange="simCasa()"></select></div>
+          <div><label>Prepago anual (₡)</label><input type="number" id="simPrepago" step="100000" oninput="simCasa()"></div>
+        </div>
+        <div id="simCasaOut"></div>
+      </div>
+    </section>
+
+    <!-- Paso 6 -->
+    <section class="phase" data-step="6">
+      <div class="phase-intro">
+        <h2>Paso 6 · Construir riqueza y proteger</h2>
+        <p>Con la base sólida: proteger lo construido con seguros, acelerar con más ingresos, y apuntar a
+           la libertad financiera — no solo al retiro.</p>
+      </div>
+      <div class="card">
+        <h3>🛡 Protección: seguros como mecanismo de defensa</h3>
+        <p class="hint">Declarados en el diagnóstico vs. protección básica recomendada.</p>
+        <div id="segurosBody"></div>
+      </div>
+      <div class="card">
+        <h3>🚀 Acelerador: aumentar ingresos, no solo recortar gastos</h3>
+        <ul class="tips">
+          <li>El recorte de gastos tiene piso; el ingreso no tiene techo. Negociación salarial, certificaciones,
+              ingresos secundarios alineados a las habilidades actuales.</li>
+          <li>Cada aumento se asigna ANTES de recibirlo (regla del plan: % a inversión, % a metas) para evitar
+              inflación del estilo de vida.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🎯 Meta final: libertad financiera</h3>
+        <div class="result-line">Gasto anual actual: <b id="p6GastoAnual"></b></div>
+        <div class="result-line">Patrimonio de libertad (regla del 4% ≈ 25× gasto anual): <b id="p6Meta"></b></div>
+        <div class="result-line">Patrimonio neto actual: <b id="p6Patrimonio"></b></div>
+        <div class="pbar"><div class="fill gold" id="p6Fill"></div><div class="plabel" id="p6Label"></div></div>
+        <div id="p6Metas"></div>
+      </div>
+    </section>
+
+    <div class="nav-btns">
+      <button class="btn ghost" id="btnPrev" onclick="mover(-1)">← Anterior</button>
+      <button class="btn primary" id="btnNext" onclick="mover(1)">Siguiente →</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ══ Constantes fiscales CR — ACTUALIZAR CADA ENERO con Hacienda/CCSS ══
+   Deducción obrera CCSS: SEM 5.50% + IVM 4.17% + Banco Popular 1.00%. */
+const CCSS_TRABAJADOR = 0.1067;
+/* Tramos mensuales del impuesto único al salario (₡, tasa marginal). */
+const TRAMOS_RENTA = [
+  [0,        922000,   0.00],
+  [922000,   1352000,  0.10],
+  [1352000,  2373000,  0.15],
+  [2373000,  4745000,  0.20],
+  [4745000,  Infinity, 0.25],
+];
+
+const PERFILES = {
+  ahorrador:"🏦 El Ahorrador", gastador:"🛍️ El Gastador", evasor:"🙈 El Evasor",
+  monje:"🕊️ El Monje del dinero", amasador:"📈 El Amasador", preocupado:"😰 El Preocupado",
+};
+const SEGUROS_BASICOS = ["Vida", "Gastos médicos / salud", "Incapacidad", "Hogar", "Vehículo"];
+
+let D = null;          // payload del diagnóstico cargado
+let TC = null;         // tipo de cambio USD→CRC
+let pasoActual = 0;
+const NUM_PASOS = 7;
+
+const $ = id => document.getElementById(id);
+const fmt = n => "₡" + Math.round(n).toLocaleString("es-CR");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const sum = (rows, f="amount") => (rows || []).reduce((a, r) => a + (Number(r[f]) || 0), 0);
+
+/* ── Impuesto y bruto→neto ── */
+function renta(bruto){
+  let t = 0;
+  for (const [lo, hi, tasa] of TRAMOS_RENTA)
+    if (bruto > lo) t += (Math.min(bruto, hi) - lo) * tasa;
+  return t;
+}
+const netoDeBruto = b => b * (1 - CCSS_TRABAJADOR) - renta(b);
+function brutoDeNeto(neto){
+  if (neto <= 0) return 0;
+  let lo = neto, hi = neto * 2.5;
+  while (netoDeBruto(hi) < neto) hi *= 1.5;
+  for (let i = 0; i < 80; i++){
+    const mid = (lo + hi) / 2;
+    if (netoDeBruto(mid) < neto) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/* ── Carga ── */
+async function cargar(){
+  const correo = $("correoInput").value.trim();
+  const st = $("loadStatus");
+  st.className = "load-status";
+  if (!correo || !correo.includes("@")){ st.textContent = "Ingrese un correo válido."; st.classList.add("err"); return; }
+  $("btnCargar").disabled = true;
+  try {
+    const [rd, rtc] = await Promise.all([
+      fetch("/ruta/api/diagnostico?correo=" + encodeURIComponent(correo)),
+      fetch("/diagnostico/tipo-cambio"),
+    ]);
+    const jd = await rd.json();
+    if (!rd.ok){ throw new Error(jd.error || "Error consultando."); }
+    TC = await rtc.json().catch(() => ({usd_crc: null}));
+    D = jd.payload;
+    const fecha = new Date(jd.created_at).toLocaleDateString("es-CR", {day:"2-digit", month:"long", year:"numeric"});
+    st.textContent = `Diagnóstico de ${D.nombre} cargado (${fecha}${jd.total > 1 ? `, ${jd.total} envíos — se usa el más reciente` : ""}).`;
+    st.classList.add("ok");
+    render();
+  } catch(e){
+    st.textContent = e.message || "No se pudo cargar.";
+    st.classList.add("err");
+  } finally {
+    $("btnCargar").disabled = false;
+  }
+}
+
+/* ── Render general ── */
+function render(){
+  $("appArea").style.display = "block";
+
+  const ingresos = sum(D.ingresos);
+  const gastos = sum(D.fijos) + sum(D.variables) + sum(D.hormiga);
+  const cuotas = sum(D.deudas, "cuota");
+  const flujo = ingresos - gastos - cuotas;
+  const saldoDeudas = sum(D.deudas, "saldo");
+  const patrimonio = sum(D.activos) - saldoDeudas;
+
+  $("clienteNombre").textContent = D.nombre;
+  $("clienteMeta").textContent = `${D.correo} · ${D.celular}` + (D.retiro ? ` · Régimen de retiro: ${D.retiro}` : "");
+
+  $("summaryGrid").innerHTML = [
+    ["Ingresos netos/mes", fmt(ingresos), ""],
+    ["Gastos/mes", fmt(gastos), ""],
+    ["Cuotas deudas/mes", fmt(cuotas), ""],
+    ["Excedente/mes", fmt(flujo), flujo >= 0 ? "pos" : "neg"],
+    ["Deuda total", fmt(saldoDeudas), saldoDeudas > 0 ? "neg" : ""],
+    ["Patrimonio neto", fmt(patrimonio), patrimonio >= 0 ? "pos" : "neg"],
+  ].map(([l, v, c]) => `<div class="sum-item"><div class="lbl">${l}</div><div class="amt ${c}">${v}</div></div>`).join("");
+
+  const nombres = ["Antes de empezar","Defensa $1,000","Deudas","Fondo 3–6m","Retiro 15%","Casa","Riqueza"];
+  $("stepper").innerHTML = nombres.map((n, i) =>
+    `<div class="step" data-i="${i}" onclick="irA(${i})"><span class="num">Paso ${i}</span>${n}</div>`).join("");
+
+  renderPaso0(); renderPaso1(); renderPaso2(flujo); renderPaso3(gastos + cuotas);
+  renderPaso4(); renderPaso5(flujo); renderPaso6(gastos + cuotas, patrimonio);
+  irA(0);
+}
+
+function irA(i){
+  pasoActual = i;
+  document.querySelectorAll("section.phase").forEach(s => s.classList.toggle("visible", Number(s.dataset.step) === i));
+  document.querySelectorAll(".step").forEach(s => {
+    const j = Number(s.dataset.i);
+    s.classList.toggle("active", j === i);
+    s.classList.toggle("done", j < i);
+  });
+  $("btnPrev").style.visibility = i === 0 ? "hidden" : "visible";
+  $("btnNext").style.visibility = i === NUM_PASOS - 1 ? "hidden" : "visible";
+  window.scrollTo({top: 0, behavior: "smooth"});
+}
+const mover = d => irA(Math.min(NUM_PASOS - 1, Math.max(0, pasoActual + d)));
+
+/* ── Paso 0: bruto ── */
+function renderPaso0(){
+  $("ccssPct").textContent = (CCSS_TRABAJADOR * 100).toFixed(2) + "%";
+  const rows = (D.ingresos || []).filter(r => r.amount > 0);
+  if (!rows.length){ $("tablaBruto").innerHTML = "<tr><td class='hint'>Sin ingresos registrados en el diagnóstico.</td></tr>"; return; }
+  const esSalario = r => !/alquiler|renta|negocio|dividendo|inter[eé]s/i.test(r.name || "");
+  window._brutoRows = rows.map(r => ({name: r.name || "(sin nombre)", neto: r.amount, salario: esSalario(r)}));
+  pintarBruto();
+}
+function pintarBruto(){
+  const rs = window._brutoRows;
+  let totalNeto = 0, totalBruto = 0;
+  const cuerpo = rs.map((r, i) => {
+    const bruto = r.salario ? brutoDeNeto(r.neto) : r.neto;
+    totalNeto += r.neto; totalBruto += bruto;
+    return `<tr>
+      <td>${esc(r.name)}<div class="chk-inline"><input type="checkbox" ${r.salario ? "checked" : ""}
+          onchange="window._brutoRows[${i}].salario=this.checked;pintarBruto();simRetiro()"> Es salario</div></td>
+      <td class="num">${fmt(r.neto)}</td>
+      <td class="num">${fmt(bruto)}</td>
+      <td class="num" style="color:var(--muted)">${fmt(bruto - r.neto)}</td>
+    </tr>`;
+  }).join("");
+  $("tablaBruto").innerHTML = `
+    <tr><th>Fuente</th><th class="num">Neto/mes</th><th class="num">Bruto estimado</th><th class="num">Cargas + renta</th></tr>
+    ${cuerpo}
+    <tr class="total"><td>Total del hogar</td><td class="num">${fmt(totalNeto)}</td>
+      <td class="num">${fmt(totalBruto)}</td><td class="num">${fmt(totalBruto - totalNeto)}</td></tr>`;
+  window._brutoHogar = totalBruto;
+
+  // Personalidades
+  const ps = (D.personalidades || []).map(p => {
+    const votos = (p.respuestas || []).filter(Boolean);
+    if (votos.length < 5) return null;
+    const conteo = {}; votos.forEach(v => conteo[v] = (conteo[v] || 0) + 1);
+    const pred = Object.keys(PERFILES).reduce((a, b) => (conteo[b] || 0) > (conteo[a] || 0) ? b : a);
+    return `<div class="result-line"><b>${esc(p.nombre || "Persona")}</b>: ${PERFILES[pred]}</div>`;
+  }).filter(Boolean);
+  if (ps.length){ $("perfilesCard").style.display = "block"; $("perfilesBody").innerHTML = ps.join(""); }
+}
+
+/* ── Paso 1: $1,000 ── */
+function renderPaso1(){
+  const tc = TC && TC.usd_crc ? TC.usd_crc : null;
+  const meta = tc ? 1000 * tc : 550000;   // respaldo si no hay tipo de cambio
+  const fe = D.fe_monto || 0;
+  $("meta1000").textContent = fmt(meta) + " ($1,000)";
+  $("tcNota").textContent = tc ? `· TC ${tc.toFixed(2)} del ${TC.fecha || "día"}` : "· TC no disponible, estimado ₡550/US$";
+  $("feActual").textContent = fmt(fe) + (D.fe_tiene === "no" ? " (declaró no tener fondo)" : "");
+  const pct = Math.min(100, fe / meta * 100);
+  $("p1Fill").style.width = pct + "%";
+  $("p1Label").textContent = pct.toFixed(0) + "%";
+  $("p1Falta").innerHTML = fe >= meta
+    ? `✅ <b>Completado.</b> El excedente sobre la meta puede acelerar el Paso 2 (deudas) o el Paso 3.`
+    : `Faltan <b>${fmt(meta - fe)}</b> para completar la primera defensa.`;
+}
+
+/* ── Paso 2: deudas ── */
+function ordenarDeudas(){
+  return (D.deudas || []).filter(d => (d.saldo || 0) > 0)
+    .slice().sort((a, b) => (a.saldo || 0) - (b.saldo || 0));
+}
+function renderPaso2(flujo){
+  const ds = ordenarDeudas();
+  if (!ds.length){
+    $("tablaDeudas").innerHTML = "<tr><td class='hint'>Sin deudas registradas — pasar directo al Paso 3. 🎉</td></tr>";
+    $("simDeudaCard").style.display = "none";
+    return;
+  }
+  $("tablaDeudas").innerHTML = `
+    <tr><th></th><th>Deuda</th><th class="num">Saldo</th><th class="num">Tasa anual</th><th class="num">Cuota/mes</th></tr>` +
+    ds.map((d, i) => `<tr>
+      <td><span class="pri-badge">${i + 1}</span></td><td>${esc(d.name || "(sin nombre)")}</td>
+      <td class="num">${fmt(d.saldo)}</td><td class="num">${(d.tasa || 0).toFixed(1)}%</td>
+      <td class="num">${fmt(d.cuota || 0)}</td></tr>`).join("") +
+    `<tr class="total"><td></td><td>Total</td><td class="num">${fmt(sum(ds, "saldo"))}</td><td></td>
+      <td class="num">${fmt(sum(ds, "cuota"))}</td></tr>`;
+  $("simFlujo").value = Math.max(0, Math.round(flujo));
+  simDeudas();
+}
+function simularSnowball(ds, extraMensual, cadencia){
+  // Devuelve {meses, intereses, cancelaciones:[{name, mes}]} o null si no converge.
+  const debts = ds.map(d => ({name: d.name, saldo: d.saldo, i: (d.tasa || 0) / 100 / 12, cuota: d.cuota || 0}));
+  let mes = 0, intereses = 0, bolsa = 0, liberada = 0;
+  const canceladas = [];
+  while (debts.some(d => d.saldo > 0.5)){
+    if (++mes > 600) return null;
+    bolsa += extraMensual;
+    const prioridad = debts.find(d => d.saldo > 0.5);
+    for (const d of debts){
+      if (d.saldo <= 0.5) continue;
+      const int = d.saldo * d.i;
+      intereses += int;
+      d.saldo = d.saldo + int - (d.cuota + (d === prioridad ? liberada : 0));
+    }
+    if (cadencia && mes % cadencia === 0 && bolsa > 0){
+      const objetivo = debts.find(d => d.saldo > 0.5);
+      if (objetivo){ objetivo.saldo -= bolsa; bolsa = 0; }
+    }
+    for (const d of debts){
+      if (d.saldo <= 0.5 && !canceladas.some(c => c.name === d.name)){
+        canceladas.push({name: d.name, mes});
+        liberada += d.cuota; d.cuota = 0; d.saldo = 0;
+      }
+    }
+  }
+  return {meses: mes, intereses, canceladas};
+}
+function simDeudas(){
+  const ds = ordenarDeudas();
+  if (!ds.length) return;
+  const malas = ds.filter(d => (d.cuota || 0) <= d.saldo * (d.tasa || 0) / 100 / 12);
+  const pct = (Number($("simPct").value) || 0) / 100;
+  const cad = Number($("simCad").value);
+  const flujo = Number($("simFlujo").value) || 0;
+  const extra = Math.max(0, flujo * pct);  // se acumula mensual, se abona por cadencia
+
+  let html = "";
+  if (malas.length)
+    html += `<div class="note" style="border-color:var(--red)">⚠ ${malas.map(d => esc(d.name)).join(", ")}:
+       la cuota no cubre los intereses del mes — renegociar antes de simular.</div>`;
+  const base = simularSnowball(ds, 0, 0);
+  const con = simularSnowball(ds, extra, cad);
+  if (!base || !con){
+    html += `<div class="note" style="border-color:var(--red)">La proyección no converge (cuotas insuficientes).</div>`;
+  } else {
+    const aniosBase = (base.meses / 12).toFixed(1), aniosCon = (con.meses / 12).toFixed(1);
+    html += `<div class="result-line">Solo con cuotas actuales: libre de deudas en <b>${base.meses} meses (${aniosBase} años)</b>, intereses ≈ <b>${fmt(base.intereses)}</b>.</div>
+      <div class="result-line">Con abono extraordinario (${(pct * 100).toFixed(0)}% del excedente cada ${cad} meses):
+        libre en <b>${con.meses} meses (${aniosCon} años)</b>, intereses ≈ <b>${fmt(con.intereses)}</b>.</div>
+      <div class="result-big">Ahorro: ${fmt(base.intereses - con.intereses)} y ${base.meses - con.meses} meses menos</div>
+      <table class="data"><tr><th>Orden de cancelación</th><th class="num">Mes estimado</th></tr>` +
+      con.canceladas.map(c => `<tr><td>${esc(c.name)}</td><td class="num">mes ${c.mes}</td></tr>`).join("") + `</table>`;
+  }
+  $("simDeudaOut").innerHTML = html;
+}
+
+/* ── Paso 3: fondo completo ── */
+function renderPaso3(gastosReales){
+  const min = gastosReales * 3, max = gastosReales * 6, fe = D.fe_monto || 0;
+  $("p3Gastos").textContent = fmt(gastosReales);
+  $("p3Rango").textContent = `${fmt(min)} — ${fmt(max)}`;
+  const pct = Math.min(100, min > 0 ? fe / min * 100 : 0);
+  $("p3Fill").style.width = pct + "%";
+  $("p3Label").textContent = pct.toFixed(0) + "% de la meta mínima";
+  $("p3Detalle").innerHTML = fe >= min
+    ? `✅ Meta mínima cubierta. Para el rango alto (6 meses) faltan <b>${fmt(Math.max(0, max - fe))}</b>.`
+    : `Faltan <b>${fmt(min - fe)}</b> para los 3 meses mínimos.`;
+}
+
+/* ── Paso 4: retiro ── */
+function renderPaso4(){
+  const bruto = window._brutoHogar || 0;
+  $("simAporte").value = Math.round(bruto * 0.15);
+  simRetiro();
+}
+function simRetiro(){
+  const bruto = window._brutoHogar || 0;
+  $("p4Bruto").textContent = fmt(bruto);
+  $("p4Sugerido").textContent = fmt(bruto * 0.15);
+  const a = Number($("simAporte").value) || 0;
+  const r = (Number($("simRend").value) || 0) / 100 / 12;
+  const n = (Number($("simAnios").value) || 0) * 12;
+  const fv = r > 0 ? a * ((Math.pow(1 + r, n) - 1) / r) : a * n;
+  $("p4FV").textContent = fmt(fv);
+  const hitos = [10, 20, 30].map(y => {
+    const m = y * 12;
+    const v = r > 0 ? a * ((Math.pow(1 + r, m) - 1) / r) : a * m;
+    return `${y} años: <b>${fmt(v)}</b>`;
+  }).join(" · ");
+  $("p4Tabla").innerHTML = hitos;
+}
+
+/* ── Paso 5: casa ── */
+function renderPaso5(flujo){
+  const ds = (D.deudas || []).filter(d => (d.saldo || 0) > 0).slice().sort((a, b) => b.saldo - a.saldo);
+  if (!ds.length){
+    $("simCasaCard").innerHTML = `<h3>Proyección de prepago anual</h3>
+      <p class="hint">Sin deudas registradas. Cuando exista una hipoteca, aquí se proyecta el ahorro de prepagarla.</p>`;
+    return;
+  }
+  $("simCasaDeuda").innerHTML = ds.map((d, i) =>
+    `<option value="${i}">${esc(d.name || "(sin nombre)")} — ${fmt(d.saldo)}</option>`).join("");
+  window._casaDeudas = ds;
+  $("simPrepago").value = Math.max(100000, Math.round((flujo > 0 ? flujo : 0) * 2 / 100000) * 100000);
+  simCasa();
+}
+function simCasa(){
+  const ds = window._casaDeudas || [];
+  if (!ds.length) return;
+  const d = ds[Number($("simCasaDeuda").value) || 0];
+  const prepago = Number($("simPrepago").value) || 0;
+  const proj = (extraAnual) => {
+    let saldo = d.saldo, mes = 0, intereses = 0;
+    const i = (d.tasa || 0) / 100 / 12, cuota = d.cuota || 0;
+    if (cuota <= saldo * i) return null;
+    while (saldo > 0.5){
+      if (++mes > 720) return null;
+      const int = saldo * i; intereses += int;
+      saldo = saldo + int - cuota - (mes % 12 === 0 ? extraAnual : 0);
+    }
+    return {mes, intereses};
+  };
+  const sin = proj(0), con = proj(prepago);
+  $("simCasaOut").innerHTML = (!sin || !con)
+    ? `<div class="note" style="border-color:var(--red)">La cuota registrada no cubre los intereses — verificar tasa/cuota con el estado de cuenta.</div>`
+    : `<div class="result-line">Sin prepago: <b>${sin.mes} meses (${(sin.mes / 12).toFixed(1)} años)</b>, intereses ≈ <b>${fmt(sin.intereses)}</b>.</div>
+       <div class="result-line">Con prepago de ${fmt(prepago)}/año: <b>${con.mes} meses (${(con.mes / 12).toFixed(1)} años)</b>, intereses ≈ <b>${fmt(con.intereses)}</b>.</div>
+       <div class="result-big">Ahorra ${fmt(sin.intereses - con.intereses)} y termina ${((sin.mes - con.mes) / 12).toFixed(1)} años antes</div>`;
+}
+
+/* ── Paso 6 ── */
+function renderPaso6(gastosReales, patrimonio){
+  const tiene = (D.seguros || []);
+  const have = SEGUROS_BASICOS.filter(s => tiene.some(t => s.toLowerCase().split(" ")[0].startsWith(t.toLowerCase().split(" ")[0]) || t.toLowerCase().includes(s.toLowerCase().split(" ")[0])));
+  const chips = SEGUROS_BASICOS.map(s => {
+    const ok = have.includes(s);
+    return `<span class="chip ${ok ? "have" : "miss"}">${ok ? "✓" : "✗"} ${s}</span>`;
+  }).join("");
+  const otros = tiene.filter(t => !SEGUROS_BASICOS.some(s => t.toLowerCase().includes(s.toLowerCase().split(" ")[0]) || s.toLowerCase().split(" ")[0].startsWith(t.toLowerCase().split(" ")[0])));
+  $("segurosBody").innerHTML = chips +
+    (otros.length ? `<p class="hint" style="margin-top:8px">Otros declarados: ${otros.map(esc).join(", ")}</p>` : "") +
+    `<div class="note">Prioridad de conversación: <b>vida</b> (si hay dependientes) y <b>gastos médicos</b> —
+      son los que evitan que un evento borre el patrimonio del plan.</div>`;
+
+  const anual = gastosReales * 12, meta = anual * 25;
+  $("p6GastoAnual").textContent = fmt(anual);
+  $("p6Meta").textContent = fmt(meta);
+  $("p6Patrimonio").textContent = fmt(patrimonio);
+  const pct = meta > 0 ? Math.min(100, Math.max(0, patrimonio / meta * 100)) : 0;
+  $("p6Fill").style.width = pct + "%";
+  $("p6Label").textContent = pct.toFixed(1) + "%";
+  const metas = (D.metas || []).filter(Boolean);
+  $("p6Metas").innerHTML =
+    (metas.length ? `<p class="hint" style="margin-top:12px"><b>Metas declaradas:</b> ${metas.map(esc).join(" · ")}</p>` : "") +
+    (D.notas ? `<p class="hint"><b>Notas del prospecto:</b> ${esc(D.notas)}</p>` : "");
+}
+</script>
+</body>
+</html>

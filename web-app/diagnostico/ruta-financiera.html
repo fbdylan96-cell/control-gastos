@@ -115,6 +115,24 @@ ul.tips li{margin-bottom:6px}
 .chk-inline{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
 .chk-inline input{accent-color:var(--accent)}
 
+/* Charts (paleta validada: azul #3573C4 / teal #12A189 sobre blanco) */
+.chart-box{position:relative;margin-top:16px}
+.chart-box svg{width:100%;height:auto;display:block}
+.chart-box svg text{font-family:var(--sans)}
+.chart-legend{display:flex;gap:18px;flex-wrap:wrap;margin:12px 0 4px;font-size:12px;font-weight:600;color:var(--ink)}
+.chart-legend .li{display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none}
+.chart-legend .sw{width:16px;height:4px;border-radius:2px}
+.chart-tip{position:absolute;pointer-events:none;background:var(--forest);color:#fff;font-size:12px;border-radius:8px;padding:8px 11px;box-shadow:0 6px 18px rgba(0,0,0,.20);opacity:0;transition:opacity .12s;white-space:nowrap;z-index:10}
+.chart-tip .t-title{font-family:var(--mono);font-size:10.5px;opacity:.7;margin-bottom:3px}
+.chart-tip .t-row{display:flex;align-items:center;gap:7px;font-family:var(--mono);margin-top:2px}
+.chart-tip .t-row .dot{width:8px;height:8px;border-radius:2px;display:inline-block}
+details.chart-data{margin-top:10px;font-size:12.5px}
+details.chart-data summary{cursor:pointer;color:var(--muted);font-weight:600;font-size:12px}
+details.chart-data table{margin-top:8px}
+.chart-line{fill:none;stroke-width:2;transition:opacity .2s}
+.chart-area{transition:opacity .2s}
+.dim{opacity:.18 !important}
+
 .nav-btns{display:flex;justify-content:space-between;margin-top:20px}
 #appArea{display:none}
 @media print{
@@ -237,6 +255,8 @@ ul.tips li{margin-bottom:6px}
           <div><label>Excedente mensual (editable)</label><input type="number" id="simFlujo" step="10000" oninput="simDeudas()"></div>
         </div>
         <div id="simDeudaOut"></div>
+        <div class="chart-box" id="chartDeudas"></div>
+        <details class="chart-data" id="dataDeudas"></details>
       </div>
     </section>
 
@@ -276,6 +296,8 @@ ul.tips li{margin-bottom:6px}
         </div>
         <div class="result-big" id="p4FV"></div>
         <div class="result-line hint">Valor futuro estimado con interés compuesto mensual. <span id="p4Tabla"></span></div>
+        <div class="chart-box" id="chartRetiro"></div>
+        <details class="chart-data" id="dataRetiro"></details>
       </div>
     </section>
 
@@ -293,6 +315,8 @@ ul.tips li{margin-bottom:6px}
           <div><label>Prepago anual (₡)</label><input type="number" id="simPrepago" step="100000" oninput="simCasa()"></div>
         </div>
         <div id="simCasaOut"></div>
+        <div class="chart-box" id="chartCasa"></div>
+        <details class="chart-data" id="dataCasa"></details>
       </div>
     </section>
 
@@ -383,6 +407,169 @@ function brutoDeNeto(neto){
     if (netoDeBruto(mid) < neto) lo = mid; else hi = mid;
   }
   return (lo + hi) / 2;
+}
+
+/* ══ Motor de gráficos — SVG puro, paleta VALIDADA (dataviz):
+   azul #3573C4 / teal #12A189 sobre blanco: banda L, croma, CVD ΔE 17.2,
+   visión normal 18.3, contraste ≥3:1 — todos los checks en verde. ══ */
+const C_AZUL = "#3573C4", C_TEAL = "#12A189";
+
+function fmtCompact(n){
+  const a = Math.abs(n);
+  if (a >= 1e6) return "₡" + (n / 1e6).toFixed(a >= 2e7 ? 0 : 1) + "M";
+  if (a >= 1e3) return "₡" + Math.round(n / 1e3) + "k";
+  return "₡" + Math.round(n);
+}
+function niceMax(v){
+  if (v <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p;
+  return 10 * p;
+}
+function mesLabel(m){ return m % 12 === 0 ? (m / 12) + (m === 12 ? " año" : " años") : m + "m"; }
+
+/* series: [{name, color, data:[valores por mes, índice 0 = hoy]}]
+   stacked: si true, series[0] es la base y series[1] la banda superior
+   (data de series[1] = TOTAL acumulado; la banda dibuja total−base). */
+function renderChart(boxId, dataId, series, {stacked = false, yLabel = ""} = {}){
+  const box = $(boxId);
+  const n = Math.max(...series.map(s => s.data.length));
+  if (!box || n < 2){ if (box) box.innerHTML = ""; return; }
+  const W = 720, H = 290, P = {t: 16, r: 14, b: 30, l: 54};
+  const innerW = W - P.l - P.r, innerH = H - P.t - P.b;
+  const ymax = niceMax(Math.max(...series.flatMap(s => s.data)));
+  const X = i => P.l + innerW * (i / (n - 1));
+  const Y = v => P.t + innerH * (1 - Math.max(0, v) / ymax);
+
+  // Grid recesivo: 4 líneas + etiquetas y
+  let grid = "";
+  for (let g = 0; g <= 4; g++){
+    const v = ymax * g / 4, y = Y(v);
+    grid += `<line x1="${P.l}" y1="${y}" x2="${W - P.r}" y2="${y}" stroke="#E2E6EB" stroke-width="1"/>` +
+            `<text x="${P.l - 8}" y="${y + 4}" text-anchor="end" font-size="10.5" fill="#6B7280">${fmtCompact(v)}</text>`;
+  }
+  // Ticks x en años
+  const stepM = Math.max(12, Math.ceil(n / 96) * 12);
+  let xticks = "";
+  for (let m = 0; m < n; m += stepM){
+    if (m === 0) continue;
+    xticks += `<text x="${X(m)}" y="${H - 8}" text-anchor="middle" font-size="10.5" fill="#6B7280">${mesLabel(m)}</text>`;
+  }
+
+  // Marcas
+  let marks = "";
+  if (stacked){
+    const [base, top] = series;
+    const areaPath = (lo, hi) => {
+      let d = "M" + X(0) + " " + Y(hi(0));
+      for (let i = 1; i < n; i++) d += " L" + X(i) + " " + Y(hi(i));
+      for (let i = n - 1; i >= 0; i--) d += " L" + X(i) + " " + Y(lo(i));
+      return d + " Z";
+    };
+    marks += `<path class="chart-area" data-s="0" d="${areaPath(() => 0, i => base.data[i] || 0)}" fill="${base.color}" fill-opacity=".85"/>`;
+    marks += `<path class="chart-area" data-s="1" d="${areaPath(i => base.data[i] || 0, i => top.data[i] || 0)}" fill="${top.color}" fill-opacity=".85"/>`;
+    // Gap de 2px entre segmentos (spacer sobre la frontera)
+    let borde = "M" + X(0) + " " + Y(base.data[0] || 0);
+    for (let i = 1; i < n; i++) borde += " L" + X(i) + " " + Y(base.data[i] || 0);
+    marks += `<path d="${borde}" fill="none" stroke="#FFFFFF" stroke-width="2"/>`;
+  } else {
+    for (let s = 0; s < series.length; s++){
+      const d = series[s].data;
+      let pts = "";
+      for (let i = 0; i < d.length; i++) pts += (i ? " L" : "M") + X(i) + " " + Y(d[i]);
+      marks += `<path class="chart-line" data-s="${s}" d="${pts}" stroke="${series[s].color}"/>`;
+    }
+  }
+
+  box.innerHTML = `
+    <div class="chart-legend">${series.map((s, i) =>
+      `<span class="li" data-s="${i}"><span class="sw" style="background:${s.color}"></span>${esc(s.name)}</span>`).join("")}
+      ${yLabel ? `<span style="margin-left:auto;color:var(--muted);font-weight:600">${esc(yLabel)}</span>` : ""}</div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(series.map(s => s.name).join(" vs "))}">
+      ${grid}${xticks}${marks}
+      <line id="${boxId}_cross" x1="0" y1="${P.t}" x2="0" y2="${H - P.b}" stroke="#1B1C20" stroke-width="1" stroke-dasharray="3 3" opacity="0"/>
+      ${series.map((s, i) => `<circle id="${boxId}_dot${i}" r="4.5" fill="${s.color}" stroke="#FFFFFF" stroke-width="2" opacity="0"/>`).join("")}
+      <rect id="${boxId}_hit" x="${P.l}" y="${P.t}" width="${innerW}" height="${innerH}" fill="transparent"/>
+    </svg>
+    <div class="chart-tip" id="${boxId}_tip"></div>`;
+
+  // Animación de entrada
+  box.querySelectorAll(".chart-line").forEach(p => {
+    const len = p.getTotalLength();
+    p.style.strokeDasharray = len; p.style.strokeDashoffset = len;
+    p.getBoundingClientRect();
+    p.style.transition = "stroke-dashoffset .9s ease";
+    p.style.strokeDashoffset = "0";
+    setTimeout(() => { p.style.strokeDasharray = "none"; }, 1000);
+  });
+  box.querySelectorAll(".chart-area").forEach((p, i) => {
+    p.style.opacity = "0";
+    p.getBoundingClientRect();
+    p.style.transition = "opacity .7s ease " + (i * 0.15) + "s";
+    p.style.opacity = "1";
+  });
+
+  // Hover: crosshair + tooltip (valores de todas las series en el mes)
+  const svg = box.querySelector("svg"), tip = $(boxId + "_tip");
+  const hit = $(boxId + "_hit"), cross = $(boxId + "_cross");
+  const mover = ev => {
+    const r = svg.getBoundingClientRect();
+    const px = (ev.clientX - r.left) * W / r.width;
+    const i = Math.round((px - P.l) / innerW * (n - 1));
+    if (i < 0 || i >= n) return;
+    cross.setAttribute("x1", X(i)); cross.setAttribute("x2", X(i));
+    cross.setAttribute("opacity", ".45");
+    let rows = "";
+    series.forEach((s, si) => {
+      const v = s.data[i];
+      const dot = $(boxId + "_dot" + si);
+      if (v == null){ dot.setAttribute("opacity", "0"); return; }
+      dot.setAttribute("cx", X(i)); dot.setAttribute("cy", Y(v)); dot.setAttribute("opacity", "1");
+      rows += `<div class="t-row"><span class="dot" style="background:${s.color}"></span>${esc(s.name)}: <b>${fmt(v)}</b></div>`;
+    });
+    if (stacked){
+      const dif = (series[1].data[i] || 0) - (series[0].data[i] || 0);
+      rows = `<div class="t-row"><span class="dot" style="background:${series[0].color}"></span>${esc(series[0].name)}: <b>${fmt(series[0].data[i] || 0)}</b></div>` +
+             `<div class="t-row"><span class="dot" style="background:${series[1].color}"></span>Rendimiento: <b>${fmt(dif)}</b></div>` +
+             `<div class="t-row">Total: <b>${fmt(series[1].data[i] || 0)}</b></div>`;
+    }
+    tip.innerHTML = `<div class="t-title">Mes ${i}${i >= 12 ? " · año " + (i / 12).toFixed(1) : ""}</div>` + rows;
+    tip.style.opacity = "1";
+    const bx = box.getBoundingClientRect();
+    let lx = ev.clientX - bx.left + 14;
+    if (lx + tip.offsetWidth > bx.width - 8) lx = ev.clientX - bx.left - tip.offsetWidth - 14;
+    tip.style.left = lx + "px";
+    tip.style.top = (ev.clientY - bx.top - 12) + "px";
+  };
+  hit.addEventListener("mousemove", mover);
+  hit.addEventListener("mouseleave", () => {
+    tip.style.opacity = "0"; cross.setAttribute("opacity", "0");
+    series.forEach((_, si) => $(boxId + "_dot" + si).setAttribute("opacity", "0"));
+  });
+
+  // Leyenda interactiva: hover atenúa las demás series
+  box.querySelectorAll(".chart-legend .li").forEach(li => {
+    const si = li.dataset.s;
+    li.addEventListener("mouseenter", () =>
+      box.querySelectorAll(".chart-line[data-s], .chart-area[data-s]").forEach(p => {
+        if (p.dataset.s !== si) p.classList.add("dim");
+      }));
+    li.addEventListener("mouseleave", () =>
+      box.querySelectorAll(".dim").forEach(p => p.classList.remove("dim")));
+  });
+
+  // Vista de tabla (accesibilidad): hitos anuales
+  const det = $(dataId);
+  if (det){
+    const filas = [];
+    for (let m = 12; m < n; m += 12) filas.push(m);
+    if (!filas.includes(n - 1)) filas.push(n - 1);
+    det.innerHTML = `<summary>Ver datos en tabla</summary>
+      <table class="data"><tr><th>Momento</th>${series.map(s => `<th class="num">${esc(s.name)}</th>`).join("")}</tr>` +
+      filas.map(m => `<tr><td>${m === n - 1 ? "Final (mes " + m + ")" : mesLabel(m)}</td>` +
+        series.map(s => `<td class="num">${s.data[m] != null ? fmt(s.data[m]) : "—"}</td>`).join("") + "</tr>").join("") +
+      `</table>`;
+  }
 }
 
 /* ── Carga ── */
@@ -540,10 +727,11 @@ function renderPaso2(flujo){
   simDeudas();
 }
 function simularSnowball(ds, extraMensual, cadencia){
-  // Devuelve {meses, intereses, cancelaciones:[{name, mes}]} o null si no converge.
+  // Devuelve {meses, intereses, canceladas, serie (saldo total por mes)} o null.
   const debts = ds.map(d => ({name: d.name, saldo: d.saldo, i: (d.tasa || 0) / 100 / 12, cuota: d.cuota || 0}));
   let mes = 0, intereses = 0, bolsa = 0, liberada = 0;
   const canceladas = [];
+  const serie = [debts.reduce((a, d) => a + d.saldo, 0)];
   while (debts.some(d => d.saldo > 0.5)){
     if (++mes > 600) return null;
     bolsa += extraMensual;
@@ -564,8 +752,9 @@ function simularSnowball(ds, extraMensual, cadencia){
         liberada += d.cuota; d.cuota = 0; d.saldo = 0;
       }
     }
+    serie.push(debts.reduce((a, d) => a + Math.max(0, d.saldo), 0));
   }
-  return {meses: mes, intereses, canceladas};
+  return {meses: mes, intereses, canceladas, serie};
 }
 function simDeudas(){
   const ds = ordenarDeudas();
@@ -584,6 +773,7 @@ function simDeudas(){
   const con = simularSnowball(ds, extra, cad);
   if (!base || !con){
     html += `<div class="note" style="border-color:var(--red)">La proyección no converge (cuotas insuficientes).</div>`;
+    $("chartDeudas").innerHTML = ""; $("dataDeudas").innerHTML = "";
   } else {
     const aniosBase = (base.meses / 12).toFixed(1), aniosCon = (con.meses / 12).toFixed(1);
     html += `<div class="result-line">Solo con cuotas actuales: libre de deudas en <b>${base.meses} meses (${aniosBase} años)</b>, intereses ≈ <b>${fmt(base.intereses)}</b>.</div>
@@ -594,6 +784,11 @@ function simDeudas(){
       con.canceladas.map(c => `<tr><td>${esc(c.name)}</td><td class="num">mes ${c.mes}</td></tr>`).join("") + `</table>`;
   }
   $("simDeudaOut").innerHTML = html;
+  if (base && con)
+    renderChart("chartDeudas", "dataDeudas", [
+      {name: "Solo cuotas mínimas", color: C_AZUL, data: base.serie},
+      {name: "Con abono extraordinario", color: C_TEAL, data: con.serie},
+    ], {yLabel: "Saldo total de deuda"});
 }
 
 /* ── Paso 3: fondo completo ── */
@@ -630,6 +825,20 @@ function simRetiro(){
     return `${y} años: <b>${fmt(v)}</b>`;
   }).join(" · ");
   $("p4Tabla").innerHTML = hitos;
+
+  // Gráfico apilado: aportes acumulados + banda de rendimiento = valor total
+  if (a > 0 && n > 1){
+    const aportes = [0], total = [0];
+    let t = 0;
+    for (let m = 1; m <= n; m++){
+      t = t * (1 + r) + a;
+      aportes.push(a * m); total.push(t);
+    }
+    renderChart("chartRetiro", "dataRetiro", [
+      {name: "Aportes acumulados", color: C_AZUL, data: aportes},
+      {name: "Valor total (con rendimiento)", color: C_TEAL, data: total},
+    ], {stacked: true, yLabel: "Fondo de retiro"});
+  } else { $("chartRetiro").innerHTML = ""; $("dataRetiro").innerHTML = ""; }
 }
 
 /* ── Paso 5: casa ── */
@@ -655,12 +864,14 @@ function simCasa(){
     let saldo = d.saldo, mes = 0, intereses = 0;
     const i = (d.tasa || 0) / 100 / 12, cuota = d.cuota || 0;
     if (cuota <= saldo * i) return null;
+    const serie = [saldo];
     while (saldo > 0.5){
       if (++mes > 720) return null;
       const int = saldo * i; intereses += int;
       saldo = saldo + int - cuota - (mes % 12 === 0 ? extraAnual : 0);
+      serie.push(Math.max(0, saldo));
     }
-    return {mes, intereses};
+    return {mes, intereses, serie};
   };
   const sin = proj(0), con = proj(prepago);
   $("simCasaOut").innerHTML = (!sin || !con)
@@ -668,6 +879,12 @@ function simCasa(){
     : `<div class="result-line">Sin prepago: <b>${sin.mes} meses (${(sin.mes / 12).toFixed(1)} años)</b>, intereses ≈ <b>${fmt(sin.intereses)}</b>.</div>
        <div class="result-line">Con prepago de ${fmt(prepago)}/año: <b>${con.mes} meses (${(con.mes / 12).toFixed(1)} años)</b>, intereses ≈ <b>${fmt(con.intereses)}</b>.</div>
        <div class="result-big">Ahorra ${fmt(sin.intereses - con.intereses)} y termina ${((sin.mes - con.mes) / 12).toFixed(1)} años antes</div>`;
+  if (sin && con)
+    renderChart("chartCasa", "dataCasa", [
+      {name: "Sin prepago", color: C_AZUL, data: sin.serie},
+      {name: "Con prepago anual", color: C_TEAL, data: con.serie},
+    ], {yLabel: "Saldo de la deuda"});
+  else { $("chartCasa").innerHTML = ""; $("dataCasa").innerHTML = ""; }
 }
 
 /* ── Paso 6 ── */

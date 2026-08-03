@@ -10,7 +10,8 @@ from banks.utils import (
 )
 
 # BAC sends from these domains
-BAC_DOMAINS = ["notificacionesbaccr.com", "baccredomatic.com", "alerta@baccredomatic.com"]
+BAC_DOMAINS = ["notificacionesbaccr.com", "baccredomatic.com", "alerta@baccredomatic.com",
+               "baccredomatic.cr"]  # nuevo remitente de tarjetas desde 2026-08
 
 
 class BacParser:

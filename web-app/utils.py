@@ -57,6 +57,8 @@ BANK_NOTIFICATION_SENDERS = [
     {
         "bank": "BAC Credomatic",
         "emails": [
+            # Desde 2026-08: transacciones con tarjeta salen de este remitente
+            "notificacion@baccredomatic.cr",
             "notificacion@notificacionesbaccr.com",
             "alerta@baccredomatic.com",
         ],

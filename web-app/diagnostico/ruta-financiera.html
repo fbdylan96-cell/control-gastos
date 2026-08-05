@@ -242,7 +242,7 @@ tr.grp td{font-weight:700;background:var(--paper)}
           <li><b>Multimoney Smart</b> — cuenta de rendimiento con liquidez inmediata, sin monto mínimo;
               ideal para el fondo inicial en colones o dólares.</li>
           <li><b>High-Yield Cash Program de Alpaca</b> — efectivo en USD generando rendimiento dentro de la
-              cuenta de inversión; disponible con el servicio de inversión de neto.</li>
+              cuenta de inversión; disponible con el servicio de inversión de Empowered Investor.</li>
         </ul>
         <div class="note">Criterio: liquidez en ≤48 h y cero riesgo de capital. El rendimiento es secundario
           en este paso — la función del fondo es estar disponible.</div>
@@ -280,12 +280,13 @@ tr.grp td{font-weight:700;background:var(--paper)}
     <section class="phase" data-step="3">
       <div class="phase-intro">
         <h2>Paso 3 · Fondo de emergencia completo (3–6 meses)</h2>
-        <p>Con las deudas de consumo eliminadas, el fondo crece hasta cubrir <b>3 a 6 meses de gastos</b>
-           reales (gastos + cuotas). Ese es el verdadero colchón que protege el plan completo.</p>
+        <p>Con las deudas de consumo eliminadas, el fondo crece hasta cubrir <b>3 a 6 meses de gastos
+           esenciales</b> (fijos + variables). Los gastos no necesarios no cuentan: en una emergencia
+           son lo primero que se recorta. Ese es el colchón que protege el plan completo.</p>
       </div>
       <div class="card">
         <h3>Meta del fondo completo</h3>
-        <div class="result-line">Gastos mensuales reales: <b id="p3Gastos"></b></div>
+        <div class="result-line">Gastos esenciales/mes (fijos + variables): <b id="p3Gastos"></b></div>
         <div class="result-line">Rango meta: <b id="p3Rango"></b></div>
         <div class="pbar"><div class="fill" id="p3Fill"></div><div class="plabel" id="p3Label"></div></div>
         <div class="result-line" id="p3Detalle"></div>
@@ -643,7 +644,10 @@ function render(){
   $("stepper").innerHTML = nombres.map((n, i) =>
     `<div class="step" data-i="${i}" onclick="irA(${i})"><span class="num">Paso ${i}</span>${n}</div>`).join("");
 
-  renderPaso0(); renderDesglose(); renderPaso1(); renderPaso2(flujo); renderPaso3(gastos + cuotas);
+  // Paso 3: la meta del fondo usa solo los gastos esenciales (fijos +
+  // variables) — los "no necesarios" se recortan en una emergencia.
+  const gastosEsenciales = sum(D.fijos) + sum(D.variables);
+  renderPaso0(); renderDesglose(); renderPaso1(); renderPaso2(flujo); renderPaso3(gastosEsenciales);
   renderPaso4(); renderPaso5(flujo); renderPaso6(gastos + cuotas, patrimonio);
   irA(0);
 }
@@ -864,10 +868,10 @@ function simDeudas(){
     ], {yLabel: "Saldo total de deuda"});
 }
 
-/* ── Paso 3: fondo completo ── */
-function renderPaso3(gastosReales){
-  const min = gastosReales * 3, max = gastosReales * 6, fe = D.fe_monto || 0;
-  $("p3Gastos").textContent = fmt(gastosReales);
+/* ── Paso 3: fondo completo (base: gastos fijos + variables) ── */
+function renderPaso3(gastosEsenciales){
+  const min = gastosEsenciales * 3, max = gastosEsenciales * 6, fe = D.fe_monto || 0;
+  $("p3Gastos").textContent = fmt(gastosEsenciales);
   $("p3Rango").textContent = `${fmt(min)} — ${fmt(max)}`;
   const pct = Math.min(100, min > 0 ? fe / min * 100 : 0);
   $("p3Fill").style.width = pct + "%";

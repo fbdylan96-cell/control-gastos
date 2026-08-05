@@ -133,6 +133,13 @@ details.chart-data table{margin-top:8px}
 .chart-area{transition:opacity .2s}
 .dim{opacity:.18 !important}
 
+/* Desglose de gastos (Paso 0): barra apilada con gaps de 2px + tabla */
+.stack-bar{display:flex;height:34px;border-radius:9px;overflow:hidden;gap:2px;margin:12px 0 6px}
+.stack-seg{min-width:4px;cursor:default;transition:opacity .15s,flex .5s ease}
+td.item{color:var(--muted);padding-left:28px !important}
+tr.grp td{font-weight:700;background:var(--paper)}
+.dot-sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px;vertical-align:-1px}
+
 .nav-btns{display:flex;justify-content:space-between;margin-top:20px}
 #appArea{display:none}
 @media print{
@@ -198,6 +205,15 @@ details.chart-data table{margin-top:8px}
         <table class="data" id="tablaBruto"></table>
         <div class="note">Estimación con deducción obrera CCSS de <span id="ccssPct"></span> e impuesto al
           salario por tramos de Hacienda. Los tramos se actualizan cada enero — verificar antes de usar en reunión.</div>
+      </div>
+      <div class="card" style="position:relative">
+        <h3>Desglose de gastos del diagnóstico <span class="tag blue">composición mensual</span></h3>
+        <p class="hint">Los gastos declarados por el prospecto, agrupados como en el diagnóstico —
+           la base de la conversación de presupuesto y de las categorías a configurar en neto.</p>
+        <div class="stack-bar" id="desgloseBar"></div>
+        <div class="chart-legend" id="desgloseLegend" style="margin-bottom:12px"></div>
+        <table class="data" id="desgloseTabla"></table>
+        <div class="chart-tip" id="desgloseTip"></div>
       </div>
       <div class="card" id="perfilesCard" style="display:none">
         <h3>🧠 Personalidades del dinero</h3>
@@ -627,7 +643,7 @@ function render(){
   $("stepper").innerHTML = nombres.map((n, i) =>
     `<div class="step" data-i="${i}" onclick="irA(${i})"><span class="num">Paso ${i}</span>${n}</div>`).join("");
 
-  renderPaso0(); renderPaso1(); renderPaso2(flujo); renderPaso3(gastos + cuotas);
+  renderPaso0(); renderDesglose(); renderPaso1(); renderPaso2(flujo); renderPaso3(gastos + cuotas);
   renderPaso4(); renderPaso5(flujo); renderPaso6(gastos + cuotas, patrimonio);
   irA(0);
 }
@@ -685,6 +701,60 @@ function pintarBruto(){
     return `<div class="result-line"><b>${esc(p.nombre || "Persona")}</b>: ${PERFILES[pred]}</div>`;
   }).filter(Boolean);
   if (ps.length){ $("perfilesCard").style.display = "block"; $("perfilesBody").innerHTML = ps.join(""); }
+}
+
+/* ── Paso 0: desglose de gastos del diagnóstico ── */
+const GRUPOS_GASTO = [
+  ["Gastos fijos", "fijos", C_AZUL],
+  ["Gastos variables", "variables", C_TEAL],
+  ["Gasto hormiga", "hormiga", "#C9880E"],
+];
+function renderDesglose(){
+  const groups = GRUPOS_GASTO.map(([label, key, color]) => {
+    const items = (D[key] || []).filter(r => (r.amount || 0) > 0)
+      .slice().sort((a, b) => b.amount - a.amount);
+    return {label, color, items, subtotal: sum(items)};
+  });
+  const total = groups.reduce((a, g) => a + g.subtotal, 0);
+  const bar = $("desgloseBar"), leg = $("desgloseLegend"), tabla = $("desgloseTabla");
+  if (!total){
+    bar.innerHTML = ""; leg.innerHTML = "";
+    tabla.innerHTML = "<tr><td class='hint'>El diagnóstico no registró gastos.</td></tr>";
+    return;
+  }
+  bar.innerHTML = groups.filter(g => g.subtotal > 0).map(g =>
+    `<div class="stack-seg" style="background:${g.color};flex:${g.subtotal}"
+          data-g="${esc(g.label)}" data-c="${g.color}" data-v="${g.subtotal}"></div>`).join("");
+  leg.innerHTML = groups.map(g =>
+    `<span class="li"><span class="sw" style="background:${g.color}"></span>${esc(g.label)}:
+       <b style="font-family:var(--mono)">&nbsp;${fmt(g.subtotal)}</b>&nbsp;· ${total > 0 ? (g.subtotal / total * 100).toFixed(0) : 0}%</span>`).join("");
+  tabla.innerHTML =
+    `<tr><th>Concepto</th><th class="num">Monto/mes</th><th class="num">% del gasto</th></tr>` +
+    groups.filter(g => g.subtotal > 0).map(g =>
+      `<tr class="grp"><td><span class="dot-sw" style="background:${g.color}"></span>${esc(g.label)}</td>
+         <td class="num">${fmt(g.subtotal)}</td><td class="num">${(g.subtotal / total * 100).toFixed(0)}%</td></tr>` +
+      g.items.map(it =>
+        `<tr><td class="item">${esc(it.name || "(sin nombre)")}</td>
+           <td class="num">${fmt(it.amount)}</td><td class="num">${(it.amount / total * 100).toFixed(1)}%</td></tr>`).join("")
+    ).join("") +
+    `<tr class="total"><td>Total de gastos</td><td class="num">${fmt(total)}</td><td class="num">100%</td></tr>`;
+
+  const tip = $("desgloseTip");
+  bar.querySelectorAll(".stack-seg").forEach(seg => {
+    seg.addEventListener("mousemove", ev => {
+      const v = Number(seg.dataset.v);
+      tip.innerHTML = `<div class="t-row"><span class="dot" style="background:${seg.dataset.c}"></span>
+        ${esc(seg.dataset.g)}: <b>${fmt(v)}</b> (${(v / total * 100).toFixed(0)}%)</div>`;
+      tip.style.opacity = "1";
+      const host = seg.closest(".card").getBoundingClientRect();
+      let lx = ev.clientX - host.left + 12;
+      if (lx + tip.offsetWidth > host.width - 8) lx = ev.clientX - host.left - tip.offsetWidth - 12;
+      tip.style.left = lx + "px";
+      tip.style.top = (ev.clientY - host.top - 10) + "px";
+      seg.style.opacity = ".8";
+    });
+    seg.addEventListener("mouseleave", () => { tip.style.opacity = "0"; seg.style.opacity = "1"; });
+  });
 }
 
 /* ── Paso 1: $1,000 ── */

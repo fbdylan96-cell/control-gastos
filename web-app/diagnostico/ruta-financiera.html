@@ -704,10 +704,13 @@ function pintarBruto(){
 }
 
 /* ── Paso 0: desglose de gastos del diagnóstico ── */
+// Labels idénticos a las secciones del formulario del diagnóstico ("hormiga"
+// es solo la clave interna del payload; en el formulario la sección se llama
+// "Gastos no necesarios — se pueden recortar").
 const GRUPOS_GASTO = [
   ["Gastos fijos", "fijos", C_AZUL],
   ["Gastos variables", "variables", C_TEAL],
-  ["Gasto hormiga", "hormiga", "#C9880E"],
+  ["Gastos no necesarios", "hormiga", "#C9880E"],
 ];
 function renderDesglose(){
   const groups = GRUPOS_GASTO.map(([label, key, color]) => {

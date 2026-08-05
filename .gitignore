@@ -16,6 +16,8 @@ env/
 # Output / temporary files
 email_extractor.py
 *.xlsx
+*.docx
+*.pptx
 PROMPT_*.md
 
 # IDE

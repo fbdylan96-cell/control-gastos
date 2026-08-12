@@ -83,9 +83,9 @@ section.phase.visible{display:block}
 .subtotal .val{font-family:var(--mono)}
 
 /* Debt rows */
-.row.debt{grid-template-columns:1.3fr 100px 70px 100px 58px 34px}
+.row.debt{grid-template-columns:1.3fr 100px 70px 100px 70px 58px 34px}
 .row.debt input{font-size:13px}
-.debt-head{display:grid;grid-template-columns:1.3fr 100px 70px 100px 58px 34px;gap:10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px}
+.debt-head{display:grid;grid-template-columns:1.3fr 100px 70px 100px 70px 58px 34px;gap:10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px}
 
 /* Checkboxes / selects */
 .chk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-top:8px}
@@ -100,7 +100,7 @@ select,textarea{border:1px solid var(--line);border-radius:7px;padding:9px 11px;
 textarea{resize:vertical;min-height:64px}
 .field-label{font-size:12.5px;font-weight:600;color:var(--muted);display:block;margin:12px 0 5px}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-@media(max-width:640px){.two-col{grid-template-columns:1fr}.row.debt{grid-template-columns:1fr 90px 50px 34px}.row.debt input:nth-child(3),.row.debt input:nth-child(4){display:none}.debt-head{display:none}}
+@media(max-width:640px){.two-col{grid-template-columns:1fr}.row.debt{grid-template-columns:1fr 90px 50px 34px}.row.debt input:nth-child(3),.row.debt input:nth-child(4),.row.debt input:nth-child(5){display:none}.debt-head{display:none}}
 
 /* Nav buttons */
 .nav-btns{display:flex;justify-content:space-between;margin-top:22px}
@@ -229,8 +229,10 @@ textarea{resize:vertical;min-height:64px}
 
     <div class="card">
       <h3>Deudas / pasivos <span class="tag warn">lo que debe</span></h3>
-      <p class="hint">Incluya saldo total pendiente, tasa de interés anual y la cuota mensual de cada deuda.</p>
-      <div class="debt-head"><span>Deuda</span><span>Saldo total</span><span>Tasa %</span><span>Cuota/mes</span><span>Moneda</span><span></span></div>
+      <p class="hint">Incluya saldo total pendiente, tasa de interés anual, la cuota mensual y el
+         plazo que le falta por pagar (en meses). Si no recuerda la tasa, indique el plazo y la
+         estimamos.</p>
+      <div class="debt-head"><span>Deuda</span><span>Saldo total</span><span>Tasa %</span><span>Cuota/mes</span><span>Plazo (meses)</span><span>Moneda</span><span></span></div>
       <div id="rows-deudas"></div>
       <button class="add-row" onclick="addDebtRow()">+ Agregar deuda</button>
       <div class="subtotal"><span>Total deudas</span><span class="val" id="sub-deudas">₡0</span></div>
@@ -442,7 +444,7 @@ function addRow(cat, name=''){
 }
 function addDebtRow(name=''){
   const id = 'r'+(idc++);
-  state.deudas.push({id, name, saldo:0, tasa:0, cuota:0, currency:'crc'});
+  state.deudas.push({id, name, saldo:0, tasa:0, cuota:0, plazo:0, currency:'crc'});
   const div = document.createElement('div');
   div.className = 'row debt'; div.id = id;
   div.innerHTML = `
@@ -450,6 +452,7 @@ function addDebtRow(name=''){
     <input type="text" class="amount" placeholder="0" inputmode="numeric" oninput="upd('deudas','${id}','saldo',this.value)">
     <input type="text" class="amount" placeholder="%" inputmode="decimal" oninput="upd('deudas','${id}','tasa',this.value)">
     <input type="text" class="amount" placeholder="0" inputmode="numeric" oninput="upd('deudas','${id}','cuota',this.value)">
+    <input type="text" class="amount" placeholder="meses" inputmode="numeric" oninput="upd('deudas','${id}','plazo',this.value)">
     ${curSelHTML('deudas', id)}
     <button class="del" title="Eliminar" onclick="delRow('deudas','${id}')">✕</button>`;
   document.getElementById('rows-deudas').appendChild(div);
@@ -701,7 +704,7 @@ async function enviarReporte(){
     hormiga: state.hormiga.map(strip),
     ingresos: state.ingresos.map(strip),
     activos: state.activos.map(strip),
-    deudas: state.deudas.map(d=>({name:d.name, saldo:d.saldo, tasa:d.tasa, cuota:d.cuota, currency:d.currency})),
+    deudas: state.deudas.map(d=>({name:d.name, saldo:d.saldo, tasa:d.tasa, cuota:d.cuota, plazo:d.plazo, currency:d.currency})),
     fe_tiene: document.getElementById('fe-tiene').value,
     fe_monto: parseAmt(document.getElementById('fe-monto').value),
     fe_moneda: document.getElementById('fe-moneda').value,

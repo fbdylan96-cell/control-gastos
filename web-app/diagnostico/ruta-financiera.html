@@ -88,6 +88,7 @@ table.data td{padding:8px;border-bottom:1px solid var(--line)}
 table.data td.num,table.data th.num{text-align:right;font-family:var(--mono)}
 table.data tr:last-child td{border-bottom:none}
 table.data tr.total td{font-weight:700;border-top:2px solid var(--ink);border-bottom:none}
+table.data td .est{display:block;font-size:10.5px;font-weight:400;color:var(--muted)}
 .pri-badge{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:700;background:var(--forest);color:#fff;border-radius:50%;width:22px;height:22px;line-height:22px;text-align:center;margin-right:8px}
 
 /* Progress bars */
@@ -261,7 +262,9 @@ tr.grp td{font-weight:700;background:var(--paper)}
         <h3>Deudas por prioridad <span class="tag warn">menor saldo primero</span></h3>
         <table class="data" id="tablaDeudas"></table>
         <p class="hint" id="hintIntereses">El <b>pago anual en intereses</b> son los intereses que se
-           acumulan en los próximos 12 meses pagando solo la cuota actual — plata que no baja el saldo.</p>
+           acumulan en los próximos 12 meses pagando solo la cuota actual — plata que no baja el saldo.
+           El <b>plazo estimado</b> es el que se deduce del saldo, la tasa y la cuota.</p>
+        <div id="notaPlazos"></div>
       </div>
       <div class="card" id="simDeudaCard">
         <h3>Simulador de amortización extraordinaria</h3>
@@ -622,6 +625,7 @@ async function cargar(){
 /* ── Render general ── */
 function render(){
   $("appArea").style.display = "block";
+  normalizarDeudas();
 
   const ingresos = sum(D.ingresos);
   const gastos = sum(D.fijos) + sum(D.variables) + sum(D.hormiga);
@@ -787,6 +791,50 @@ function ordenarDeudas(){
   return (D.deudas || []).filter(d => (d.saldo || 0) > 0)
     .slice().sort((a, b) => (a.saldo || 0) - (b.saldo || 0));
 }
+/* El diagnóstico pide saldo, tasa, cuota y plazo. Con tres de esos cuatro el
+   cuarto queda determinado: se usa para completar lo que falte y para cruzar
+   lo declarado contra lo que dice la matemática. */
+function _pago(saldo, i, meses){
+  return i === 0 ? saldo / meses : saldo * i / (1 - Math.pow(1 + i, -meses));
+}
+function plazoImplicito(saldo, tasa, cuota){
+  const i = (tasa || 0) / 100 / 12;
+  if (!(saldo > 0) || !(cuota > 0)) return null;
+  if (i === 0) return saldo / cuota;
+  if (cuota <= saldo * i) return null;             // la cuota no cubre el interés
+  return -Math.log(1 - i * saldo / cuota) / Math.log(1 + i);
+}
+function cuotaEfectiva(saldo, tasa, meses){
+  // Cuota que amortiza el saldo en el plazo declarado, a la tasa declarada.
+  if (!(saldo > 0) || !(meses > 0)) return null;
+  return _pago(saldo, (tasa || 0) / 100 / 12, meses);
+}
+function tasaImplicita(saldo, cuota, meses){
+  // Cuando el cliente sabe cuota y plazo pero no la tasa. Bisección: la cuota
+  // necesaria crece de forma monótona con la tasa.
+  if (!(saldo > 0) || !(cuota > 0) || !(meses > 0)) return null;
+  const ratio = cuota * meses / saldo;
+  if (ratio < 1 - 1e-9) return null;               // ni siquiera cubre el capital
+  if (ratio < 1 + 1e-9) return 0;                  // promoción a 0% (existen en CR)
+  let lo = 0, hi = 1;                              // 0% a 1200% anual
+  if (_pago(saldo, hi, meses) < cuota) return null;
+  for (let k = 0; k < 100; k++){
+    const mid = (lo + hi) / 2;
+    if (_pago(saldo, mid, meses) < cuota) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2 * 12 * 100;
+}
+function normalizarDeudas(){
+  // Si no vino la tasa pero sí el plazo, se despeja y se marca como estimada.
+  for (const d of (D.deudas || [])){
+    if (!(d.tasa > 0) && d.plazo > 0){
+      const t = tasaImplicita(d.saldo, d.cuota, d.plazo);
+      // Solo se adopta si es plausible: por encima de 150% los datos están
+      // mal y una tasa inventada contaminaría toda la proyección.
+      if (t !== null && t <= 150){ d.tasa = t; d.tasaEstimada = true; }
+    }
+  }
+}
 function interesAnual(d){
   // Intereses acumulados en los próximos 12 meses pagando solo la cuota actual.
   // Si la cuota no cubre los intereses el saldo crece y el interés también (se capitaliza);
@@ -805,25 +853,56 @@ function renderPaso2(flujo){
   if (!ds.length){
     $("tablaDeudas").innerHTML = "<tr><td class='hint'>Sin deudas registradas — pasar directo al Paso 3. 🎉</td></tr>";
     $("hintIntereses").style.display = "none";
+    $("notaPlazos").innerHTML = "";
     $("simDeudaCard").style.display = "none";
     return;
   }
+  const celdaPlazo = d => {
+    const est = plazoImplicito(d.saldo, d.tasa, d.cuota);
+    const txt = est === null ? "no converge" : Math.ceil(est) + " m";
+    return (d.plazo > 0 ? d.plazo + " m" : "—") + `<span class="est">est. ${txt}</span>`;
+  };
   $("tablaDeudas").innerHTML = `
     <tr><th></th><th>Deuda</th><th class="num">Saldo</th><th class="num">Tasa anual</th><th class="num">Cuota/mes</th>
-      <th class="num">Pago anual en intereses</th></tr>` +
+      <th class="num">Plazo</th><th class="num">Pago anual en intereses</th></tr>` +
     ds.map((d, i) => `<tr>
       <td><span class="pri-badge">${i + 1}</span></td><td>${esc(d.name || "(sin nombre)")}</td>
-      <td class="num">${fmt(d.saldo)}</td><td class="num">${(d.tasa || 0).toFixed(1)}%</td>
+      <td class="num">${fmt(d.saldo)}</td>
+      <td class="num">${(d.tasa || 0).toFixed(1)}%${d.tasaEstimada ? '<span class="est">estimada</span>' : ""}</td>
       <td class="num">${fmt(d.cuota || 0)}</td>
+      <td class="num">${celdaPlazo(d)}</td>
       <td class="num">${fmt(interesAnual(d))}</td></tr>`).join("") +
     `<tr class="total"><td></td><td>Total</td><td class="num">${fmt(sum(ds, "saldo"))}</td><td></td>
-      <td class="num">${fmt(sum(ds, "cuota"))}</td>
+      <td class="num">${fmt(sum(ds, "cuota"))}</td><td></td>
       <td class="num">${fmt(ds.reduce((a, d) => a + interesAnual(d), 0))}</td></tr>`;
+  renderCrucePlazos(ds);
   $("simFlujo").value = Math.max(0, Math.round(flujo));
   // Sugerencia inicial: la mitad del excedente. Si no hay excedente igual se
   // propone un monto pequeño — el aporte puede salir de un recorte de gastos.
   $("simMonto").value = flujo > 0 ? Math.round(flujo * 0.5 / 5000) * 5000 : 25000;
   simDeudas();
+}
+function renderCrucePlazos(ds){
+  // Con el plazo declarado la cuota se puede partir en lo que amortiza y lo que
+  // no. La diferencia son seguros y comisiones — plata que la proyección está
+  // contando como capital, así que el plazo real es más largo que el simulado.
+  const notas = [];
+  for (const d of ds){
+    if (!(d.plazo > 0) || !(d.cuota > 0) || !(d.saldo > 0) || d.tasaEstimada) continue;
+    const ce = cuotaEfectiva(d.saldo, d.tasa, d.plazo);
+    if (ce === null) continue;
+    const dif = d.cuota - ce, pct = dif / d.cuota * 100;
+    const nombre = esc(d.name || "(sin nombre)");
+    if (dif > 2000 && pct >= 2)
+      notas.push(`<b>${nombre}:</b> a ${(d.tasa || 0).toFixed(1)}% en ${d.plazo} meses la cuota que
+        amortiza es ${fmt(ce)}, pero se pagan ${fmt(d.cuota)}. Esos <b>${fmt(dif)}</b> al mes
+        (${pct.toFixed(0)}% de la cuota) no bajan el saldo: seguros y comisiones.`);
+    else if (dif < -2000 && pct <= -2)
+      notas.push(`<b>${nombre}:</b> la cuota de ${fmt(d.cuota)} no alcanza para cancelar el saldo en
+        ${d.plazo} meses a ${(d.tasa || 0).toFixed(1)}% — harían falta ${fmt(ce)}. La tasa real debe ser
+        menor a la anotada, o el plazo o el saldo están mal.`);
+  }
+  $("notaPlazos").innerHTML = notas.map(n => `<div class="note">${n}</div>`).join("");
 }
 function simularSnowball(ds, extraMensual, cadencia){
   // Devuelve {meses, intereses, canceladas, serie (saldo total por mes)} o null.

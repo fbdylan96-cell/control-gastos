@@ -178,7 +178,8 @@ def sanitize_payload(data):
         "hormiga": _clean_rows(data.get("hormiga")),
         "ingresos": _clean_rows(data.get("ingresos")),
         "activos": _clean_rows(data.get("activos")),
-        "deudas": _clean_rows(data.get("deudas"), fields=("saldo", "tasa", "cuota")),
+        "deudas": _clean_rows(data.get("deudas"),
+                              fields=("saldo", "tasa", "cuota", "plazo")),
         "fe_tiene": _clean_text(data.get("fe_tiene"), 10),
         "fe_monto": _clean_amount(data.get("fe_monto")),
         "fe_moneda": _clean_currency(data.get("fe_moneda")),
@@ -189,6 +190,9 @@ def sanitize_payload(data):
         "notas": _clean_text(data.get("notas"), _MAX_NOTAS),
         "personalidades": _clean_personalidades(data.get("personalidades")),
     }
+    # El plazo es un conteo de meses, no un monto: entero y tope de 50 años.
+    for d in payload["deudas"]:
+        d["plazo"] = min(int(round(d["plazo"])), 600)
     return payload, None
 
 
@@ -321,6 +325,7 @@ def build_excel(p):
     ws.column_dimensions["B"].width = 18
     ws.column_dimensions["C"].width = 12
     ws.column_dimensions["D"].width = 16
+    ws.column_dimensions["E"].width = 14
     ws.sheet_view.showGridLines = False
 
     row = 1
@@ -340,7 +345,7 @@ def build_excel(p):
     def section(title):
         nonlocal row
         row += 1
-        for c in range(1, 5):
+        for c in range(1, 6):
             put(c, row, None, fill=_FILL_SECTION)
         put(1, row, title, font=_FONT_SECTION, fill=_FILL_SECTION)
         row += 1
@@ -410,12 +415,15 @@ def build_excel(p):
     put(2, row, "Saldo total", font=_FONT_BOLD, align="right")
     put(3, row, "Tasa anual", font=_FONT_BOLD, align="right")
     put(4, row, "Cuota mensual", font=_FONT_BOLD, align="right")
+    put(5, row, "Plazo (meses)", font=_FONT_BOLD, align="right")
     row += 1
     for d in p["deudas"]:
         put(1, row, d["name"] or "(sin nombre)")
         put(2, row, d["saldo"], fmt=_CRC_FMT, align="right")
         put(3, row, d["tasa"] / 100.0, fmt="0.0%", align="right")
         put(4, row, d["cuota"], fmt=_CRC_FMT, align="right")
+        # .get: los payloads guardados antes de agregar el campo no lo traen.
+        put(5, row, d.get("plazo") or None, fmt="0", align="right")
         row += 1
     put(1, row, "Total", font=_FONT_BOLD, fill=_FILL_SUBTOTAL)
     put(2, row, t["deudas"], font=_FONT_BOLD, fmt=_CRC_FMT, fill=_FILL_SUBTOTAL,
@@ -423,6 +431,7 @@ def build_excel(p):
     put(3, row, None, fill=_FILL_SUBTOTAL)
     put(4, row, t["cuotas"], font=_FONT_BOLD, fmt=_CRC_FMT, fill=_FILL_SUBTOTAL,
         align="right")
+    put(5, row, None, fill=_FILL_SUBTOTAL)
     row += 1
 
     section("PROTECCIÓN Y RETIRO")

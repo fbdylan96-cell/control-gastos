@@ -18,6 +18,7 @@ email_extractor.py
 *.xlsx
 *.docx
 *.pptx
+*.pdf
 PROMPT_*.md
 
 # IDE

@@ -265,12 +265,12 @@ tr.grp td{font-weight:700;background:var(--paper)}
       </div>
       <div class="card" id="simDeudaCard">
         <h3>Simulador de amortización extraordinaria</h3>
-        <p class="hint">Porcentaje del excedente mensual que se aparta; cada N meses lo acumulado se abona
+        <p class="hint">Monto fijo que se aparta cada mes; cada N meses lo acumulado se abona
            a la deuda prioritaria del momento.</p>
         <div class="sim-grid">
-          <div><label>% del excedente apartado</label><input type="number" id="simPct" value="50" min="0" max="100" step="5" oninput="simDeudas()"></div>
+          <div><label>Aporte extra mensual (₡)</label><input type="number" id="simMonto" min="0" step="5000" oninput="simDeudas()"></div>
           <div><label>Cadencia del abono</label><select id="simCad" onchange="simDeudas()"><option value="3">Cada 3 meses</option><option value="6">Cada 6 meses</option></select></div>
-          <div><label>Excedente mensual (editable)</label><input type="number" id="simFlujo" step="10000" oninput="simDeudas()"></div>
+          <div><label>Excedente mensual (referencia, editable)</label><input type="number" id="simFlujo" step="10000" oninput="simDeudas()"></div>
         </div>
         <div id="simDeudaOut"></div>
         <div class="chart-box" id="chartDeudas"></div>
@@ -820,6 +820,9 @@ function renderPaso2(flujo){
       <td class="num">${fmt(sum(ds, "cuota"))}</td>
       <td class="num">${fmt(ds.reduce((a, d) => a + interesAnual(d), 0))}</td></tr>`;
   $("simFlujo").value = Math.max(0, Math.round(flujo));
+  // Sugerencia inicial: la mitad del excedente. Si no hay excedente igual se
+  // propone un monto pequeño — el aporte puede salir de un recorte de gastos.
+  $("simMonto").value = flujo > 0 ? Math.round(flujo * 0.5 / 5000) * 5000 : 25000;
   simDeudas();
 }
 function simularSnowball(ds, extraMensual, cadencia){
@@ -856,15 +859,17 @@ function simDeudas(){
   const ds = ordenarDeudas();
   if (!ds.length) return;
   const malas = ds.filter(d => (d.cuota || 0) <= d.saldo * (d.tasa || 0) / 100 / 12);
-  const pct = (Number($("simPct").value) || 0) / 100;
   const cad = Number($("simCad").value);
   const flujo = Number($("simFlujo").value) || 0;
-  const extra = Math.max(0, flujo * pct);  // se acumula mensual, se abona por cadencia
+  const extra = Math.max(0, Number($("simMonto").value) || 0);  // se acumula mensual, se abona por cadencia
 
   let html = "";
   if (malas.length)
     html += `<div class="note" style="border-color:var(--red)">⚠ ${malas.map(d => esc(d.name)).join(", ")}:
        la cuota no cubre los intereses del mes — renegociar antes de simular.</div>`;
+  if (extra > flujo)
+    html += `<div class="note">El aporte supera el excedente actual (${fmt(flujo)}): hay que liberar
+       <b>${fmt(extra - flujo)}</b> más por mes recortando gastos o subiendo ingresos.</div>`;
   const base = simularSnowball(ds, 0, 0);
   const con = simularSnowball(ds, extra, cad);
   if (!base || !con){
@@ -873,7 +878,7 @@ function simDeudas(){
   } else {
     const aniosBase = (base.meses / 12).toFixed(1), aniosCon = (con.meses / 12).toFixed(1);
     html += `<div class="result-line">Solo con cuotas actuales: libre de deudas en <b>${base.meses} meses (${aniosBase} años)</b>, intereses ≈ <b>${fmt(base.intereses)}</b>.</div>
-      <div class="result-line">Con abono extraordinario (${(pct * 100).toFixed(0)}% del excedente cada ${cad} meses):
+      <div class="result-line">Con aporte extra de ${fmt(extra)} al mes, abonado cada ${cad} meses:
         libre en <b>${con.meses} meses (${aniosCon} años)</b>, intereses ≈ <b>${fmt(con.intereses)}</b>.</div>
       <div class="result-big">Ahorro: ${fmt(base.intereses - con.intereses)} y ${base.meses - con.meses} meses menos</div>
       <table class="data"><tr><th>Orden de cancelación</th><th class="num">Mes estimado</th></tr>` +

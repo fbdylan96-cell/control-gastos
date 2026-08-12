@@ -260,6 +260,8 @@ tr.grp td{font-weight:700;background:var(--paper)}
       <div class="card">
         <h3>Deudas por prioridad <span class="tag warn">menor saldo primero</span></h3>
         <table class="data" id="tablaDeudas"></table>
+        <p class="hint" id="hintIntereses">El <b>pago anual en intereses</b> son los intereses que se
+           acumulan en los próximos 12 meses pagando solo la cuota actual — plata que no baja el saldo.</p>
       </div>
       <div class="card" id="simDeudaCard">
         <h3>Simulador de amortización extraordinaria</h3>
@@ -785,21 +787,38 @@ function ordenarDeudas(){
   return (D.deudas || []).filter(d => (d.saldo || 0) > 0)
     .slice().sort((a, b) => (a.saldo || 0) - (b.saldo || 0));
 }
+function interesAnual(d){
+  // Intereses acumulados en los próximos 12 meses pagando solo la cuota actual.
+  // Si la cuota no cubre los intereses el saldo crece y el interés también (se capitaliza);
+  // si la deuda se cancela antes del mes 12, el interés deja de correr.
+  let saldo = d.saldo || 0, total = 0;
+  const i = (d.tasa || 0) / 100 / 12, cuota = d.cuota || 0;
+  for (let m = 0; m < 12 && saldo > 0.5; m++){
+    const int = saldo * i;
+    total += int;
+    saldo = saldo + int - cuota;
+  }
+  return total;
+}
 function renderPaso2(flujo){
   const ds = ordenarDeudas();
   if (!ds.length){
     $("tablaDeudas").innerHTML = "<tr><td class='hint'>Sin deudas registradas — pasar directo al Paso 3. 🎉</td></tr>";
+    $("hintIntereses").style.display = "none";
     $("simDeudaCard").style.display = "none";
     return;
   }
   $("tablaDeudas").innerHTML = `
-    <tr><th></th><th>Deuda</th><th class="num">Saldo</th><th class="num">Tasa anual</th><th class="num">Cuota/mes</th></tr>` +
+    <tr><th></th><th>Deuda</th><th class="num">Saldo</th><th class="num">Tasa anual</th><th class="num">Cuota/mes</th>
+      <th class="num">Pago anual en intereses</th></tr>` +
     ds.map((d, i) => `<tr>
       <td><span class="pri-badge">${i + 1}</span></td><td>${esc(d.name || "(sin nombre)")}</td>
       <td class="num">${fmt(d.saldo)}</td><td class="num">${(d.tasa || 0).toFixed(1)}%</td>
-      <td class="num">${fmt(d.cuota || 0)}</td></tr>`).join("") +
+      <td class="num">${fmt(d.cuota || 0)}</td>
+      <td class="num">${fmt(interesAnual(d))}</td></tr>`).join("") +
     `<tr class="total"><td></td><td>Total</td><td class="num">${fmt(sum(ds, "saldo"))}</td><td></td>
-      <td class="num">${fmt(sum(ds, "cuota"))}</td></tr>`;
+      <td class="num">${fmt(sum(ds, "cuota"))}</td>
+      <td class="num">${fmt(ds.reduce((a, d) => a + interesAnual(d), 0))}</td></tr>`;
   $("simFlujo").value = Math.max(0, Math.round(flujo));
   simDeudas();
 }

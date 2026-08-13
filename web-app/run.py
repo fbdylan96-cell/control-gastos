@@ -1,6 +1,8 @@
+import copy
 import logging
 import os
 import sys
+import uuid
 
 from dotenv import find_dotenv, load_dotenv
 from flask import (Flask, redirect, render_template, request,
@@ -60,6 +62,51 @@ def diagnostico():
         os.path.join(os.path.dirname(os.path.abspath(__file__)), 'diagnostico'),
         'diagnostico-financiero.html',
     )
+
+
+# Mismo formulario, en modo edición para el asesor: carga un diagnóstico ya
+# enviado, lo corrige junto al cliente y lo reenvía. Protegido con la MISMA
+# sesión que /ruta y el Panel de Administración. La página detecta el modo por
+# su propia URL, así que el archivo servido es el mismo.
+@app.route('/diagnostico/editar')
+def diagnostico_editar():
+    if not session.get("admin_authenticated"):
+        return redirect('/calculadora-acceso?next=/diagnostico/editar')
+    return send_from_directory(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'diagnostico'),
+        'diagnostico-financiero.html',
+    )
+
+
+@app.route('/diagnostico/api/cargar')
+def diagnostico_api_cargar():
+    """Último diagnóstico de un correo, listo para reeditar. Solo asesor."""
+    if not session.get("admin_authenticated"):
+        return {"ok": False, "error": "No autorizado."}, 401
+    correo = (request.args.get('correo') or '').strip().lower()
+    if not correo or '@' not in correo:
+        return {"ok": False, "error": "Ingrese un correo válido."}, 400
+
+    from db import get_diagnostico_para_editar
+    try:
+        diag = get_diagnostico_para_editar(correo)
+    except Exception as e:
+        app.logger.error(f"Diagnóstico editar: fallo consultando {correo}: {e}")
+        return {"ok": False, "error": "No se pudo consultar la base."}, 500
+    if not diag:
+        return {"ok": False, "error": "No hay diagnósticos para ese correo."}, 404
+
+    payload = diag["payload"]
+    if diag["convertido"]:
+        # Fila anterior a payload_raw: los montos quedaron en colones y el
+        # nombre trae la anotación del monto original en dólares.
+        from diagnostico_report import limpiar_anotacion_usd
+        payload = limpiar_anotacion_usd(payload)
+
+    return {"ok": True, "payload": payload, "id": diag["id"],
+            "created_at": diag["created_at"].isoformat(),
+            "total": diag["total"], "convertido": diag["convertido"],
+            "es_correccion": diag["corregido_de"] is not None}
 
 
 # Estrategias de Inversión (calculadora Streamlit): acceso exclusivo del asesor.
@@ -145,20 +192,26 @@ def diagnostico_tipo_cambio():
 
 # Rate limit del envío de diagnósticos (endpoint público que manda correos):
 # máx. 5 envíos por IP por hora, en memoria (aproximado con varios workers).
+# El asesor autenticado usa un contador aparte y mucho más holgado: la ruta ya
+# exige sesión de administrador, así que no hay vector de abuso, pero el tope
+# sigue protegiendo de un bucle accidental.
 _DIAG_RATE = {}
 _DIAG_RATE_MAX = 5
+_DIAG_RATE_ASESOR_MAX = 30
 _DIAG_RATE_WINDOW = 3600  # segundos
 
 
-def _diag_rate_ok(ip):
+def _diag_rate_ok(ip, asesor=False):
     import time
     now = time.time()
-    hits = [ts for ts in _DIAG_RATE.get(ip, []) if now - ts < _DIAG_RATE_WINDOW]
-    if len(hits) >= _DIAG_RATE_MAX:
-        _DIAG_RATE[ip] = hits
+    clave = ("asesor:" if asesor else "") + ip
+    tope = _DIAG_RATE_ASESOR_MAX if asesor else _DIAG_RATE_MAX
+    hits = [ts for ts in _DIAG_RATE.get(clave, []) if now - ts < _DIAG_RATE_WINDOW]
+    if len(hits) >= tope:
+        _DIAG_RATE[clave] = hits
         return False
     hits.append(now)
-    _DIAG_RATE[ip] = hits
+    _DIAG_RATE[clave] = hits
     return True
 
 
@@ -170,7 +223,8 @@ def diagnostico_enviar():
     # Detrás de nginx la IP real viene en X-Forwarded-For
     ip = (request.headers.get('X-Forwarded-For', request.remote_addr or '?')
           .split(',')[0].strip())
-    if not _diag_rate_ok(ip):
+    asesor = bool(session.get("admin_authenticated"))
+    if not _diag_rate_ok(ip, asesor=asesor):
         return {"ok": False, "error": "Demasiados envíos. Intente de nuevo en "
                 "una hora."}, 429
 
@@ -178,6 +232,21 @@ def diagnostico_enviar():
     payload, error = sanitize_payload(data)
     if error:
         return {"ok": False, "error": error}, 400
+
+    # Corrección del asesor: encadena esta fila con el diagnóstico que corrige.
+    # Solo se acepta con sesión de asesor y con forma de UUID — un id inválido
+    # reventaría el INSERT y la persistencia es best-effort (se perdería en
+    # silencio).
+    corregido_de = None
+    if asesor and isinstance(data, dict) and data.get("corregido_de"):
+        try:
+            corregido_de = str(uuid.UUID(str(data["corregido_de"])))
+        except (ValueError, AttributeError, TypeError):
+            return {"ok": False, "error": "Referencia de corrección inválida."}, 400
+
+    # Copia fiel de lo que se escribió, antes de que la conversión reescriba
+    # montos y nombres: es lo que recarga el editor del asesor.
+    payload_raw = copy.deepcopy(payload)
 
     # Montos en dólares: se convierten a colones con el tipo de cambio más
     # reciente antes de calcular agregados (todo el reporte va en colones).
@@ -194,7 +263,8 @@ def diagnostico_enviar():
     from db import mark_diagnostico_sent, save_diagnostico
     diag_id = None
     try:
-        diag_id = save_diagnostico(payload, ip)
+        diag_id = save_diagnostico(payload, ip, payload_raw=payload_raw,
+                                   corregido_de=corregido_de)
     except Exception as e:
         app.logger.error(f"Diagnóstico: fallo guardando en asesoria_db "
                          f"({payload['correo']}): {e}")
@@ -215,6 +285,7 @@ def diagnostico_enviar():
                              f"({diag_id}): {e}")
 
     app.logger.info(f"Diagnóstico enviado a {payload['correo']} (cc asesor)"
+                    + (f" | corrige {corregido_de}" if corregido_de else "")
                     + (f" | guardado id={diag_id}" if diag_id else " | NO guardado"))
     return {"ok": True}
 

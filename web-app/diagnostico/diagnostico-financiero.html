@@ -157,6 +157,20 @@ textarea{resize:vertical;min-height:64px}
 </header>
 
 <div class="wrap">
+  <!-- Barra de corrección: solo aparece en /diagnostico/editar (uso del asesor) -->
+  <div class="card" id="editorBar" style="display:none">
+    <h3>Corregir un diagnóstico enviado <span class="tag warn">uso del asesor</span></h3>
+    <p class="hint">Cargue el último diagnóstico del cliente por su correo, corríjalo junto a él y
+       vuelva a enviarlo. Se guarda como una <b>versión nueva</b>: el envío original se conserva
+       intacto y el reporte corregido le llega al cliente con copia al asesor.</p>
+    <div style="display:grid;grid-template-columns:1fr 130px;gap:10px;align-items:start">
+      <input type="email" id="editorCorreo" placeholder="correo@delcliente.com"
+             style="border:1px solid var(--line);border-radius:7px;padding:9px 11px;width:100%;font-family:var(--sans);background:#FDFDFB">
+      <button class="btn primary" onclick="cargarDiagnostico()" id="btnCargar">Cargar</button>
+    </div>
+    <p class="hint" id="editorEstado" style="margin:10px 0 0"></p>
+  </div>
+
   <div class="stepper" id="stepper">
     <div class="step active" data-step="0"><span class="num">Fase 1</span>Gastos mensuales</div>
     <div class="step" data-step="1"><span class="num">Fase 2</span>Ingresos y patrimonio</div>
@@ -416,11 +430,17 @@ function parseAmt(v){
 // Si el tipo de cambio no está disponible, la opción $ queda deshabilitada.
 let TC = null;
 function toCRC(n, cur){ return cur === 'usd' ? n * (TC || 0) : n; }
-function curSelHTML(cat, id){
+function curSelHTML(cat, id, cur='crc'){
   return `<select class="cur-sel" onchange="upd('${cat}','${id}','currency',this.value)">
-    <option value="crc">₡</option>
-    <option value="usd" ${TC ? '' : 'disabled'}>$</option>
+    <option value="crc" ${cur === 'usd' ? '' : 'selected'}>₡</option>
+    <option value="usd" ${cur === 'usd' ? 'selected' : ''} ${TC || cur === 'usd' ? '' : 'disabled'}>$</option>
   </select>`;
+}
+// Los nombres pueden venir de la base (modo editor): escapar siempre antes de
+// meterlos en un atributo.
+function escAttr(v){
+  return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                                   .replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 fetch('/diagnostico/tipo-cambio').then(r=>r.json()).then(d=>{
   if(d && d.usd_crc){
@@ -430,30 +450,38 @@ fetch('/diagnostico/tipo-cambio').then(r=>r.json()).then(d=>{
 }).catch(()=>{});
 
 // ---------- Simple rows ----------
-function addRow(cat, name=''){
+// Los valores opcionales (amount, currency…) solo llegan desde el modo editor,
+// que rehidrata un diagnóstico ya guardado; el formulario público sigue
+// llamando con el nombre del preset y nada más.
+function addRow(cat, name='', amount=0, currency='crc'){
   const id = 'r'+(idc++);
-  state[cat].push({id, name, amount:0, currency:'crc'});
+  amount = Number(amount) || 0;
+  currency = currency === 'usd' ? 'usd' : 'crc';
+  state[cat].push({id, name, amount, currency});
   const div = document.createElement('div');
   div.className = 'row'; div.id = id;
   div.innerHTML = `
-    <input type="text" placeholder="Descripción" value="${name.replace(/"/g,'&quot;')}" oninput="upd('${cat}','${id}','name',this.value)">
-    <input type="text" class="amount" placeholder="0" inputmode="numeric" oninput="upd('${cat}','${id}','amount',this.value)">
-    ${curSelHTML(cat, id)}
+    <input type="text" placeholder="Descripción" value="${escAttr(name)}" oninput="upd('${cat}','${id}','name',this.value)">
+    <input type="text" class="amount" placeholder="0" inputmode="numeric" value="${amount || ''}" oninput="upd('${cat}','${id}','amount',this.value)">
+    ${curSelHTML(cat, id, currency)}
     <button class="del" title="Eliminar" onclick="delRow('${cat}','${id}')">✕</button>`;
   document.getElementById('rows-'+cat).appendChild(div);
 }
-function addDebtRow(name=''){
+function addDebtRow(name='', d={}){
   const id = 'r'+(idc++);
-  state.deudas.push({id, name, saldo:0, tasa:0, cuota:0, plazo:0, currency:'crc'});
+  const saldo = Number(d.saldo) || 0, tasa = Number(d.tasa) || 0;
+  const cuota = Number(d.cuota) || 0, plazo = Number(d.plazo) || 0;
+  const currency = d.currency === 'usd' ? 'usd' : 'crc';
+  state.deudas.push({id, name, saldo, tasa, cuota, plazo, currency});
   const div = document.createElement('div');
   div.className = 'row debt'; div.id = id;
   div.innerHTML = `
-    <input type="text" placeholder="Ej. Tarjeta BAC" value="${name}" oninput="upd('deudas','${id}','name',this.value)">
-    <input type="text" class="amount" placeholder="0" inputmode="numeric" oninput="upd('deudas','${id}','saldo',this.value)">
-    <input type="text" class="amount" placeholder="%" inputmode="decimal" oninput="upd('deudas','${id}','tasa',this.value)">
-    <input type="text" class="amount" placeholder="0" inputmode="numeric" oninput="upd('deudas','${id}','cuota',this.value)">
-    <input type="text" class="amount" placeholder="meses" inputmode="numeric" oninput="upd('deudas','${id}','plazo',this.value)">
-    ${curSelHTML('deudas', id)}
+    <input type="text" placeholder="Ej. Tarjeta BAC" value="${escAttr(name)}" oninput="upd('deudas','${id}','name',this.value)">
+    <input type="text" class="amount" placeholder="0" inputmode="numeric" value="${saldo || ''}" oninput="upd('deudas','${id}','saldo',this.value)">
+    <input type="text" class="amount" placeholder="%" inputmode="decimal" value="${tasa || ''}" oninput="upd('deudas','${id}','tasa',this.value)">
+    <input type="text" class="amount" placeholder="0" inputmode="numeric" value="${cuota || ''}" oninput="upd('deudas','${id}','cuota',this.value)">
+    <input type="text" class="amount" placeholder="meses" inputmode="numeric" value="${plazo || ''}" oninput="upd('deudas','${id}','plazo',this.value)">
+    ${curSelHTML('deudas', id, currency)}
     <button class="del" title="Eliminar" onclick="delRow('deudas','${id}')">✕</button>`;
   document.getElementById('rows-deudas').appendChild(div);
 }
@@ -714,6 +742,9 @@ async function enviarReporte(){
     notas: document.getElementById('notas').value,
     personalidades: collectPersonalidades()
   };
+  // Encadena la corrección con el diagnóstico que la origina. El servidor solo
+  // lo acepta con sesión de asesor; para el formulario público va siempre null.
+  if(CORRIGE_ID) payload.corregido_de = CORRIGE_ID;
 
   const btn = document.getElementById('btnEnviar');
   btn.disabled = true;
@@ -742,6 +773,101 @@ async function enviarReporte(){
   }
 }
 
+// ---------- Modo editor del asesor (/diagnostico/editar) ----------
+// Misma página que el formulario público; la ruta decide el modo. El servidor
+// ya exige sesión de asesor para servir /diagnostico/editar y para la API.
+const MODO_EDITOR = location.pathname.replace(/\/+$/, '').endsWith('/editar');
+let CORRIGE_ID = null;   // id del diagnóstico que se está corrigiendo
+
+function estadoEditor(msg, cls){
+  const el = document.getElementById('editorEstado');
+  el.innerHTML = msg;
+  el.style.color = cls === 'err' ? 'var(--red)' : (cls === 'ok' ? 'var(--accent)' : 'var(--muted)');
+}
+
+function limpiarFilas(){
+  for(const cat of ['fijos','variables','hormiga','ingresos','activos','deudas']){
+    state[cat] = [];
+    document.getElementById('rows-'+cat).innerHTML = '';
+  }
+}
+
+function marcarSeleccion(select, valor){
+  // El payload guarda el TEXTO de la opción de retiro, no su value.
+  const v = String(valor || '').trim();
+  for(const o of select.options){
+    if(o.value === v || o.text.trim() === v){ select.value = o.value; return; }
+  }
+}
+
+function hidratar(p){
+  limpiarFilas();
+  document.getElementById('contactoNombre').value = p.nombre || '';
+  document.getElementById('contactoCorreo').value = p.correo || '';
+  document.getElementById('contactoCelular').value = p.celular || '';
+
+  for(const cat of ['fijos','variables','hormiga','ingresos','activos'])
+    (p[cat] || []).forEach(r => addRow(cat, r.name, r.amount, r.currency));
+  (p.deudas || []).forEach(d => addDebtRow(d.name, d));
+
+  marcarSeleccion(document.getElementById('fe-tiene'), p.fe_tiene);
+  document.getElementById('fe-monto').value = Number(p.fe_monto) || '';
+  document.getElementById('fe-moneda').value = p.fe_moneda === 'usd' ? 'usd' : 'crc';
+
+  const seguros = new Set(p.seguros || []);
+  document.querySelectorAll('input[name=seg]').forEach(c => { c.checked = seguros.has(c.value); });
+  marcarSeleccion(document.getElementById('retiro'), p.retiro);
+  [1,2,3].forEach(i => { document.getElementById('meta'+i).value = (p.metas || [])[i-1] || ''; });
+  document.getElementById('notas').value = p.notas || '';
+
+  // Personalidades: el cuestionario 1 ya está renderizado; el 2 se agrega solo
+  // si el diagnóstico traía dos personas.
+  const personas = p.personalidades || [];
+  if(personas.length > 1 && !document.getElementById('quiz-persona-2')) agregarPersona2();
+  personas.slice(0, 2).forEach((persona, idx) => {
+    const pi = idx + 1;
+    const campo = document.getElementById('quizNombre'+pi);
+    if(campo) campo.value = persona.nombre || '';
+    (persona.respuestas || []).forEach((resp, qi) => {
+      if(!resp) return;
+      const radio = document.querySelector(`input[name=p${pi}q${qi}][value="${resp}"]`);
+      if(radio) radio.checked = true;
+    });
+  });
+
+  recalc();
+}
+
+async function cargarDiagnostico(){
+  const correo = document.getElementById('editorCorreo').value.trim().toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)){
+    estadoEditor('Ingrese un correo válido.', 'err'); return;
+  }
+  const btn = document.getElementById('btnCargar');
+  btn.disabled = true; estadoEditor('Cargando…', '');
+  try{
+    const res = await fetch('/diagnostico/api/cargar?correo=' + encodeURIComponent(correo));
+    const d = await res.json().catch(() => ({}));
+    if(!res.ok || !d.ok) throw new Error(d.error || 'No se pudo cargar.');
+    hidratar(d.payload);
+    CORRIGE_ID = d.id;
+    const fecha = new Date(d.created_at).toLocaleDateString('es-CR',
+      {day:'2-digit', month:'long', year:'numeric'});
+    let msg = `✓ Cargado el diagnóstico del ${fecha}`;
+    if(d.total > 1) msg += ` (${d.total} envíos — se usa el más reciente)`;
+    if(d.es_correccion) msg += ' · ya era una corrección';
+    if(d.convertido) msg += '. <b>Ojo:</b> es un envío anterior al guardado del original, ' +
+      'así que los montos que el cliente puso en dólares están convertidos a colones.';
+    estadoEditor(msg + '. Corrija y envíe desde la Fase 5.', 'ok');
+    goStep(0);
+  }catch(e){
+    CORRIGE_ID = null;
+    estadoEditor(e.message || 'No se pudo cargar.', 'err');
+  }finally{
+    btn.disabled = false;
+  }
+}
+
 // ---------- Init with presets ----------
 renderQuizPersona(1);
 presets.fijos.forEach(n=>addRow('fijos',n));
@@ -751,6 +877,12 @@ presets.ingresos.forEach(n=>addRow('ingresos',n));
 presets.activos.forEach(n=>addRow('activos',n));
 addDebtRow('Tarjeta de crédito');
 recalc();
+
+if(MODO_EDITOR){
+  document.getElementById('editorBar').style.display = '';
+  document.querySelector('header .brand p').textContent =
+    'Modo corrección — cargue el diagnóstico del cliente, corríjalo y reenvíelo';
+}
 </script>
 </body>
 </html>

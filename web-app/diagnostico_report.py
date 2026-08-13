@@ -242,6 +242,32 @@ def aplicar_tipo_cambio(p, tc_usd, tc_fecha=None):
     return p
 
 
+# La anotación que deja aplicar_tipo_cambio en el nombre: " [US$ 1,234.56]" en
+# las filas de montos y " [US$: saldo …, cuota …]" en las deudas.
+_USD_ANOT_RE = re.compile(r"\s*\[US\$[^\]]*\]\s*$")
+_PLACEHOLDERS = ("(sin descripción)", "(sin nombre)")
+
+
+def limpiar_anotacion_usd(p):
+    """Quita la anotación " [US$ …]" de los nombres. Modifica in-place.
+
+    Se usa al reabrir en el editor del asesor un diagnóstico guardado ANTES de
+    que existiera payload_raw: sin esto el asesor vería la anotación dentro del
+    campo y al volver a guardar quedaría anotada dos veces. Los montos siguen en
+    colones (la conversión no es reversible sin el tipo de cambio original).
+    """
+    def _limpio(nombre):
+        nombre = _USD_ANOT_RE.sub("", str(nombre or "")).strip()
+        return "" if nombre in _PLACEHOLDERS else nombre
+
+    for cat in _CATS_MONTOS:
+        for r in p.get(cat) or []:
+            r["name"] = _limpio(r.get("name"))
+    for d in p.get("deudas") or []:
+        d["name"] = _limpio(d.get("name"))
+    return p
+
+
 # ── Clasificación general (flujo × patrimonio) ──────────────────────────────
 # Escala de 4 niveles expresada en positivo, de mayor rango de mejora a más
 # estable. El nivel 2 tiene dos variantes PARALELAS (no consecutivas): tener

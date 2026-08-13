@@ -47,13 +47,20 @@ def get_asesoria_connection():
     )
 
 
-def save_diagnostico(payload, ip=None):
+def save_diagnostico(payload, ip=None, payload_raw=None, corregido_de=None):
     """Persist a sanitized /diagnostico submission in asesoria_db.
 
     Stores the full post-conversion payload as JSONB plus the searchable
     columns. Returns the new row id (str). Raises on failure — the caller
     (run.py) treats persistence as best-effort so a DB hiccup never blocks
     the prospect's report.
+
+    payload_raw: the payload as the client typed it, BEFORE the USD→CRC
+    conversion (which rewrites amounts and annotates names). It is what the
+    advisor's editor reloads; `payload` stays the analysis-ready version.
+
+    corregido_de: id of the diagnostico this row corrects. A correction is
+    always a new row, never an UPDATE — the original submission is evidence.
     """
     conn = get_asesoria_connection()
     try:
@@ -61,13 +68,16 @@ def save_diagnostico(payload, ip=None):
             cur.execute(
                 """
                 INSERT INTO diagnosticos
-                    (nombre, correo, celular, tc_usd, tc_fecha, ip, payload)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    (nombre, correo, celular, tc_usd, tc_fecha, ip, payload,
+                     payload_raw, corregido_de)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (payload["nombre"], payload["correo"], payload["celular"],
                  payload.get("tc_usd"), payload.get("tc_fecha"), ip,
-                 psycopg2.extras.Json(payload)),
+                 psycopg2.extras.Json(payload),
+                 psycopg2.extras.Json(payload_raw) if payload_raw else None,
+                 corregido_de),
             )
             diag_id = str(cur.fetchone()[0])
         conn.commit()
@@ -115,6 +125,41 @@ def get_diagnostico_by_correo(correo):
             return None
         return {"id": str(row[0]), "created_at": row[1], "payload": row[2],
                 "total": int(row[3])}
+    finally:
+        conn.close()
+
+
+def get_diagnostico_para_editar(correo):
+    """Latest diagnostico for an email, prepared for the advisor's editor.
+
+    Prefers `payload_raw` — what the client actually typed, before the USD→CRC
+    conversion. Falls back to `payload` for rows saved before that column
+    existed; `convertido` tells the caller it must strip the " [US$ …]"
+    annotations the conversion left behind. None when there is no submission.
+    """
+    conn = get_asesoria_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, created_at, payload, payload_raw, corregido_de,
+                       count(*) OVER () AS total
+                FROM diagnosticos
+                WHERE correo = %s
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (str(correo or "").strip().lower(),),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        raw = row[3]
+        return {"id": str(row[0]), "created_at": row[1],
+                "payload": raw if raw else row[2],
+                "convertido": not raw,
+                "corregido_de": str(row[4]) if row[4] else None,
+                "total": int(row[5])}
     finally:
         conn.close()
 

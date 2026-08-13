@@ -25,9 +25,19 @@
 --                   en FALSE indica que el envío falló pero los datos se
 --                   conservaron.
 --   * ip          — origen del envío (forense / dedup del endpoint público).
+--   * payload_raw — el payload ANTES de convertir USD→CRC. La conversión es
+--                   destructiva (reescribe montos y anota " [US$ 123.45]" en el
+--                   nombre), así que para REEDITAR el diagnóstico se usa esta
+--                   copia fiel. NULL en las filas anteriores a la corrección.
+--   * corregido_de — id del diagnóstico que esta fila corrige. Cada corrección
+--                   del asesor es una fila NUEVA, nunca un UPDATE: queda
+--                   evidencia de lo que el cliente llenó originalmente.
 CREATE TABLE IF NOT EXISTS diagnosticos (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- clock_timestamp(), no now(): now() es la hora de inicio de la transacción
+    -- y empataría dos filas insertadas juntas, rompiendo el "última versión por
+    -- correo" del que dependen /ruta y el editor del asesor.
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
 
     nombre       TEXT NOT NULL,
     correo       TEXT NOT NULL,
@@ -38,8 +48,13 @@ CREATE TABLE IF NOT EXISTS diagnosticos (
     ip           TEXT,
     report_sent  BOOLEAN NOT NULL DEFAULT FALSE,
 
-    payload      JSONB NOT NULL
+    payload      JSONB NOT NULL,
+    payload_raw  JSONB,
+    corregido_de UUID REFERENCES diagnosticos(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_diagnosticos_correo
     ON diagnosticos (correo, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_diagnosticos_corregido_de
+    ON diagnosticos (corregido_de);

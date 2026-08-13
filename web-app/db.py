@@ -577,7 +577,8 @@ def set_subscription_comp(conn, client_id, comp):
 
 
 def insert_manual_transaction(conn, *, individual_id, business_id, merchant, amount,
-                              currency, txn_type, category, subcategory, txn_date=None):
+                              currency, txn_type, category, subcategory, txn_date=None,
+                              client_notes=None):
     """Insert a user-entered transaction across all four pipeline tables so it behaves
     like any ingested one. The notification row is pre-marked notified (email + WhatsApp)
     so the notifiers never send anything for it.
@@ -637,9 +638,11 @@ def insert_manual_transaction(conn, *, individual_id, business_id, merchant, amo
             """
             INSERT INTO core.transactions_notifications
                 (id, classified_id, individual_id, business_id, final_category, final_subcategory,
-                 email_notified, email_notified_at, whatsapp_notified, whatsapp_notified_at)
-            VALUES (%s, %s, %s, %s, %s, %s, TRUE, now(), TRUE, now())
+                 client_notes, email_notified, email_notified_at, whatsapp_notified,
+                 whatsapp_notified_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, now(), TRUE, now())
             """,
-            (notif_id, classified_id, individual_id, business_id, category, subcategory),
+            (notif_id, classified_id, individual_id, business_id, category, subcategory,
+             client_notes),
         )
     conn.commit()

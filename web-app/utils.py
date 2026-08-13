@@ -29,6 +29,17 @@ def clean_merchant_key(name: str) -> str:
     return " ".join(cleaned.split())
 
 
+# Nota libre del cliente por transacción (core.transactions_notifications.client_notes).
+# El tope coincide con VARCHAR(280) en la base: si llegara algo más largo (form
+# manipulado, cliente sin JS) se recorta acá y nunca revienta el INSERT.
+CLIENT_NOTES_MAX_LEN = 280
+
+
+def clean_client_notes(value) -> str | None:
+    """Normaliza la nota de una transacción. Devuelve None si queda vacía."""
+    return (str(value or "").strip()[:CLIENT_NOTES_MAX_LEN]) or None
+
+
 def gen_email_forward(client_name: str) -> str:
     """Generate a unique email forwarding address for a client.
 

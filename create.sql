@@ -260,6 +260,12 @@ CREATE TABLE core.transactions_notifications (
 
     rule_processing BOOLEAN NOT NULL DEFAULT FALSE,
 
+    -- Free-text note written by the client about this transaction
+    -- ("gift for Ana", "reimbursable by employer"). Editable from the
+    -- persona/empresa apps; shown in Reportes. NULL = no note.
+    -- 280 chars (tweet-sized): enough context, still fits a table cell.
+    client_notes VARCHAR(280),
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

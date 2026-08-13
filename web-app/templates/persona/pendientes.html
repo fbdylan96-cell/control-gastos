@@ -30,6 +30,7 @@
           <th>Moneda</th>
           <th style="width:130px;">Tipo</th>
           <th style="width:200px;">Categoría</th>
+          <th style="width:210px;">Nota</th>
           <th style="width:60px;"></th>
         </tr>
       </thead>
@@ -67,6 +68,16 @@
               </option>
               {% endfor %}
             </select>
+          </td>
+          <td>
+            {% if row.notification_id %}
+            <input type="text" name="client_notes" form="pf_{{ loop.index }}"
+                   class="ei-input" style="font-size:0.82rem; padding:4px 6px;"
+                   maxlength="{{ notes_max }}" value="{{ row.client_notes or '' }}"
+                   placeholder="Nota (opcional)">
+            {% else %}
+            <span class="muted" style="font-size:0.82rem;">—</span>
+            {% endif %}
           </td>
           <td style="text-align:center;">
             <form method="POST" id="pf_{{ loop.index }}"

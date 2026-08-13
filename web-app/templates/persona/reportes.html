@@ -67,6 +67,7 @@
           <th style="text-align:right;">Monto Local</th>
           <th>Categoría</th>
           <th>Subcategoría</th>
+          <th>Nota</th>
         </tr>
       </thead>
       <tbody>
@@ -91,6 +92,9 @@
           </td>
           <td>{{ row.final_category or '—' }}</td>
           <td class="muted">{{ row.final_subcategory or '—' }}</td>
+          <td class="muted" style="font-size:0.82rem; max-width:280px;">
+            {{ row.client_notes or '—' }}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

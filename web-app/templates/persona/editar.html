@@ -46,6 +46,7 @@
           <th>Tipo</th>
           <th>Categoría</th>
           <th>Subcategoría</th>
+          <th style="width:210px;">Nota</th>
           <th style="width:180px;">Reclasificar</th>
           <th style="width:60px;"></th>
           <th style="width:120px;"></th>
@@ -69,9 +70,20 @@
           <td class="muted">{{ row.final_subcategory or '—' }}</td>
           <td>
             {% if row.notification_id %}
+            <input type="text" name="client_notes" form="form_{{ loop.index }}"
+                   id="note_{{ loop.index }}" class="ei-input js-note"
+                   style="font-size:0.82rem; padding:4px 6px;"
+                   maxlength="{{ notes_max }}" value="{{ row.client_notes or '' }}"
+                   placeholder="Agregar nota…" oninput="syncRow({{ loop.index }})">
+            {% else %}
+            <span class="muted" style="font-size:0.82rem;">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.notification_id %}
             {% set current = (row.final_category or '') ~ '|' ~ (row.final_subcategory or '') %}
-            <select class="ei-input" style="font-size:0.82rem; padding:4px 6px;"
-                    id="sel_{{ loop.index }}" onchange="markDirty({{ loop.index }})">
+            <select class="ei-input js-cat" style="font-size:0.82rem; padding:4px 6px;"
+                    id="sel_{{ loop.index }}" onchange="syncRow({{ loop.index }})">
               <option value="">— seleccionar —</option>
               {% for cat in categories %}
               {% set opt = cat.category ~ '|' ~ (cat.subcategory or '') %}
@@ -88,13 +100,14 @@
             {% if row.notification_id %}
             <form method="POST" action="{{ url_for('persona.transacciones_reclassify') }}"
                   id="form_{{ loop.index }}"
-                  onsubmit="return confirmReclassify({{ loop.index }}, '{{ row.merchant_guess or '' }}')">
+                  onsubmit="return confirmSaveRow({{ loop.index }}, '{{ row.merchant_guess or '' }}')">
               <input type="hidden" name="notification_id" value="{{ row.notification_id }}">
               <input type="hidden" name="origin" value="editar">
               <input type="hidden" name="date_from" value="{{ date_from }}">
               <input type="hidden" name="date_to" value="{{ date_to }}">
-              <input type="hidden" name="category_value" id="val_{{ loop.index }}"
-                     value="{{ (row.final_category or '') ~ '|' ~ (row.final_subcategory or '') }}">
+              <!-- Lo llena syncRow() solo si la categoría cambió: así guardar una
+                   nota no marca la transacción como reclasificada por el usuario. -->
+              <input type="hidden" name="category_value" id="val_{{ loop.index }}" value="">
               <button type="submit" class="btn-primary-ei"
                       style="padding:4px 10px; font-size:0.8rem; opacity:0.35; pointer-events:none;"
                       id="btn_{{ loop.index }}" disabled>
@@ -205,21 +218,47 @@
     if (discardFormId) document.getElementById(discardFormId).submit();
   }
 
-  function markDirty(idx) {
+  // El botón de guardar de cada fila cubre la categoría y la nota. Se recuerda
+  // el valor original de ambos campos para saber qué cambió de verdad: si solo
+  // cambió la nota no se manda category_value, y así guardar una nota no marca
+  // la transacción como reclasificada por el usuario.
+  document.querySelectorAll('.js-cat, .js-note').forEach(el => { el.dataset.original = el.value; });
+
+  function rowState(idx) {
     const sel = document.getElementById('sel_' + idx);
-    const btn = document.getElementById('btn_' + idx);
+    const note = document.getElementById('note_' + idx);
+    return {
+      sel: sel,
+      note: note,
+      catDirty: !!sel && sel.value !== sel.dataset.original,
+      noteDirty: !!note && note.value !== note.dataset.original,
+    };
+  }
+
+  function syncRow(idx) {
+    const st = rowState(idx);
     const val = document.getElementById('val_' + idx);
-    val.value = sel.value;
-    const dirty = sel.value !== '';
+    const btn = document.getElementById('btn_' + idx);
+    if (val) val.value = st.catDirty ? st.sel.value : '';
+    const dirty = st.catDirty || st.noteDirty;
     btn.disabled = !dirty;
     btn.style.opacity = dirty ? '1' : '0.35';
     btn.style.pointerEvents = dirty ? 'auto' : 'none';
   }
 
-  function confirmReclassify(idx, merchant) {
-    const sel = document.getElementById('sel_' + idx);
-    const label = sel.options[sel.selectedIndex].text.trim();
-    return confirm('¿Reclasificar "' + (merchant || 'esta transacción') + '" como ' + label + '?');
+  function confirmSaveRow(idx, merchant) {
+    const st = rowState(idx);
+    const name = merchant || 'esta transacción';
+    if (st.catDirty && st.noteDirty)
+      return confirm('¿Guardar la nueva categoría y la nota de "' + name + '"?');
+    if (st.catDirty)
+      return confirm('¿Reclasificar "' + name + '" como ' +
+                     st.sel.options[st.sel.selectedIndex].text.trim() + '?');
+    if (st.noteDirty)
+      return confirm(st.note.value.trim()
+        ? '¿Guardar la nota de "' + name + '"?'
+        : '¿Borrar la nota de "' + name + '"?');
+    return false;
   }
 </script>
 {% endblock %}

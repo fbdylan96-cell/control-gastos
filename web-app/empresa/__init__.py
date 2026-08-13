@@ -19,7 +19,8 @@ from db import (get_connection, get_investment, insert_manual_transaction,
                 today_cr, touch_broker_credentials_used)
 from mailer import enviar_aviso_cambio_contrasena, enviar_link_reset_contrasena
 from tools import finance
-from utils import (BANK_NOTIFICATION_SENDERS, gen_email_forward, gen_password,
+from utils import (BANK_NOTIFICATION_SENDERS, CLIENT_NOTES_MAX_LEN,
+                   clean_client_notes, gen_email_forward, gen_password,
                    load_reset_token, make_reset_token, rate_limit_ok,
                    validar_nueva_contrasena)
 
@@ -296,7 +297,8 @@ def transacciones():
                        tr.local_date,
                        tn.id          AS notification_id,
                        tn.final_category,
-                       tn.final_subcategory
+                       tn.final_subcategory,
+                       tn.client_notes
                 FROM core.transactions_enriched te
                 JOIN core.transactions_raw tr ON te.raw_id = tr.id
                 LEFT JOIN core.transactions_classified tc ON tc.raw_id = tr.id
@@ -324,7 +326,8 @@ def transacciones():
     finally:
         conn.close()
 
-    return render_template("empresa/transacciones.html", rows=rows, categories=categories)
+    return render_template("empresa/transacciones.html", rows=rows, categories=categories,
+                           notes_max=CLIENT_NOTES_MAX_LEN)
 
 
 @empresa_bp.route("/transacciones/reclassify", methods=["POST"])
@@ -335,29 +338,38 @@ def transacciones_reclassify():
     parts = raw_value.split("|", 1)
     final_category = parts[0].strip() or None
     final_subcategory = parts[1].strip() or None if len(parts) > 1 else None
+    # La nota comparte el botón de guardar con la reclasificación; solo se toca
+    # si el campo viajó en el formulario. Vacía = el usuario la borró.
+    notes_submitted = "client_notes" in request.form
+    client_notes = clean_client_notes(request.form.get("client_notes"))
 
-    if not notification_id or not final_category:
+    sets, params = [], []
+    if final_category:
+        sets += ["final_category = %s", "final_subcategory = %s",
+                 "reclassified_by = 'user'", "reclassified_at = NOW()"]
+        params += [final_category, final_subcategory]
+    if notes_submitted:
+        sets.append("client_notes = %s")
+        params.append(client_notes)
+
+    if not notification_id or not sets:
         flash("Datos inválidos.", "danger")
         return redirect(url_for("empresa.transacciones"))
 
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            # Los fragmentos de SET los arma este código, nunca el usuario.
             cur.execute(
-                """
-                UPDATE core.transactions_notifications
-                SET final_category    = %s,
-                    final_subcategory = %s,
-                    reclassified_by   = 'user',
-                    reclassified_at   = NOW()
-                WHERE id = %s AND individual_id = %s
-                """,
-                (final_category, final_subcategory, notification_id, session["user_id"]),
+                "UPDATE core.transactions_notifications SET " + ", ".join(sets) +
+                " WHERE id = %s AND individual_id = %s",
+                params + [notification_id, session["user_id"]],
             )
             updated = cur.rowcount
         conn.commit()
         if updated:
-            flash("Reclasificación guardada.", "success")
+            flash("Reclasificación guardada." if final_category else "Nota guardada.",
+                  "success")
         else:
             flash("No se encontró la transacción para actualizar.", "warning")
     except Exception as e:
@@ -415,7 +427,8 @@ def transacciones_editar():
                        tr.local_date,
                        tn.id          AS notification_id,
                        tn.final_category,
-                       tn.final_subcategory
+                       tn.final_subcategory,
+                       tn.client_notes
                 FROM core.transactions_enriched te
                 JOIN core.transactions_raw tr ON te.raw_id = tr.id
                 JOIN core.clients c ON tr.individual_id = c.id
@@ -450,6 +463,7 @@ def transacciones_editar():
         categories=categories,
         date_from=str(date_from),
         date_to=str(date_to),
+        notes_max=CLIENT_NOTES_MAX_LEN,
     )
 
 
@@ -467,32 +481,39 @@ def transacciones_editar_reclassify():
     parts = raw_value.split("|", 1)
     final_category = parts[0].strip() or None
     final_subcategory = parts[1].strip() or None if len(parts) > 1 else None
+    notes_submitted = "client_notes" in request.form
+    client_notes = clean_client_notes(request.form.get("client_notes"))
 
     back = redirect(url_for("empresa.transacciones_editar",
                             date_from=date_from, date_to=date_to))
 
-    if not notification_id or not final_category:
+    sets, params = [], []
+    if final_category:
+        sets += ["final_category = %s", "final_subcategory = %s",
+                 "reclassified_by = 'user'", "reclassified_at = NOW()"]
+        params += [final_category, final_subcategory]
+    if notes_submitted:
+        sets.append("client_notes = %s")
+        params.append(client_notes)
+
+    if not notification_id or not sets:
         flash("Datos inválidos.", "danger")
         return back
 
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            # Los fragmentos de SET los arma este código, nunca el usuario.
             cur.execute(
-                """
-                UPDATE core.transactions_notifications
-                SET final_category    = %s,
-                    final_subcategory = %s,
-                    reclassified_by   = 'user',
-                    reclassified_at   = NOW()
-                WHERE id = %s AND business_id = %s
-                """,
-                (final_category, final_subcategory, notification_id, session["business_id"]),
+                "UPDATE core.transactions_notifications SET " + ", ".join(sets) +
+                " WHERE id = %s AND business_id = %s",
+                params + [notification_id, session["business_id"]],
             )
             updated = cur.rowcount
         conn.commit()
         if updated:
-            flash("Reclasificación guardada.", "success")
+            flash("Reclasificación guardada." if final_category else "Nota guardada.",
+                  "success")
         else:
             flash("No se encontró la transacción para actualizar.", "warning")
     except Exception as e:
@@ -614,7 +635,8 @@ def transacciones_pendientes():
                        tr.local_date,
                        tn.id          AS notification_id,
                        tn.final_category,
-                       tn.final_subcategory
+                       tn.final_subcategory,
+                       tn.client_notes
                 FROM core.transactions_enriched te
                 JOIN core.transactions_raw tr ON te.raw_id = tr.id
                 LEFT JOIN core.transactions_classified tc ON tc.raw_id = tr.id
@@ -642,7 +664,8 @@ def transacciones_pendientes():
     finally:
         conn.close()
 
-    return render_template("empresa/pendientes.html", rows=rows, categories=categories)
+    return render_template("empresa/pendientes.html", rows=rows, categories=categories,
+                           notes_max=CLIENT_NOTES_MAX_LEN)
 
 
 @empresa_bp.route("/pendientes/save", methods=["POST"])
@@ -652,6 +675,8 @@ def transacciones_pendientes_save():
     notification_id = request.form.get("notification_id") or None
     tipo = request.form.get("tipo", "").strip()
     raw_value = request.form.get("category_value", "")
+    notes_submitted = "client_notes" in request.form
+    client_notes = clean_client_notes(request.form.get("client_notes"))
 
     if tipo not in ("debito", "credito"):
         flash("Debe seleccionar un tipo (débito o crédito).", "danger")
@@ -676,17 +701,19 @@ def transacciones_pendientes_save():
                 (tipo, enriched_id, session["user_id"]),
             )
             updated = cur.rowcount
-            if notification_id and final_category:
+            sets, params = [], []
+            if final_category:
+                sets += ["final_category = %s", "final_subcategory = %s",
+                         "reclassified_by = 'user'", "reclassified_at = NOW()"]
+                params += [final_category, final_subcategory]
+            if notes_submitted:
+                sets.append("client_notes = %s")
+                params.append(client_notes)
+            if notification_id and sets:
                 cur.execute(
-                    """
-                    UPDATE core.transactions_notifications
-                    SET final_category    = %s,
-                        final_subcategory = %s,
-                        reclassified_by   = 'user',
-                        reclassified_at   = NOW()
-                    WHERE id = %s AND individual_id = %s
-                    """,
-                    (final_category, final_subcategory, notification_id, session["user_id"]),
+                    "UPDATE core.transactions_notifications SET " + ", ".join(sets) +
+                    " WHERE id = %s AND individual_id = %s",
+                    params + [notification_id, session["user_id"]],
                 )
         conn.commit()
         if updated:
@@ -736,6 +763,7 @@ def agregar_transaccion():
         parts = (request.form.get("category_value") or "").split("|", 1)
         category = parts[0].strip() or None
         subcategory = (parts[1].strip() or None) if len(parts) > 1 else None
+        client_notes = clean_client_notes(request.form.get("client_notes"))
 
         try:
             amount = round(float(amount_raw), 2)
@@ -774,7 +802,7 @@ def agregar_transaccion():
                     business_id=session["business_id"],
                     merchant=merchant, amount=amount, currency=currency,
                     txn_type=txn_type, category=category, subcategory=subcategory,
-                    txn_date=txn_date,
+                    txn_date=txn_date, client_notes=client_notes,
                 )
                 if txn_date < today_cr():
                     flash(
@@ -793,7 +821,8 @@ def agregar_transaccion():
 
     return render_template("empresa/agregar.html",
                            categories=_load_categories_empresa(session["business_id"]),
-                           today=str(today_cr()))
+                           today=str(today_cr()),
+                           notes_max=CLIENT_NOTES_MAX_LEN)
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -888,7 +917,8 @@ def _fetch_reportes(business_id, date_from, date_to):
                        te.currency_local,
                        te.transaction_type_guess,
                        tn.final_category,
-                       tn.final_subcategory
+                       tn.final_subcategory,
+                       tn.client_notes
                 FROM core.transactions_enriched te
                 JOIN core.transactions_raw tr ON te.raw_id = tr.id
                 JOIN core.clients c ON tr.individual_id = c.id
@@ -940,7 +970,7 @@ def reportes_download():
     ws = wb.active
     ws.title = "Transacciones"
 
-    headers = ["A Nombre De", "Message ID", "Fecha", "Comercio", "Tipo", "Moneda", "Monto", "Moneda Local", "Monto Local", "Categoría", "Subcategoría"]
+    headers = ["A Nombre De", "Message ID", "Fecha", "Comercio", "Tipo", "Moneda", "Monto", "Moneda Local", "Monto Local", "Categoría", "Subcategoría", "Nota"]
     ws.append(headers)
 
     for row in rows:
@@ -956,6 +986,7 @@ def reportes_download():
             float(row["amount_local"]) if row["amount_local"] is not None else "",
             row["final_category"] or "",
             row["final_subcategory"] or "",
+            row["client_notes"] or "",
         ])
 
     for i, col in enumerate(ws.columns, 1):

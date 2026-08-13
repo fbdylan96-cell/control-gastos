@@ -61,6 +61,13 @@
         {% endfor %}
       </select>
 
+      <label class="form-label-ei" style="margin-top:0.85rem;">Nota (opcional)</label>
+      <input type="text" name="client_notes" class="ei-input" maxlength="{{ notes_max }}"
+             placeholder="Ej: regalo de cumpleaños de Ana" />
+      <p style="font-size:0.75rem; color:rgba(21,25,30,0.45); margin-top:0.3rem;">
+        Máximo {{ notes_max }} caracteres. La nota aparece en tus reportes.
+      </p>
+
       <div style="margin-top:1.25rem;">
         <button type="submit" class="btn-primary-ei">
           <i class="bi bi-floppy"></i> Guardar

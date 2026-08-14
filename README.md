@@ -42,6 +42,7 @@ Gmail (label: 'Finanzas Personales')
 | `tools/agent.py` | Agente de IA (Claude, tool-use sobre `tools/finance.py`) que responde consultas financieras en lenguaje natural. El scope se inyecta server-side: el modelo nunca puede consultar datos de otro cliente |
 | `whatsapp_agent_worker.py` | Proceso worker (systemd) del chat de consulta: reclama mensajes encolados por el webhook (`FOR UPDATE SKIP LOCKED`), corre el agente y responde por WhatsApp. Ver `WHATSAPP_AI_CHAT_SETUP.md` |
 | `rate_scheduler.py` / `exchange_rate_update.py` | Actualización diaria (L-V 23:30) de tipos de cambio desde el BCCR → `core.exchange_rates` |
+| `credit_products_update.py` | Comparador de productos crediticios del BCCR/MEIC (dashboard público de Power BI) → `core.credit_products`. Corre como job quincenal (días 8 y 22, 06:00) dentro de `rate_scheduler.py`. Guarda solo el último período: cada corrida reemplaza la tabla. Ver `extractorbccrmeic.md` y `test_credit_products.py` |
 | `advisory_scheduler.py` | Seguimiento de asesoría por WhatsApp: resumen semanal de presupuesto y seguimiento mensual del fondo de emergencia para clientes con plan (`core.client_advisory_plans`); idempotente vía `core.advisory_message_log`. Ver `PLAN_asesoria.md` |
 | `create.sql` | Esquema completo de la base de datos (fuente de verdad de nombres de columnas) |
 | `web-app/` | Aplicación Flask (ver abajo) |

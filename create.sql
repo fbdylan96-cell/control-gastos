@@ -561,3 +561,79 @@ CREATE TABLE core.advisory_message_log (
     sent_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (client_id, message_type, period_key)
 );
+
+
+DROP TABLE IF EXISTS core.credit_products CASCADE;
+
+-- Comparador de productos crediticios que publican el BCCR y el MEIC en un
+-- dashboard público de Power BI. Poblada por el job credit_products_update de
+-- rate_scheduler.py los días 8 y 22 (ver extractorbccrmeic.md).
+--
+-- Guarda SOLO el último período extraído: cada corrida exitosa reemplaza el
+-- contenido entero (DELETE + INSERT en una transacción). La fuente tampoco
+-- guarda historia — cuando el BCCR publica el mes siguiente, el anterior
+-- desaparece — así que tabla y fuente tienen el mismo alcance. Tamaño
+-- constante: ~6 400 filas, ~5 MB.
+--
+-- Grano: producto × cargo. Un mismo producto crediticio aparece una vez por
+-- cada cargo asociado (formalización, avalúo, comisión…), con las columnas de
+-- tasa repetidas. "Un registro por producto" es la vista v_credit_products_unique.
+--
+-- Solo se cargan 3 de las 9 clasificaciones de `product` (inmobiliaria y
+-- construcción, vehículos, consumo); el filtro vive en credit_products_update.py.
+--
+-- El orden de las columnas espeja el de la fuente para que el mapeo contra
+-- credit_products_update.DB_COLUMNS sea 1 a 1.
+CREATE TABLE core.credit_products (
+    person_type       SMALLINT,
+    provider_id       TEXT NOT NULL,        -- cédula jurídica: es texto, no numérico
+    provider_name     TEXT,
+    provider_group    TEXT,                 -- Bancos, Cooperativas, …
+    period            DATE NOT NULL,        -- corte del dato en la fuente
+    product_type      SMALLINT,
+    product           TEXT,                 -- "Clasificación"; columna del filtro
+    usage_type        SMALLINT,
+    usage             TEXT,                 -- Nuevo / Usado / No aplica
+    generator_type    SMALLINT,
+    generator         TEXT,
+    client_type       SMALLINT,
+    client            TEXT,                 -- Cliente actual / nuevo
+    product_name      TEXT,
+    currency_type     SMALLINT,
+    currency          TEXT,                 -- Colón / Dólar estadounidense / Euro
+    term_months       INTEGER,
+    down_payment_pct  NUMERIC(12,4),
+    rate_type         SMALLINT,
+    rate_kind         TEXT,                 -- "Tasa fija-variable", etc.
+    nominal_rate      NUMERIC(12,4),
+    default_rate      NUMERIC(12,4),        -- tasa moratoria
+    rate_notes        TEXT,
+    benefits          TEXT,
+    fee_type          SMALLINT,
+    fee               TEXT,                 -- Formalización, avalúo, …
+    fee_value         NUMERIC(18,4),
+    fee_value_type    SMALLINT,
+    fee_format        TEXT,                 -- Porcentaje / Monto
+    fee_notes         TEXT,
+
+    -- La fuente no trae clave estable: dos filas pueden coincidir en todo lo
+    -- identificatorio y diferir solo en un texto de observaciones. El hash
+    -- cubre las 30 columnas de arriba (nunca las variantes de formato que la
+    -- API devuelve y no guardamos).
+    row_hash          BYTEA NOT NULL,
+    extracted_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (period, row_hash)
+);
+
+CREATE INDEX idx_credit_products_seg
+    ON core.credit_products (product, currency, usage);
+CREATE INDEX idx_credit_products_provider
+    ON core.credit_products (provider_id);
+
+-- Un registro por producto, sin la explosión por cargo.
+CREATE OR REPLACE VIEW core.v_credit_products_unique AS
+SELECT DISTINCT period, provider_id, provider_name, provider_group,
+       product, usage, product_name, currency, term_months, down_payment_pct,
+       rate_kind, nominal_rate, default_rate
+FROM core.credit_products;

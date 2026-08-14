@@ -16,11 +16,13 @@ import smtplib
 from datetime import date
 from email.message import EmailMessage
 
+import psycopg2.extras
 from apscheduler.schedulers.blocking import BlockingScheduler
 from dotenv import find_dotenv, load_dotenv
 
 load_dotenv(find_dotenv())
 
+import credit_products_update
 from db import get_connection
 from exchange_rate_update import CRITICAL_CURRENCIES, get_latest_rates
 
@@ -28,7 +30,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("rate_scheduler")
 
 
-def _send_alert_email(subject: str, body: str) -> None:
+def _send_alert_email(subject: str, body: str, to_env: str = "FX_ALERT_EMAIL") -> None:
     """Best-effort alert via SMTP (neto). Never raises: a mail failure must not
     kill the rate update."""
     try:
@@ -36,7 +38,7 @@ def _send_alert_email(subject: str, body: str) -> None:
         port = int(os.environ.get("SMTP_PORT", "587"))
         user = os.environ.get("SMTP_USER")
         password = os.environ.get("SMTP_PASSWORD")
-        to = os.environ.get("FX_ALERT_EMAIL") or user
+        to = os.environ.get(to_env) or user
         if not user or not password:
             log.warning("FX alert email skipped: SMTP_USER/SMTP_PASSWORD not set")
             return
@@ -125,6 +127,92 @@ def run_rate_update():
             )
 
 
+def _alerta_productos(subject: str, body: str) -> None:
+    _send_alert_email(subject, body + "\n\nRevisar: sudo journalctl -u rate-scheduler",
+                      to_env="BCCR_PRODUCTS_ALERT_EMAIL")
+
+
+def run_credit_products_update():
+    """Recarga core.credit_products desde el dashboard BCCR/MEIC.
+
+    La tabla guarda SOLO el último período: cada corrida exitosa reemplaza el
+    contenido entero. Por eso el orden importa — se descarga y valida TODO en
+    memoria antes de tocar la tabla, y el DELETE + INSERT van en una sola
+    transacción. Si algo falla no hay período anterior al que volver, porque no
+    guardamos historia.
+    """
+    log.info("Productos crediticios: starting")
+    try:
+        rows, descargadas, paginas = credit_products_update.get_credit_products()
+    except Exception as e:
+        log.error(f"Productos crediticios: fallo descargando del BCCR: {e}")
+        _alerta_productos(
+            "⚠ Productos crediticios: no se pudo descargar del BCCR",
+            "El job quincenal no pudo traer el comparador de productos "
+            f"crediticios.\n\nError: {e}\n\n"
+            "La tabla conserva la última extracción buena; el dato queda viejo, "
+            "no perdido.",
+        )
+        return
+
+    log.info(f"Productos crediticios: {descargadas} filas descargadas "
+             f"({paginas} página(s)), {len(rows)} tras filtrar por producto")
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM core.credit_products")
+            previas = cur.fetchone()[0]
+
+            # Guarda contra carga parcial: una caída fuerte contra la corrida
+            # anterior es la fuente rota, no un mes flojo. Se aborta ANTES del
+            # DELETE para no reemplazar datos buenos por datos a medias.
+            if previas and len(rows) < previas * 0.8:
+                conn.rollback()
+                log.error(f"Productos crediticios: ABORTADO, {len(rows)} filas "
+                          f"contra {previas} de la corrida anterior")
+                _alerta_productos(
+                    "⚠ Productos crediticios: descarga sospechosamente corta, no se cargó",
+                    f"La descarga trajo {len(rows)} filas y la corrida anterior "
+                    f"tenía {previas} (caída de más del 20%).\n\n"
+                    "No se tocó la tabla: conserva la extracción anterior.",
+                )
+                return
+
+            cur.execute("DELETE FROM core.credit_products")
+            psycopg2.extras.execute_values(
+                cur,
+                "INSERT INTO core.credit_products (" +
+                ", ".join(credit_products_update.DB_COLUMNS) +
+                ", row_hash) VALUES %s ON CONFLICT (period, row_hash) DO NOTHING",
+                [tuple(r) + (credit_products_update.row_hash(r),) for r in rows],
+                page_size=500,
+            )
+            insertadas = cur.rowcount
+        conn.commit()
+        # La fuente trae filas exactamente duplicadas (verificado: un mismo
+        # cargo listado dos veces para el mismo producto). El ON CONFLICT las
+        # colapsa, que es lo correcto — no aportan información — pero se deja
+        # constancia para que la diferencia no parezca un bug de carga.
+        if insertadas != len(rows):
+            log.info(f"Productos crediticios: {len(rows) - insertadas} fila(s) "
+                     f"duplicada(s) en la fuente, colapsadas por el ON CONFLICT")
+    except Exception as e:
+        conn.rollback()
+        log.error(f"Productos crediticios: error de BD: {e}")
+        _alerta_productos(
+            "⚠ Productos crediticios: error de base al cargar",
+            f"La descarga funcionó pero la carga falló.\n\nError: {e}\n\n"
+            "Se hizo rollback: la tabla conserva la extracción anterior.",
+        )
+        return
+    finally:
+        conn.close()
+
+    log.info(f"Productos crediticios: {insertadas} filas cargadas "
+             f"(reemplazaron {previas})")
+
+
 def main():
     scheduler = BlockingScheduler()
     scheduler.add_job(
@@ -136,7 +224,23 @@ def main():
         id="fx_rate_update",
         replace_existing=True,
     )
+    # Quincenal (días 8 y 22): el dato del BCCR es de corte mensual y se publica
+    # alrededor del día 5. La segunda corrida acorta la ventana en que la tabla
+    # muestra el mes anterior si el BCCR publica tarde. misfire_grace_time hace
+    # las veces del Persistent=true de un systemd timer: un reinicio corto no
+    # pierde la corrida.
+    scheduler.add_job(
+        run_credit_products_update,
+        "cron",
+        day="8,22",
+        hour=6,
+        minute=0,
+        id="credit_products_update",
+        replace_existing=True,
+        misfire_grace_time=6 * 3600,
+    )
     log.info("FX rate scheduler started; next run: Mon-Fri 23:30 server time")
+    log.info("Credit products job scheduled: days 8 and 22 at 06:00")
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):

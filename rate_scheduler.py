@@ -188,7 +188,10 @@ def run_credit_products_update():
                 [tuple(r) + (credit_products_update.row_hash(r),) for r in rows],
                 page_size=500,
             )
-            insertadas = cur.rowcount
+            # Contar con un SELECT, no con cur.rowcount: execute_values manda
+            # varios lotes y rowcount solo refleja el último.
+            cur.execute("SELECT count(*) FROM core.credit_products")
+            insertadas = cur.fetchone()[0]
         conn.commit()
         # La fuente trae filas exactamente duplicadas (verificado: un mismo
         # cargo listado dos veces para el mismo producto). El ON CONFLICT las

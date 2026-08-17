@@ -7,6 +7,5 @@ pytz
 openai
 anthropic
 openpyxl
-bccr
 lxml
 requests

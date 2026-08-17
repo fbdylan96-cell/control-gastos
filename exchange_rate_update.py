@@ -1,154 +1,151 @@
 """Fetch de tipos de cambio.
 
-Fuente primaria: Servicio Web legacy del BCCR (paquete `bccr`, 44 monedas).
-⚠ Ese servicio (gee.bccr.fi.cr/...wsindicadoreseconomicos.asmx) responde
-"Service Unavailable" desde 2026-07-20 — el BCCR migró su sitio de
-indicadores a sdd.bccr.fi.cr y no publica (aún) un API equivalente. Se
-mantiene el intento por si el servicio se restablece, en cuyo caso las 44
-monedas vuelven solas.
+Dos fuentes, en capas:
 
-Fallback para las monedas CRÍTICAS (CRC, EUR): API pública del Ministerio
-de Hacienda (api.hacienda.go.cr/indicadores/tc), que publica el tipo de
-cambio de referencia del BCCR en JSON:
-  * /dolar → venta.valor = CRC por USD (misma convención de rate_vs_usd)
-  * /euro  → dolares = USD por EUR → rate_vs_usd[EUR] = 1/dolares
-Las demás monedas quedan en None mientras el BCCR no ofrezca fuente; las
-conversiones usan la última fecha con datos válidos (get_fx_conversion).
+1. **Ministerio de Hacienda** (api.hacienda.go.cr/indicadores/tc) — fuente
+   AUTORITATIVA para CRC y EUR. Publica el tipo de cambio de referencia del
+   BCCR, que es el número que usan los bancos y la contabilidad en Costa Rica.
+     * /dolar → venta.valor = CRC por USD (misma convención de rate_vs_usd)
+     * /euro  → dolares = USD por EUR → rate_vs_usd[EUR] = 1/dolares
+2. **open.er-api.com** — rellena las demás monedas y actúa de respaldo si
+   Hacienda falla. Entrega las tasas con base USD, igual que rate_vs_usd, así
+   que no hay conversiones de por medio. Sin API key.
+
+Hacienda SIEMPRE gana sobre open.er-api para CRC y EUR: open.er-api es un
+agregado de mercado y se parece mucho (verificado: diferencias por debajo del
+0,15 %), pero para la moneda con la que se hace la mayoría de las
+transacciones, "se parece" no es el estándar correcto. La fuente de mercado
+solo entra donde no hay dato oficial, o cuando el oficial no responde — mejor
+una tasa de mercado de hoy que una oficial de hace un mes.
+
+Historia: hasta 2026-08-16 la fuente primaria era el Servicio Web legacy del
+BCCR vía el paquete `bccr` (que NO es oficial del Banco Central: lo mantiene un
+profesor de la UCR). Ese servicio responde "Service Unavailable" desde
+2026-07-20 — el BCCR migró a sdd.bccr.fi.cr sin publicar un API equivalente —
+así que llevaba un mes fallando en cada corrida y dejó 41 monedas congeladas.
+Se retiró el intento: no aportaba y arrastraba pandas y Dash al importarse.
 """
 import logging
-from datetime import date, timedelta
 
 import requests
-from bccr import SW
 
 log = logging.getLogger(__name__)
 
-code_list = {
-    'EUR': 333,
-    'JPY': 325,
-    'CHF': 326,
-    'CAD': 328,
-    'MXN': 332,
-    'SEK': 335,
-    'KRW': 337,
-    'GTQ': 338,
-    'HNL': 339,
-    'NIO': 340,
-    'DKK': 342,
-    'NOK': 343,
-    'ARS': 344,
-    'COP': 345,
-    'BRL': 346,
-    'DOP': 3043,
-    'HKD': 3052,
-    'TWD': 3053,
-    'BOB': 3054,
-    'CLP': 3055,
-    'RUB': 3056,
-    'PEN': 3057,
-    'CNY': 3364,
-    'PLN': 3430,
-    'LKR': 20873,
-    'BDT': 21251,
-    'THB': 21262,
-    'IDR': 21263,
-    'AED': 21264,
-    'MAD': 21265,
-    'ILS': 21266,
-    'INR': 21267,
-    'EGP': 21268,
-    'NZD': 21269,
-    'SGD': 21270,
-    'VND': 21766,
-    'ZAR': 21881,
-    'JOD': 22204,
-    'MYR': 25067,
-    'BHD': 41438,
-    'VES': 60246,
-    'UYU': 84857,
-    'CRC': 318,
-}
-
-# BCCR quotes these indicators as USD per unit of currency (e.g. EUR 333 ≈ 1.16
-# USD per EUR), the inverse of our rate_vs_usd convention (units per 1 USD), so
-# their fetched values must be inverted before storing.
-inverted_codes = {'EUR'}
+# Universo de monedas que seguimos. Viene del catálogo que publicaba el
+# servicio del BCCR; se conserva tal cual para no cambiar lo que ya está en
+# core.exchange_rates. VERIFICADO 2026-08-16: open.er-api cubre las 44.
+TRACKED_CURRENCIES = (
+    'USD', 'CRC', 'EUR', 'JPY', 'CHF', 'CAD', 'MXN', 'SEK', 'KRW', 'GTQ',
+    'HNL', 'NIO', 'DKK', 'NOK', 'ARS', 'COP', 'BRL', 'DOP', 'HKD', 'TWD',
+    'BOB', 'CLP', 'RUB', 'PEN', 'CNY', 'PLN', 'LKR', 'BDT', 'THB', 'IDR',
+    'AED', 'MAD', 'ILS', 'INR', 'EGP', 'NZD', 'SGD', 'VND', 'ZAR', 'JOD',
+    'MYR', 'BHD', 'VES', 'UYU',
+)
 
 # Monedas imprescindibles para el negocio: CRC convierte TODO a colones y EUR
-# es la única otra divisa con uso real. Si alguna falta tras el fetch primario,
-# se intenta el fallback de Hacienda; rate_scheduler alerta por correo solo
-# cuando una de ESTAS sigue faltando (las 41 restantes solo se loguean).
+# es la única otra divisa con uso real. rate_scheduler alerta por correo solo
+# cuando una de ESTAS falta tras agotar las dos fuentes (las demás se loguean).
 CRITICAL_CURRENCIES = ('CRC', 'EUR')
 
 HACIENDA_TC_DOLAR = "https://api.hacienda.go.cr/indicadores/tc/dolar"
 HACIENDA_TC_EURO = "https://api.hacienda.go.cr/indicadores/tc/euro"
+OPEN_ER_LATEST_USD = "https://open.er-api.com/v6/latest/USD"
 
 
-def _rates_from_bccr(days_back: int) -> dict:
-    """Legacy BCCR web service fetch (all 44 currencies). May yield all-None."""
-    today = date.today()
-    start = today - timedelta(days=days_back)
+def _valid_rate(value):
+    """Una tasa utilizable: número finito y estrictamente positivo.
 
-    exc_rate_daily = SW(
-        **{code: indicator for code, indicator in code_list.items()},
-        FechaInicio=str(start.strftime("%Y-%m-%d"))
-    )
-
-    latest_rates = {'USD': 1.0}
-    for code in code_list:
-        if code not in exc_rate_daily.columns:
-            latest_rates[code] = None
-        else:
-            col = exc_rate_daily[code].dropna()
-            value = float(col.iloc[-1]) if not col.empty else None
-            if value is not None and code in inverted_codes:
-                value = (1.0 / value) if value != 0 else None
-            latest_rates[code] = value
-
-    return latest_rates
+    Nunca guardar 0 ni negativos: se propagarían como divisiones por cero o
+    montos absurdos en amount_local, y peor, en silencio.
+    """
+    try:
+        rate = float(value)
+    except (TypeError, ValueError):
+        return None
+    if rate != rate or rate in (float("inf"), float("-inf")) or rate <= 0:
+        return None
+    return rate
 
 
 def _rates_from_hacienda() -> dict:
-    """Fallback for the critical currencies via the Hacienda JSON API."""
+    """CRC y EUR desde el Ministerio de Hacienda (referencia oficial del BCCR)."""
     out = {}
     try:
         resp = requests.get(HACIENDA_TC_DOLAR, timeout=30)
         resp.raise_for_status()
-        venta = (resp.json().get("venta") or {}).get("valor")
-        if venta:
-            out["CRC"] = float(venta)
+        # venta.valor ya viene como CRC por 1 USD.
+        rate = _valid_rate((resp.json().get("venta") or {}).get("valor"))
+        if rate:
+            out["CRC"] = rate
     except Exception as e:
         log.error(f"Hacienda TC dolar fetch failed: {e}")
     try:
         resp = requests.get(HACIENDA_TC_EURO, timeout=30)
         resp.raise_for_status()
-        usd_per_eur = resp.json().get("dolares")
+        # 'dolares' son USD por 1 EUR: hay que invertirlo a EUR por 1 USD.
+        usd_per_eur = _valid_rate(resp.json().get("dolares"))
         if usd_per_eur:
-            out["EUR"] = 1.0 / float(usd_per_eur)
+            out["EUR"] = 1.0 / usd_per_eur
     except Exception as e:
         log.error(f"Hacienda TC euro fetch failed: {e}")
     return out
 
 
-def get_latest_rates(days_back: int = 15) -> dict:
-    """Fetch the latest non-null rate for every currency in code_list.
+def _rates_from_open_er() -> dict:
+    """Todas las monedas seguidas desde open.er-api (base USD, sin API key).
 
-    Returns a dict mapping currency code → rate (units of `currency` per 1 USD).
-    USD is always included with value 1.0. A currency's value is None when no
-    source could provide it.
+    La respuesta trae `result: "success"`; un HTTP 200 con result distinto es un
+    error de la API y no se debe leer como datos.
     """
+    out = {}
     try:
-        latest_rates = _rates_from_bccr(days_back)
+        resp = requests.get(OPEN_ER_LATEST_USD, timeout=30,
+                            headers={"User-Agent": "neto/1.0"})
+        resp.raise_for_status()
+        payload = resp.json()
+        if payload.get("result") != "success":
+            log.error(f"open.er-api devolvió result={payload.get('result')!r}: "
+                      f"{payload.get('error-type')}")
+            return out
+        rates = payload.get("rates") or {}
+        for code in TRACKED_CURRENCIES:
+            rate = _valid_rate(rates.get(code))
+            if rate:
+                out[code] = rate
+        log.info(f"open.er-api: {len(out)} de {len(TRACKED_CURRENCIES)} monedas "
+                 f"(actualizado {payload.get('time_last_update_utc')})")
     except Exception as e:
-        log.error(f"BCCR SW fetch failed entirely: {e}")
-        latest_rates = {code: None for code in code_list}
-        latest_rates['USD'] = 1.0
+        log.error(f"open.er-api fetch failed: {e}")
+    return out
 
-    if any(latest_rates.get(c) is None for c in CRITICAL_CURRENCIES):
-        fallback = _rates_from_hacienda()
-        for code, value in fallback.items():
-            if latest_rates.get(code) is None:
-                latest_rates[code] = value
-                log.info(f"Rate for {code} filled from Hacienda fallback: {value}")
 
-    return latest_rates
+def get_latest_rates() -> dict:
+    """Tasa más reciente de cada moneda de TRACKED_CURRENCIES.
+
+    Devuelve {moneda: tasa} donde la tasa son unidades de esa moneda por 1 USD.
+    USD siempre vale 1.0. El valor es None cuando ninguna fuente la entregó —
+    rate_scheduler NO las inserta como NULL (incidente 2026-07-09/10): las
+    conversiones usan la última fecha con datos válidos.
+    """
+    rates = {code: None for code in TRACKED_CURRENCIES}
+    rates["USD"] = 1.0
+
+    # 1. Oficial primero, para que nada lo pueda pisar después.
+    for code, value in _rates_from_hacienda().items():
+        rates[code] = value
+        log.info(f"Rate for {code} from Hacienda (oficial): {value}")
+
+    # 2. El resto, y respaldo de las oficiales si Hacienda no respondió.
+    faltantes = [c for c in TRACKED_CURRENCIES if rates[c] is None]
+    if faltantes:
+        for code, value in _rates_from_open_er().items():
+            if rates[code] is None:
+                rates[code] = value
+        recuperadas = [c for c in CRITICAL_CURRENCIES if c in faltantes
+                       and rates[c] is not None]
+        if recuperadas:
+            log.warning("Hacienda no respondió; estas monedas críticas se "
+                        f"llenaron con la tasa de mercado de open.er-api: "
+                        f"{', '.join(recuperadas)}")
+
+    return rates

@@ -661,6 +661,28 @@ def set_plan_paypal_id(conn, plan_id, paypal_plan_id):
     conn.commit()
 
 
+def get_client_discount_pct(conn, client_id):
+    """Pct del código de descuento aplicado al cliente (1-99), o None.
+
+    Los códigos del 100% nunca llegan aquí: apply_discount_code los convierte
+    en cortesía ('comp') y la UI no ofrece suscribirse. Un código inactivo
+    deja de descontar aunque siga referenciado en la suscripción.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT dc.discount_pct
+            FROM core.client_subscriptions s
+            JOIN core.discount_codes dc
+              ON dc.id = s.discount_code_id AND dc.active
+            WHERE s.client_id = %s AND dc.discount_pct < 100
+            """,
+            (str(client_id),),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
 def activate_subscription_from_paypal(conn, client_id, plan_id,
                                       paypal_subscription_id, next_billing=None):
     """Marca la suscripción del cliente como activa vía PayPal (upsert).

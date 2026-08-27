@@ -17,10 +17,10 @@ import alpaca_client
 import paypal_client
 from crypto import decrypt_secret
 from db import (activate_subscription_from_paypal, apply_discount_code,
-                ensure_trial_subscription, get_client_subscription,
-                get_connection, get_investment, get_plan_by_paypal_plan_id,
-                get_subscription_plan, insert_manual_transaction,
-                list_subscription_plans, today_cr,
+                ensure_trial_subscription, get_client_discount_pct,
+                get_client_subscription, get_connection, get_investment,
+                get_plan_by_paypal_plan_id, get_subscription_plan,
+                insert_manual_transaction, list_subscription_plans, today_cr,
                 touch_broker_credentials_used, update_subscription_from_paypal)
 from mailer import enviar_aviso_cambio_contrasena, enviar_link_reset_contrasena
 from tools import finance
@@ -1048,6 +1048,7 @@ def facturacion_suscribir():
         ensure_trial_subscription(conn, session["user_id"])
         sub = get_client_subscription(conn, session["user_id"])
         plan = get_subscription_plan(conn, plan_id) if plan_id else None
+        discount_pct = get_client_discount_pct(conn, session["user_id"])
     finally:
         conn.close()
 
@@ -1069,6 +1070,12 @@ def facturacion_suscribir():
             and sub["trial_end"] > now_utc):
         start_time = sub["trial_end"].astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    # Código de descuento (<100%) aplicado → el precio de ESTA suscripción se
+    # reduce en PayPal; el Billing Plan compartido queda intacto.
+    override_usd = None
+    if discount_pct:
+        override_usd = round(float(plan["amount_usd"]) * (100 - discount_pct) / 100, 2)
+
     base = _webapp_base_url()
     try:
         _sub_id, approval_url = paypal_client.create_subscription(
@@ -1076,6 +1083,7 @@ def facturacion_suscribir():
             return_url=f"{base}{url_for('persona.facturacion_paypal_retorno')}",
             cancel_url=f"{base}{url_for('persona.facturacion_paypal_cancelado')}",
             start_time=start_time,
+            override_usd=override_usd,
         )
     except Exception as e:
         log.error(f"PayPal: fallo creando suscripción para {session['user_id']}: {e}")

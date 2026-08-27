@@ -158,12 +158,15 @@ def create_plan(name: str, amount_usd, modality: str) -> str:
 # ── Suscripciones por cliente ─────────────────────────────────────────────────
 
 def create_subscription(paypal_plan_id: str, client_id: str, return_url: str,
-                        cancel_url: str, start_time: str | None = None) -> tuple[str, str]:
+                        cancel_url: str, start_time: str | None = None,
+                        override_usd: float | None = None) -> tuple[str, str]:
     """Crea la suscripción y devuelve (subscription_id, approval_url).
 
     custom_id = client_id: es lo que une los webhooks con core.clients.
     start_time (RFC3339 UTC, futuro) difiere el primer cobro — se usa para
     respetar los días restantes de la prueba gratuita.
+    override_usd reemplaza el precio del plan SOLO para esta suscripción
+    (códigos de descuento < 100%); el Billing Plan compartido no se toca.
     """
     body = {
         "plan_id": paypal_plan_id,
@@ -179,6 +182,16 @@ def create_subscription(paypal_plan_id: str, client_id: str, return_url: str,
     }
     if start_time:
         body["start_time"] = start_time
+    if override_usd is not None:
+        body["plan"] = {
+            "billing_cycles": [{
+                "sequence": 1,
+                "pricing_scheme": {
+                    "fixed_price": {"value": f"{float(override_usd):.2f}",
+                                    "currency_code": "USD"},
+                },
+            }],
+        }
     data = _request("POST", "/v1/billing/subscriptions", body)
     approval = next((l["href"] for l in data.get("links", []) if l.get("rel") == "approve"), None)
     if not approval:

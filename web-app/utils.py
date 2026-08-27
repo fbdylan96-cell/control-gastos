@@ -68,7 +68,11 @@ BANK_NOTIFICATION_SENDERS = [
     {
         "bank": "BAC Credomatic",
         "emails": [
-            # Desde 2026-08: transacciones con tarjeta salen de este remitente
+            # BAC migra remitentes por olas: 2026-08-24 apareció NotificacionBAC@
+            # (reemplaza a notificacion@baccredomatic.cr, que a su vez reemplazó
+            # a notificacionesbaccr.com el 2026-08-03). Se listan todos: el
+            # filtro de reenvío del cliente debe cubrir viejos y nuevos.
+            "NotificacionBAC@baccredomatic.cr",
             "notificacion@baccredomatic.cr",
             "notificacion@notificacionesbaccr.com",
             "alerta@baccredomatic.com",

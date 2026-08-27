@@ -2,7 +2,7 @@ import io
 import logging
 import os
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 
 import openpyxl
@@ -14,9 +14,14 @@ from openpyxl.utils import get_column_letter
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import alpaca_client
+import paypal_client
 from crypto import decrypt_secret
-from db import (get_connection, get_investment, insert_manual_transaction,
-                today_cr, touch_broker_credentials_used)
+from db import (activate_subscription_from_paypal, apply_discount_code,
+                ensure_trial_subscription, get_business_subscription,
+                get_client_discount_pct, get_connection, get_investment,
+                get_plan_by_paypal_plan_id, get_subscription_plan,
+                insert_manual_transaction, list_subscription_plans, today_cr,
+                touch_broker_credentials_used, update_subscription_from_paypal)
 from mailer import enviar_aviso_cambio_contrasena, enviar_link_reset_contrasena
 from tools import finance
 from utils import (BANK_NOTIFICATION_SENDERS, CLIENT_NOTES_MAX_LEN,
@@ -1464,3 +1469,196 @@ def inversion():
             return render_template("empresa/inversion.html", state="error")
     finally:
         conn.close()
+
+
+# ── Facturación (solo admins) ─────────────────────────────────────────────────
+#
+# Membresía de la familia/empresa con PayPal (cobros SIEMPRE en USD). La
+# suscripción vive en la fila de client_subscriptions del admin que paga
+# (custom_id de PayPal = ese cliente) y se resuelve POR NEGOCIO con
+# get_business_subscription: cualquier admin ve la misma membresía y no se
+# puede duplicar. El tier del plan lo decide businesses.account_type
+# ('familia' | 'empresa'). Mismo flujo que persona/facturacion.
+
+def _webapp_base_url():
+    return os.environ.get("WEBAPP_URL", "https://gastos.empoweredinvestor.trade").rstrip("/")
+
+
+def _business_account_type(conn, business_id):
+    with conn.cursor() as cur:
+        cur.execute("SELECT account_type FROM core.businesses WHERE id = %s",
+                    (str(business_id),))
+        row = cur.fetchone()
+        return row[0] if row else "empresa"
+
+
+@empresa_bp.route("/facturacion")
+@admin_required
+def facturacion():
+    conn = get_connection()
+    try:
+        account_type = _business_account_type(conn, session["business_id"])
+        sub = get_business_subscription(conn, session["business_id"])
+        if sub is None:
+            # Primer admin que abre el tab crea el trial del negocio (perezoso,
+            # misma mecánica que persona).
+            ensure_trial_subscription(conn, session["user_id"])
+            sub = get_business_subscription(conn, session["business_id"])
+        plans = list_subscription_plans(conn, tier=account_type)
+    finally:
+        conn.close()
+
+    paypal_ready = paypal_client.is_configured() and any(p["paypal_plan_id"] for p in plans)
+    return render_template("empresa/facturacion.html", sub=sub, plans=plans,
+                           paypal_ready=paypal_ready, account_type=account_type)
+
+
+@empresa_bp.route("/facturacion/suscribir", methods=["POST"])
+@admin_required
+def facturacion_suscribir():
+    plan_id = (request.form.get("plan_id") or "").strip()
+    conn = get_connection()
+    try:
+        account_type = _business_account_type(conn, session["business_id"])
+        sub = get_business_subscription(conn, session["business_id"])
+        plan = get_subscription_plan(conn, plan_id) if plan_id else None
+        discount_pct = get_client_discount_pct(conn, session["user_id"])
+    finally:
+        conn.close()
+
+    if sub and sub["comp"]:
+        flash("Esta cuenta es de cortesía: no necesita un plan de pago.", "danger")
+        return redirect(url_for("empresa.facturacion"))
+    if sub and sub["status"] == "active" and sub["paypal_subscription_id"]:
+        flash("Ya hay una suscripción activa con PayPal para esta cuenta.", "danger")
+        return redirect(url_for("empresa.facturacion"))
+    if (not plan or not plan["active"] or plan["tier"] != account_type
+            or not plan["paypal_plan_id"]):
+        flash("Ese plan no está disponible para activar con PayPal.", "danger")
+        return redirect(url_for("empresa.facturacion"))
+
+    start_time = None
+    now_utc = datetime.now(timezone.utc)
+    if (sub and sub["status"] == "trial" and sub["trial_end"]
+            and sub["trial_end"] > now_utc):
+        start_time = sub["trial_end"].astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    override_usd = None
+    if discount_pct:
+        override_usd = round(float(plan["amount_usd"]) * (100 - discount_pct) / 100, 2)
+
+    base = _webapp_base_url()
+    try:
+        _sub_id, approval_url = paypal_client.create_subscription(
+            plan["paypal_plan_id"], session["user_id"],
+            return_url=f"{base}{url_for('empresa.facturacion_paypal_retorno')}",
+            cancel_url=f"{base}{url_for('empresa.facturacion_paypal_cancelado')}",
+            start_time=start_time,
+            override_usd=override_usd,
+        )
+    except Exception as e:
+        log.error(f"PayPal: fallo creando suscripción (empresa) para "
+                  f"{session['user_id']}: {e}")
+        flash("No se pudo iniciar la suscripción con PayPal. Intentá de nuevo "
+              "en unos minutos.", "danger")
+        return redirect(url_for("empresa.facturacion"))
+
+    return redirect(approval_url)
+
+
+@empresa_bp.route("/facturacion/paypal/retorno")
+@admin_required
+def facturacion_paypal_retorno():
+    sub_id = (request.args.get("subscription_id") or "").strip()
+    if not sub_id:
+        flash("No se recibió la confirmación de PayPal.", "danger")
+        return redirect(url_for("empresa.facturacion"))
+
+    try:
+        psub = paypal_client.get_subscription(sub_id)
+    except Exception as e:
+        log.error(f"PayPal: fallo leyendo sub {sub_id} en el retorno (empresa): {e}")
+        flash("Tu suscripción quedó registrada en PayPal; el estado se "
+              "reflejará aquí en unos minutos.", "success")
+        return redirect(url_for("empresa.facturacion"))
+
+    if (psub.get("custom_id") or "") != session["user_id"]:
+        log.warning(f"PayPal retorno (empresa): sub {sub_id} no pertenece al "
+                    f"cliente {session['user_id']} — ignorado")
+        flash("No se pudo validar la suscripción de PayPal.", "danger")
+        return redirect(url_for("empresa.facturacion"))
+
+    if psub.get("status") in ("ACTIVE", "APPROVED"):
+        conn = get_connection()
+        try:
+            plan = get_plan_by_paypal_plan_id(conn, psub.get("plan_id"))
+            next_billing = (psub.get("billing_info") or {}).get("next_billing_time")
+            activate_subscription_from_paypal(
+                conn, session["user_id"], plan["id"] if plan else None,
+                sub_id, next_billing)
+        finally:
+            conn.close()
+        flash("¡Listo! El plan quedó activo con PayPal.", "success")
+    else:
+        flash("Tu aprobación quedó registrada; el estado se actualizará en "
+              "unos minutos.", "success")
+    return redirect(url_for("empresa.facturacion"))
+
+
+@empresa_bp.route("/facturacion/paypal/cancelado")
+@admin_required
+def facturacion_paypal_cancelado():
+    flash("Activación cancelada. Podés intentarlo cuando querás.", "danger")
+    return redirect(url_for("empresa.facturacion"))
+
+
+@empresa_bp.route("/facturacion/cancelar", methods=["POST"])
+@admin_required
+def facturacion_cancelar():
+    conn = get_connection()
+    try:
+        sub = get_business_subscription(conn, session["business_id"])
+    finally:
+        conn.close()
+
+    if not sub or not sub["paypal_subscription_id"] or sub["status"] not in (
+            "active", "past_due"):
+        flash("No hay una suscripción de PayPal activa para cancelar.", "danger")
+        return redirect(url_for("empresa.facturacion"))
+
+    try:
+        paypal_client.cancel_subscription(sub["paypal_subscription_id"])
+    except Exception as e:
+        log.error(f"PayPal: fallo cancelando sub {sub['paypal_subscription_id']}: {e}")
+        flash("No se pudo cancelar en PayPal. Intentá de nuevo en unos minutos.",
+              "danger")
+        return redirect(url_for("empresa.facturacion"))
+
+    conn = get_connection()
+    try:
+        update_subscription_from_paypal(conn, sub["paypal_subscription_id"], "cancelled")
+    finally:
+        conn.close()
+    flash("Suscripción cancelada. No se harán más cobros; el acceso sigue "
+          "hasta el fin del período pagado.", "success")
+    return redirect(url_for("empresa.facturacion"))
+
+
+@empresa_bp.route("/facturacion/codigo", methods=["POST"])
+@admin_required
+def facturacion_codigo():
+    code = (request.form.get("code") or "").strip()
+    if not code:
+        flash("Ingrese un código.", "danger")
+        return redirect(url_for("empresa.facturacion"))
+
+    conn = get_connection()
+    try:
+        ok, msg = apply_discount_code(conn, session["user_id"], code)
+        flash(msg, "success" if ok else "danger")
+    except Exception as e:
+        flash(f"Error al aplicar el código: {e}", "danger")
+    finally:
+        conn.close()
+
+    return redirect(url_for("empresa.facturacion"))

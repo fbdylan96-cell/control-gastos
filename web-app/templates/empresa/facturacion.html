@@ -1,4 +1,4 @@
-{% extends "persona/base.html" %}
+{% extends "empresa/base.html" %}
 {% block title %}Facturación — neto{% endblock %}
 
 {% block content %}
@@ -19,7 +19,7 @@
 <!-- ── Membresía ───────────────────────────────────────────────────────────── -->
 <div class="ei-card" style="margin-bottom:1.25rem;">
   <div class="ei-card-header">
-    <i class="bi bi-stars"></i>Tu membresía
+    <i class="bi bi-stars"></i>Membresía {{ 'de la familia' if account_type == 'familia' else 'de la empresa' }}
   </div>
   <div class="ei-card-body">
     <div class="fact-grid">
@@ -56,18 +56,26 @@
       </div>
     </div>
 
+    {% if sub and sub.holder_name and sub.paypal_subscription_id %}
+    <p class="fact-note">
+      <i class="bi bi-person-check"></i>
+      Pagada por {{ sub.holder_name }}. Una sola membresía cubre a todos los
+      miembros de la cuenta.
+    </p>
+    {% endif %}
+
     {% if sub and sub.status == 'trial' and sub.trial_end %}
     <p class="fact-note">
       <i class="bi bi-info-circle"></i>
-      Estás en tu prueba gratuita de 30 días. Si activás un plan ahora, el
+      Están en la prueba gratuita de 30 días. Si activás un plan ahora, el
       primer cobro será hasta que termine la prueba.
     </p>
     {% endif %}
 
     {% if sub and sub.paypal_subscription_id and sub.status in ('active', 'past_due') %}
-    <form method="POST" action="{{ url_for('persona.facturacion_cancelar') }}"
+    <form method="POST" action="{{ url_for('empresa.facturacion_cancelar') }}"
           style="margin-top:1rem;"
-          onsubmit="return confirm('¿Cancelar tu suscripción? No se harán más cobros.');">
+          onsubmit="return confirm('¿Cancelar la suscripción? No se harán más cobros.');">
       <button type="submit" class="btn-outline-ei">
         <i class="bi bi-x-circle"></i>Cancelar suscripción
       </button>
@@ -92,7 +100,7 @@
         <div class="plan-price">${{ '{:,.0f}'.format(p.amount_usd) }}</div>
         <div class="plan-period">por {{ 'mes' if p.modality == 'mensual' else 'año' }}</div>
         {% if can_subscribe and p.paypal_plan_id %}
-        <form method="POST" action="{{ url_for('persona.facturacion_suscribir') }}"
+        <form method="POST" action="{{ url_for('empresa.facturacion_suscribir') }}"
               style="margin-top:0.9rem;">
           <input type="hidden" name="plan_id" value="{{ p.id }}" />
           <button type="submit" class="btn-primary-ei">
@@ -106,12 +114,14 @@
     <p class="fact-note" style="margin-top:0.9rem;">
       <i class="bi bi-info-circle"></i>
       Los precios son en dólares (USD) y el cobro se procesa a través de PayPal.
+      Una sola membresía cubre a todos los miembros de la cuenta.
     </p>
     {% else %}
-    <p style="color:var(--ink-soft, #777); margin:0;">Aún no hay planes configurados.</p>
+    <p style="color:var(--ink-soft, #777); margin:0;">Aún no hay planes configurados
+      para este tipo de cuenta. Escribinos para activar tu membresía.</p>
     {% endif %}
 
-    {% if not paypal_ready %}
+    {% if not paypal_ready and plans %}
     <div style="margin-top:1rem;">
       <button class="btn-primary-ei" type="button" disabled
               title="La activación con PayPal estará disponible pronto"
@@ -129,7 +139,7 @@
     <i class="bi bi-ticket-perforated"></i>¿Tenés un código?
   </div>
   <div class="ei-card-body">
-    <form method="POST" action="{{ url_for('persona.facturacion_codigo') }}"
+    <form method="POST" action="{{ url_for('empresa.facturacion_codigo') }}"
           style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; max-width:460px;">
       <div style="flex:1 1 220px;">
         <label class="form-label-ei" for="codeInput">Código de descuento</label>

@@ -661,6 +661,38 @@ def set_plan_paypal_id(conn, plan_id, paypal_plan_id):
     conn.commit()
 
 
+def get_business_subscription(conn, business_id):
+    """Suscripción 'de la familia/empresa': la fila más relevante entre los
+    miembros del negocio, o None.
+
+    client_subscriptions es por-cliente; para familias la suscripción vive en
+    la fila del admin que paga (custom_id de PayPal = ese cliente). Se busca
+    por negocio para que cualquier admin vea la misma membresía y no se pueda
+    duplicar: prioridad activa/cortesía > trial > cancelada.
+    """
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT s.id, s.client_id, s.status, s.trial_start, s.trial_end,
+                   s.current_period_end, s.provider, s.paypal_subscription_id,
+                   s.comp, s.discount_code_id, s.cancel_at_period_end,
+                   p.tier, p.modality, p.name AS plan_name,
+                   p.amount_crc, p.amount_usd,
+                   c.client_name AS holder_name
+            FROM core.client_subscriptions s
+            JOIN core.clients c ON c.id = s.client_id
+            LEFT JOIN core.subscription_plans p ON p.id = s.plan_id
+            WHERE c.business_id = %s
+            ORDER BY (s.status IN ('active', 'past_due', 'comp')) DESC,
+                     (s.status = 'trial') DESC,
+                     s.updated_at DESC
+            LIMIT 1
+            """,
+            (str(business_id),),
+        )
+        return cur.fetchone()
+
+
 def get_client_discount_pct(conn, client_id):
     """Pct del código de descuento aplicado al cliente (1-99), o None.
 

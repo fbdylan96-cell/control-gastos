@@ -2,7 +2,7 @@ import io
 import logging
 import os
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 
 import openpyxl
@@ -14,11 +14,14 @@ from openpyxl.utils import get_column_letter
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import alpaca_client
+import paypal_client
 from crypto import decrypt_secret
-from db import (apply_discount_code, ensure_trial_subscription,
-                get_client_subscription, get_connection, get_investment,
-                insert_manual_transaction, list_subscription_plans,
-                today_cr, touch_broker_credentials_used)
+from db import (activate_subscription_from_paypal, apply_discount_code,
+                ensure_trial_subscription, get_client_subscription,
+                get_connection, get_investment, get_plan_by_paypal_plan_id,
+                get_subscription_plan, insert_manual_transaction,
+                list_subscription_plans, today_cr,
+                touch_broker_credentials_used, update_subscription_from_paypal)
 from mailer import enviar_aviso_cambio_contrasena, enviar_link_reset_contrasena
 from tools import finance
 from utils import (BANK_NOTIFICATION_SENDERS, CLIENT_NOTES_MAX_LEN,
@@ -1007,10 +1010,18 @@ def configuracion():
 
 # ── Facturación ───────────────────────────────────────────────────────────────
 #
-# Fase 1: PayPal no está cableado todavía. El tab muestra el estado de la
-# membresía (prueba gratuita / cortesía / activa), el próximo pago y los planes
-# disponibles, y permite aplicar un código de descuento. La suscripción de
-# prueba se crea de forma perezosa la primera vez que el cliente abre el tab.
+# Fase 2: PayPal vivo (API de Suscripciones). El cobro es SIEMPRE en USD
+# (PayPal no soporta CRC); la app muestra ₡. El flujo de activación es:
+# elegir plan → POST /facturacion/suscribir crea la suscripción en PayPal
+# (custom_id = clients.id) → redirect al link de aprobación → PayPal regresa a
+# /facturacion/paypal/retorno → paypal_webhook.py confirma/actualiza después.
+# La suscripción trial (30 días) se sigue creando perezosa al abrir el tab; si
+# el cliente activa un plan durante la prueba, start_time = trial_end difiere
+# el primer cobro hasta que la prueba termine.
+
+def _webapp_base_url():
+    return os.environ.get("WEBAPP_URL", "https://gastos.empoweredinvestor.trade").rstrip("/")
+
 
 @persona_bp.route("/facturacion")
 @login_required
@@ -1023,7 +1034,142 @@ def facturacion():
     finally:
         conn.close()
 
-    return render_template("persona/facturacion.html", sub=sub, plans=plans)
+    paypal_ready = paypal_client.is_configured() and any(p["paypal_plan_id"] for p in plans)
+    return render_template("persona/facturacion.html", sub=sub, plans=plans,
+                           paypal_ready=paypal_ready)
+
+
+@persona_bp.route("/facturacion/suscribir", methods=["POST"])
+@login_required
+def facturacion_suscribir():
+    plan_id = (request.form.get("plan_id") or "").strip()
+    conn = get_connection()
+    try:
+        ensure_trial_subscription(conn, session["user_id"])
+        sub = get_client_subscription(conn, session["user_id"])
+        plan = get_subscription_plan(conn, plan_id) if plan_id else None
+    finally:
+        conn.close()
+
+    if sub and sub["comp"]:
+        flash("Tu cuenta es de cortesía: no necesitás un plan de pago.", "danger")
+        return redirect(url_for("persona.facturacion"))
+    if sub and sub["status"] == "active" and sub["paypal_subscription_id"]:
+        flash("Ya tenés una suscripción activa con PayPal.", "danger")
+        return redirect(url_for("persona.facturacion"))
+    if (not plan or not plan["active"] or plan["tier"] != "individual"
+            or not plan["paypal_plan_id"]):
+        flash("Ese plan no está disponible para activar con PayPal.", "danger")
+        return redirect(url_for("persona.facturacion"))
+
+    # Prueba gratuita vigente → el primer cobro se difiere al fin de la prueba.
+    start_time = None
+    now_utc = datetime.now(timezone.utc)
+    if (sub and sub["status"] == "trial" and sub["trial_end"]
+            and sub["trial_end"] > now_utc):
+        start_time = sub["trial_end"].astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    base = _webapp_base_url()
+    try:
+        _sub_id, approval_url = paypal_client.create_subscription(
+            plan["paypal_plan_id"], session["user_id"],
+            return_url=f"{base}{url_for('persona.facturacion_paypal_retorno')}",
+            cancel_url=f"{base}{url_for('persona.facturacion_paypal_cancelado')}",
+            start_time=start_time,
+        )
+    except Exception as e:
+        log.error(f"PayPal: fallo creando suscripción para {session['user_id']}: {e}")
+        flash("No se pudo iniciar la suscripción con PayPal. Intentá de nuevo "
+              "en unos minutos.", "danger")
+        return redirect(url_for("persona.facturacion"))
+
+    return redirect(approval_url)
+
+
+@persona_bp.route("/facturacion/paypal/retorno")
+@login_required
+def facturacion_paypal_retorno():
+    """Regreso desde la aprobación en PayPal (?subscription_id=I-...).
+
+    Refleja la activación de inmediato para que el cliente no vea el tab
+    'en trial' tras aprobar; el webhook ACTIVATED es el que manda a la larga
+    (ambos upserts son idempotentes entre sí).
+    """
+    sub_id = (request.args.get("subscription_id") or "").strip()
+    if not sub_id:
+        flash("No se recibió la confirmación de PayPal.", "danger")
+        return redirect(url_for("persona.facturacion"))
+
+    try:
+        psub = paypal_client.get_subscription(sub_id)
+    except Exception as e:
+        log.error(f"PayPal: fallo leyendo sub {sub_id} en el retorno: {e}")
+        flash("Tu suscripción quedó registrada en PayPal; el estado se "
+              "reflejará aquí en unos minutos.", "success")
+        return redirect(url_for("persona.facturacion"))
+
+    # La suscripción debe ser del cliente logueado (custom_id = clients.id).
+    if (psub.get("custom_id") or "") != session["user_id"]:
+        log.warning(f"PayPal retorno: sub {sub_id} no pertenece al cliente "
+                    f"{session['user_id']} — ignorado")
+        flash("No se pudo validar la suscripción de PayPal.", "danger")
+        return redirect(url_for("persona.facturacion"))
+
+    if psub.get("status") in ("ACTIVE", "APPROVED"):
+        conn = get_connection()
+        try:
+            plan = get_plan_by_paypal_plan_id(conn, psub.get("plan_id"))
+            next_billing = (psub.get("billing_info") or {}).get("next_billing_time")
+            activate_subscription_from_paypal(
+                conn, session["user_id"], plan["id"] if plan else None,
+                sub_id, next_billing)
+        finally:
+            conn.close()
+        flash("¡Listo! Tu plan quedó activo con PayPal.", "success")
+    else:
+        flash("Tu aprobación quedó registrada; el estado se actualizará en "
+              "unos minutos.", "success")
+    return redirect(url_for("persona.facturacion"))
+
+
+@persona_bp.route("/facturacion/paypal/cancelado")
+@login_required
+def facturacion_paypal_cancelado():
+    flash("Activación cancelada. Podés intentarlo cuando querás.", "danger")
+    return redirect(url_for("persona.facturacion"))
+
+
+@persona_bp.route("/facturacion/cancelar", methods=["POST"])
+@login_required
+def facturacion_cancelar():
+    conn = get_connection()
+    try:
+        sub = get_client_subscription(conn, session["user_id"])
+    finally:
+        conn.close()
+
+    if not sub or not sub["paypal_subscription_id"] or sub["status"] not in (
+            "active", "past_due"):
+        flash("No tenés una suscripción de PayPal activa para cancelar.", "danger")
+        return redirect(url_for("persona.facturacion"))
+
+    try:
+        paypal_client.cancel_subscription(sub["paypal_subscription_id"])
+    except Exception as e:
+        log.error(f"PayPal: fallo cancelando sub {sub['paypal_subscription_id']}: {e}")
+        flash("No se pudo cancelar en PayPal. Intentá de nuevo en unos minutos.",
+              "danger")
+        return redirect(url_for("persona.facturacion"))
+
+    # El webhook CANCELLED también hará este update (idempotente).
+    conn = get_connection()
+    try:
+        update_subscription_from_paypal(conn, sub["paypal_subscription_id"], "cancelled")
+    finally:
+        conn.close()
+    flash("Suscripción cancelada. No se harán más cobros; el acceso sigue "
+          "hasta el fin del período pagado.", "success")
+    return redirect(url_for("persona.facturacion"))
 
 
 @persona_bp.route("/facturacion/codigo", methods=["POST"])

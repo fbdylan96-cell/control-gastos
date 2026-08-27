@@ -621,6 +621,104 @@ def set_subscription_comp(conn, client_id, comp):
     conn.commit()
 
 
+# ── Billing Fase 2: PayPal vivo ───────────────────────────────────────────────
+
+def get_subscription_plan(conn, plan_id):
+    """Devuelve un plan por id, o None."""
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT id, tier, modality, name, amount_crc, amount_usd, paypal_plan_id, active
+            FROM core.subscription_plans
+            WHERE id = %s
+            """,
+            (str(plan_id),),
+        )
+        return cur.fetchone()
+
+
+def get_plan_by_paypal_plan_id(conn, paypal_plan_id):
+    """Devuelve el plan interno que corresponde a un Billing Plan de PayPal."""
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT id, tier, modality, name, amount_crc, amount_usd, paypal_plan_id, active
+            FROM core.subscription_plans
+            WHERE paypal_plan_id = %s
+            """,
+            (paypal_plan_id,),
+        )
+        return cur.fetchone()
+
+
+def set_plan_paypal_id(conn, plan_id, paypal_plan_id):
+    """(Bootstrap) Guarda el id del Billing Plan de PayPal en el plan interno."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE core.subscription_plans SET paypal_plan_id = %s WHERE id = %s",
+            (paypal_plan_id, str(plan_id)),
+        )
+    conn.commit()
+
+
+def activate_subscription_from_paypal(conn, client_id, plan_id,
+                                      paypal_subscription_id, next_billing=None):
+    """Marca la suscripción del cliente como activa vía PayPal (upsert).
+
+    Llamada desde el retorno de aprobación y desde el webhook ACTIVATED —
+    ambas rutas son idempotentes entre sí. Una cuenta de cortesía nunca se
+    degrada: se registra el id de PayPal pero comp/status se conservan.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO core.client_subscriptions
+                (id, client_id, plan_id, status, paypal_subscription_id, current_period_end)
+            VALUES (%s, %s, %s, 'active', %s, %s)
+            ON CONFLICT (client_id) DO UPDATE
+                SET plan_id = EXCLUDED.plan_id,
+                    status = CASE WHEN core.client_subscriptions.comp
+                                  THEN core.client_subscriptions.status
+                                  ELSE 'active' END,
+                    paypal_subscription_id = EXCLUDED.paypal_subscription_id,
+                    current_period_end = COALESCE(EXCLUDED.current_period_end,
+                                                  core.client_subscriptions.current_period_end),
+                    cancel_at_period_end = FALSE,
+                    updated_at = now()
+            """,
+            (str(uuid.uuid4()), str(client_id), str(plan_id) if plan_id else None,
+             paypal_subscription_id, next_billing),
+        )
+    conn.commit()
+
+
+def update_subscription_from_paypal(conn, paypal_subscription_id, status,
+                                    next_billing=None):
+    """(Webhook) Actualiza estado/próximo cobro por paypal_subscription_id.
+
+    next_billing=None conserva el current_period_end existente (los eventos de
+    cancelación/suspensión no traen próximo cobro pero el período pagado sigue
+    corriendo). Devuelve cuántas filas tocó (0 → suscripción desconocida).
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE core.client_subscriptions
+            SET status = %s,
+                current_period_end = COALESCE(%s, current_period_end),
+                cancel_at_period_end = CASE WHEN %s = 'cancelled' THEN TRUE
+                                            ELSE cancel_at_period_end END,
+                updated_at = now()
+            WHERE paypal_subscription_id = %s
+              AND comp = FALSE
+            """,
+            (status, next_billing, status, paypal_subscription_id),
+        )
+        touched = cur.rowcount
+    conn.commit()
+    return touched
+
+
 def insert_manual_transaction(conn, *, individual_id, business_id, merchant, amount,
                               currency, txn_type, category, subcategory, txn_date=None,
                               client_notes=None):

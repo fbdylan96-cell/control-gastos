@@ -36,7 +36,9 @@
       </div>
       <div class="fact-item">
         <span class="fact-label">Método de pago</span>
-        <span class="fact-value">Ninguno</span>
+        <span class="fact-value">
+          {% if sub and sub.paypal_subscription_id %}PayPal{% else %}Ninguno{% endif %}
+        </span>
       </div>
       <div class="fact-item">
         <span class="fact-label">Próximo pago</span>
@@ -57,9 +59,19 @@
     {% if sub and sub.status == 'trial' and sub.trial_end %}
     <p class="fact-note">
       <i class="bi bi-info-circle"></i>
-      Estás en tu prueba gratuita de 30 días. Cuando se acerque el final podrás
-      activar tu plan con PayPal.
+      Estás en tu prueba gratuita de 30 días. Si activás un plan ahora, el
+      primer cobro será hasta que termine la prueba.
     </p>
+    {% endif %}
+
+    {% if sub and sub.paypal_subscription_id and sub.status in ('active', 'past_due') %}
+    <form method="POST" action="{{ url_for('persona.facturacion_cancelar') }}"
+          style="margin-top:1rem;"
+          onsubmit="return confirm('¿Cancelar tu suscripción? No se harán más cobros.');">
+      <button type="submit" class="btn-outline-ei">
+        <i class="bi bi-x-circle"></i>Cancelar suscripción
+      </button>
+    </form>
     {% endif %}
   </div>
 </div>
@@ -70,6 +82,8 @@
     <i class="bi bi-box-seam"></i>Planes disponibles
   </div>
   <div class="ei-card-body">
+    {% set can_subscribe = paypal_ready and sub and not sub.comp
+       and not (sub.status == 'active' and sub.paypal_subscription_id) %}
     {% if plans %}
     <div class="plan-grid">
       {% for p in plans %}
@@ -77,13 +91,28 @@
         <div class="plan-name">{{ p.name }}</div>
         <div class="plan-price">₡{{ '{:,.0f}'.format(p.amount_crc) }}</div>
         <div class="plan-period">por {{ 'mes' if p.modality == 'mensual' else 'año' }}</div>
+        {% if can_subscribe and p.paypal_plan_id %}
+        <form method="POST" action="{{ url_for('persona.facturacion_suscribir') }}"
+              style="margin-top:0.9rem;">
+          <input type="hidden" name="plan_id" value="{{ p.id }}" />
+          <button type="submit" class="btn-primary-ei">
+            <i class="bi bi-paypal"></i>Activar con PayPal
+          </button>
+        </form>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
+    <p class="fact-note" style="margin-top:0.9rem;">
+      <i class="bi bi-info-circle"></i>
+      El cobro se procesa en dólares (USD) a través de PayPal; el monto en
+      colones es de referencia.
+    </p>
     {% else %}
     <p style="color:var(--ink-soft, #777); margin:0;">Aún no hay planes configurados.</p>
     {% endif %}
 
+    {% if not paypal_ready %}
     <div style="margin-top:1rem;">
       <button class="btn-primary-ei" type="button" disabled
               title="La activación con PayPal estará disponible pronto"
@@ -91,6 +120,7 @@
         <i class="bi bi-paypal"></i>Conectar PayPal — próximamente
       </button>
     </div>
+    {% endif %}
   </div>
 </div>
 

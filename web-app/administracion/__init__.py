@@ -355,9 +355,10 @@ def patch_client(client_id):
                     value = advisory_plan[key]
                     if value == '':
                         value = None
-                    # program_start is NOT NULL — an emptied date input must
-                    # not wipe it.
-                    if key == 'program_start' and value is None:
+                    # program_start y emergency_fund_current son NOT NULL —
+                    # un input vaciado no debe pisarlos (el fondo arranca en
+                    # DEFAULT 0 y solo cambia cuando el asesor escribe un monto).
+                    if key in ('program_start', 'emergency_fund_current') and value is None:
                         continue
                     plan_sets.append(f"{col} = %s")
                     plan_params.append(value)

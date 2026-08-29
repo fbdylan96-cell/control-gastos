@@ -366,7 +366,7 @@ def main():
     scheduler.add_job(
         run_weekly_summaries,
         "cron",
-        hour=17,
+        hour=20,
         minute=0,
         id="advisory_weekly_summaries",
         replace_existing=True,
@@ -380,7 +380,7 @@ def main():
         id="advisory_monthly_fund",
         replace_existing=True,
     )
-    log.info("Advisory scheduler started; weekly daily 17:00 CR, monthly day 1 09:00 CR")
+    log.info("Advisory scheduler started; weekly daily 20:00 CR, monthly day 1 09:00 CR")
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):

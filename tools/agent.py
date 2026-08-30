@@ -9,7 +9,10 @@ Security model
 - The scope (individual_id / business_id) is resolved server-side from the
   client row that the webhook matched by phone. The model only chooses dates,
   categories and limits — it can never point a query at another client.
-- Every tool is a parameterized SELECT; the agent has no write surface.
+- Every query tool is a parameterized SELECT. The ONE write surface is
+  register_transaction (tools/register.py): inserts a manual transaction for
+  the phone's owner only, category validated against their taxonomy, and the
+  system prompt requires explicit user confirmation before calling it.
 
 Called by whatsapp_agent_worker.py, never from inside a web request.
 """
@@ -22,7 +25,7 @@ from zoneinfo import ZoneInfo
 
 import anthropic
 
-from tools import finance
+from tools import finance, register
 
 log = logging.getLogger(__name__)
 
@@ -128,6 +131,53 @@ TOOL_DEFINITIONS = [
             "required": ["category"],
         },
     },
+    {
+        "name": "register_transaction",
+        "description": (
+            "Registra una transacción manual del cliente en su control de gastos. "
+            "LLAMARLA SOLO después de que el cliente confirmó explícitamente el "
+            "resumen de la transacción en esta conversación."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number",
+                    "description": "Monto de la transacción (mayor a 0)",
+                },
+                "transaction_type": {
+                    "type": "string",
+                    "enum": ["gasto", "ingreso"],
+                    "description": "gasto = salida de dinero (default si el cliente no distingue); ingreso = entrada",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Nombre EXACTO de la categoría (de la lista disponible)",
+                },
+                "subcategory": {
+                    "type": "string",
+                    "description": "Nombre EXACTO de la subcategoría; omitir si no aplica",
+                },
+                "currency": {
+                    "type": "string",
+                    "description": "Código ISO de 3 letras; omitir para colones (CRC)",
+                },
+                "merchant": {
+                    "type": "string",
+                    "description": "Comercio/lugar, si el cliente lo mencionó",
+                },
+                "note": {
+                    "type": "string",
+                    "description": "Nota libre del cliente sobre la transacción (máx 280 caracteres)",
+                },
+                "txn_date": {
+                    "type": "string",
+                    "description": "Fecha YYYY-MM-DD; omitir para hoy. 'ayer' etc. se resuelve con la fecha actual del contexto",
+                },
+            },
+            "required": ["amount", "transaction_type", "category"],
+        },
+    },
 ]
 
 
@@ -191,6 +241,18 @@ def _execute_tool(conn, client_row: dict, name: str, tool_input: dict):
             category=(tool_input.get("category") or "").strip(),
             subcategory=subcategory,
         )
+    if name == "register_transaction":
+        return register.register_transaction(
+            conn, client_row, catalog_scope,
+            amount=tool_input.get("amount"),
+            transaction_type=tool_input.get("transaction_type"),
+            category=(tool_input.get("category") or "").strip(),
+            subcategory=subcategory,
+            currency=tool_input.get("currency"),
+            merchant=tool_input.get("merchant"),
+            note=tool_input.get("note"),
+            txn_date=tool_input.get("txn_date"),
+        )
     raise ValueError(f"Herramienta desconocida: {name}")
 
 
@@ -226,7 +288,7 @@ def _build_system_prompt(conn, client_row: dict) -> str:
     _spend_scope, catalog_scope = _resolve_scopes(client_row)
     today = datetime.now(_CR_TZ).date().isoformat()
     return f"""Eres el asistente financiero por WhatsApp de la herramienta de control de gastos. \
-Respondes preguntas sobre {_scope_description(client_row)}.
+Respondes preguntas sobre {_scope_description(client_row)} y puedes registrarle transacciones manuales.
 
 Hoy es {today} (hora de Costa Rica).
 
@@ -239,13 +301,27 @@ Datos y convenciones:
 Categorías disponibles (usa estos nombres exactos al llamar herramientas):
 {_category_lines(conn, catalog_scope)}
 
+Registro de transacciones (register_transaction):
+- Cuando el usuario quiera anotar un gasto o ingreso ("gasté 5000 en...", "anotame...", "registrá..."), \
+recolecta: monto (obligatorio), tipo (gasto/ingreso — si no se distingue asume gasto), y categoría (obligatoria). \
+Opcionales: moneda (asume colones si no dice), comercio, nota y fecha (asume hoy; "ayer" = la fecha de ayer).
+- La categoría DEBE ser una de la lista de arriba, con su nombre exacto. Sé flexible al interpretar: \
+si lo que dice el usuario corresponde claramente a una de sus categorías (p. ej. dice "restaurante" y \
+existe "Alimentación / Fuera de casa"), asígnala con confianza. Si hay duda o ninguna calza, \
+pregúntale mostrándole sus categorías como lista.
+- ANTES de llamar register_transaction, muestra el resumen (monto, tipo, categoría, y comercio/fecha/moneda \
+si difieren del default) y espera confirmación explícita ("sí", "confirmo", "dale"). Nunca registres sin ese sí.
+- Tras registrar con éxito responde breve: "✅ Registrado" + el resumen. No vuelvas a registrar una \
+transacción que ya registraste en esta conversación; si el usuario repite la confirmación, aclara que ya quedó.
+- Si la herramienta devuelve error de categoría, usa la lista que trae el error para preguntarle al usuario.
+
 Formato de respuesta (es un chat de WhatsApp):
 - Responde la pregunta primero, breve y directo; máximo ~10 líneas.
 - Usa *negrita* para las cifras clave y guiones para listas. Nada de tablas ni encabezados markdown.
 - Responde siempre en español.
 
 Límites:
-- Solo respondes sobre los datos financieros de este usuario dentro de esta herramienta. \
+- Solo respondes sobre los datos financieros de este usuario y registras transacciones suyas dentro de esta herramienta. \
 Si preguntan cualquier otra cosa (temas generales, datos de otras personas, asesoría de inversión específica), \
 decláralo amablemente fuera de tu alcance y ofrece ayudar con sus gastos, ingresos o presupuestos."""
 

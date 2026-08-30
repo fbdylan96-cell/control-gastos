@@ -160,6 +160,35 @@ def send_text(to: str, body: str, preview_url: bool = True) -> dict:
     })
 
 
+def get_media(media_id: str) -> tuple[bytes, str]:
+    """Download an inbound media object (e.g. a voice note) from the Cloud API.
+
+    Two steps per Meta's design: GET /{media_id} devuelve una URL firmada
+    (expira en ~5 min — por eso se descarga al momento de procesar, no al
+    encolar) y luego se baja el binario con el mismo bearer token.
+    Returns (bytes, mime_type).
+    """
+    token = os.environ.get("META_WA_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError("META_WA_TOKEN env var is not set")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    meta = requests.get(
+        f"https://graph.facebook.com/{API_VERSION}/{media_id}",
+        headers=headers, timeout=20,
+    )
+    if not meta.ok:
+        log.error(f"WhatsApp media lookup failed [{meta.status_code}]: {meta.text}")
+        meta.raise_for_status()
+    info = meta.json()
+
+    blob = requests.get(info["url"], headers=headers, timeout=60)
+    if not blob.ok:
+        log.error(f"WhatsApp media download failed [{blob.status_code}]")
+        blob.raise_for_status()
+    return blob.content, info.get("mime_type", "application/octet-stream")
+
+
 def verify_webhook_signature(raw_body: bytes, signature_header: str) -> bool:
     """Verify the X-Hub-Signature-256 header sent by Meta on every webhook callback."""
     secret = os.environ.get("META_WA_APP_SECRET", "").strip()

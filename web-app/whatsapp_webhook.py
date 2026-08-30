@@ -230,23 +230,26 @@ def _count_recent_chat_messages(conn, client_id: str) -> int:
         return cur.fetchone()[0]
 
 
-def _enqueue_chat_message(conn, client_id: str, phone: str, wamid: str | None, body: str) -> bool:
+def _enqueue_chat_message(conn, client_id: str, phone: str, wamid: str | None,
+                          body: str, media_id: str | None = None) -> bool:
     """Queue an inbound consultation message for whatsapp_agent_worker.py.
 
-    Returns False when the wamid was already seen (Meta redelivery) — the
-    UNIQUE constraint turns the retry into a no-op so the user never gets a
-    duplicate answer.
+    media_id: id del audio en la Cloud API cuando el mensaje es una nota de
+    voz — el worker lo transcribe y reemplaza body (que llega como
+    placeholder). Returns False when the wamid was already seen (Meta
+    redelivery) — the UNIQUE constraint turns the retry into a no-op so the
+    user never gets a duplicate answer.
     """
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO core.whatsapp_chat_messages
-                (id, client_id, phone, role, content, wamid, status)
-            VALUES (%s, %s, %s, 'user', %s, %s, 'pending')
+                (id, client_id, phone, role, content, media_id, wamid, status)
+            VALUES (%s, %s, %s, 'user', %s, %s, %s, 'pending')
             ON CONFLICT (wamid) DO NOTHING
             RETURNING id
             """,
-            (str(uuid.uuid4()), client_id, phone, body, wamid),
+            (str(uuid.uuid4()), client_id, phone, body, media_id, wamid),
         )
         inserted = cur.fetchone() is not None
     conn.commit()
@@ -641,6 +644,26 @@ def _handle_message(msg: dict, from_phone: str | None) -> None:
                 log.info(f"  WA chat message queued for client={client['id']}")
             else:
                 log.info("  WA chat message already queued (wamid seen) — ignoring redelivery")
+
+        elif msg_type == "audio":
+            # Nota de voz → misma cola que el texto, con media_id; el worker la
+            # descarga y transcribe (el webhook nunca espera a Whisper).
+            media_id = (msg.get("audio") or {}).get("id")
+            if not media_id:
+                return
+            client = _fetch_client_by_phone(conn, from_phone)
+            if not client:
+                log.info("  WA audio from unregistered/inactive number — ignoring")
+                return
+            if _count_recent_chat_messages(conn, str(client["id"])) >= CHAT_RATE_LIMIT_PER_HOUR:
+                log.info(f"  WA chat rate limit hit for client={client['id']}")
+                whatsapp_client.send_text(from_phone, CHAT_RATE_LIMIT_REPLY, preview_url=False)
+                return
+            if _enqueue_chat_message(conn, str(client["id"]), from_phone,
+                                     msg.get("id"), "[nota de voz]", media_id=media_id):
+                log.info(f"  WA audio queued for client={client['id']} (media={media_id})")
+            else:
+                log.info("  WA audio already queued (wamid seen) — ignoring redelivery")
 
         else:
             # Ignore other inbound types (image/audio/etc.) — out of scope for now

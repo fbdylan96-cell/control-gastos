@@ -21,6 +21,7 @@ Run with:  python whatsapp_agent_worker.py
 """
 
 import logging
+import os
 import time
 import uuid
 
@@ -37,9 +38,21 @@ RECLAIM_EVERY = 300             # seconds between stale-claim sweeps
 STALE_PROCESSING_MINUTES = 10   # reclaim 'processing' rows older than this
 HISTORY_LIMIT = 10              # prior messages given to the agent as context
 
+# Notas de voz: tope de tamaño antes de transcribir (~5 min de opus). Acota el
+# costo de Whisper (~$0.006/min) y evita audios-podcast.
+MAX_AUDIO_BYTES = 3 * 1024 * 1024
+TRANSCRIBE_MODEL = os.environ.get("OPENAI_TRANSCRIBE_MODEL", "whisper-1")
+
 FALLBACK_REPLY = (
     "Lo siento, no pude procesar tu consulta en este momento. "
     "Intenta de nuevo en unos minutos."
+)
+AUDIO_FALLBACK_REPLY = (
+    "No pude procesar tu nota de voz. ¿Me lo escribís en un mensaje de texto?"
+)
+AUDIO_TOO_LONG_REPLY = (
+    "Tu nota de voz es muy larga para procesarla. Intentá con un audio más "
+    "corto (menos de ~5 minutos) o escribime el mensaje."
 )
 
 logging.basicConfig(
@@ -68,7 +81,7 @@ def claim_next(conn):
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             )
-            RETURNING id, client_id, phone, content
+            RETURNING id, client_id, phone, content, media_id
             """
         )
         row = cur.fetchone()
@@ -117,6 +130,17 @@ def mark_failed(conn, msg_id, error: str):
             WHERE id = %s
             """,
             (error, msg_id),
+        )
+    conn.commit()
+
+
+def update_content(conn, msg_id, content):
+    """Reemplaza el placeholder de una nota de voz con su transcripción, para
+    que load_history dé al agente el texto real en turnos futuros."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE core.whatsapp_chat_messages SET content = %s WHERE id = %s",
+            (content, msg_id),
         )
     conn.commit()
 
@@ -174,6 +198,40 @@ def load_history(conn, client_id, exclude_id):
 
 
 # ---------------------------------------------------------------------------
+# Transcripción de notas de voz
+# ---------------------------------------------------------------------------
+
+class AudioTooLong(Exception):
+    pass
+
+
+def transcribe_audio(media_id: str) -> str:
+    """Descarga la nota de voz de la Cloud API y la transcribe con Whisper.
+
+    Lanza AudioTooLong si supera MAX_AUDIO_BYTES; cualquier otra excepción la
+    maneja el llamador con AUDIO_FALLBACK_REPLY.
+    """
+    import openai
+
+    audio_bytes, mime = whatsapp_client.get_media(media_id)
+    if len(audio_bytes) > MAX_AUDIO_BYTES:
+        raise AudioTooLong(f"{len(audio_bytes)} bytes")
+
+    # Los audios de WhatsApp llegan como OGG/Opus; la extensión del nombre es
+    # lo que la API usa para detectar el formato.
+    ext = "mp3" if "mpeg" in mime else "ogg"
+    result = openai.OpenAI().audio.transcriptions.create(
+        model=TRANSCRIBE_MODEL,
+        file=(f"nota_de_voz.{ext}", audio_bytes),
+        language="es",
+    )
+    text = (result.text or "").strip()
+    if not text:
+        raise ValueError("transcripción vacía")
+    return text
+
+
+# ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
 
@@ -183,8 +241,25 @@ def process_message(conn, row):
         mark_failed(conn, row["id"], "client not found or inactive")
         return
 
+    content = row["content"]
+    if row.get("media_id"):
+        try:
+            content = transcribe_audio(row["media_id"])
+        except AudioTooLong as e:
+            log.warning(f"Audio too long for message {row['id']}: {e}")
+            whatsapp_client.send_text(row["phone"], AUDIO_TOO_LONG_REPLY, preview_url=False)
+            mark_failed(conn, row["id"], f"audio too long: {e}")
+            return
+        except Exception as e:
+            log.error(f"Transcription failed for message {row['id']}: {e}")
+            whatsapp_client.send_text(row["phone"], AUDIO_FALLBACK_REPLY, preview_url=False)
+            mark_failed(conn, row["id"], f"transcription failed: {e}")
+            return
+        update_content(conn, row["id"], content)
+        log.info(f"Transcribed voice note {row['id']} ({len(content)} chars)")
+
     history = load_history(conn, row["client_id"], row["id"])
-    reply = agent.answer_query(conn, client, history, row["content"])
+    reply = agent.answer_query(conn, client, history, content)
 
     whatsapp_client.send_text(row["phone"], reply, preview_url=False)
     insert_reply(conn, row["client_id"], row["phone"], reply)

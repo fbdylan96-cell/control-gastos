@@ -367,6 +367,10 @@ CREATE TABLE core.whatsapp_chat_messages (
     phone         TEXT NOT NULL,        -- digits-only, as Meta reports the sender
     role          TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
     content       TEXT NOT NULL,
+    -- Nota de voz: id del media en la Cloud API de Meta. El webhook encola el
+    -- audio con un placeholder en content; el worker lo descarga, lo
+    -- transcribe (Whisper) y reemplaza content con la transcripción.
+    media_id      TEXT,
     wamid         TEXT UNIQUE,
     status        TEXT NOT NULL DEFAULT 'pending'
                   CHECK (status IN ('pending', 'processing', 'done', 'failed')),

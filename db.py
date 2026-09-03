@@ -366,6 +366,74 @@ def find_category_rule(conn, business_id, individual_id, merchant_key):
         return None
 
 
+def get_client_rule_examples(conn, business_id, individual_id, limit=30):
+    """Reglas del cliente como ejemplos para el prompt de clasificación IA.
+
+    Mismo scoping que find_category_rule (propias del individuo o del negocio).
+    Prioridad de señal: reglas nacidas de reclasificaciones del usuario
+    (source='user', su dedo es ley), luego confianza, luego recencia.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT merchant_key, category, subcategory, source
+            FROM core.category_rules
+            WHERE business_id = %s
+              AND (individual_id = %s OR individual_id IS NULL)
+            ORDER BY (source = 'user') DESC, confidence DESC, updated_at DESC
+            LIMIT %s
+            """,
+            (str(business_id), str(individual_id), int(limit)),
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def get_recent_user_reclassifications(conn, business_id, individual_id,
+                                      days=60, limit=15):
+    """Reclasificaciones manuales recientes del cliente (comercio → categoría).
+
+    La señal más fresca para el prompt: la ingesta de reglas espera a que
+    cierre la ventana de 24h, así que una corrección de hoy aún no es regla —
+    pero acá sí aparece.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT cl.merchant, n.final_category AS category,
+                   n.final_subcategory AS subcategory
+            FROM core.transactions_notifications n
+            JOIN core.transactions_classified cl ON cl.id = n.classified_id
+            WHERE n.business_id = %s
+              AND n.individual_id = %s
+              AND n.reclassified_by = 'user'
+              AND n.reclassified_at > now() - make_interval(days => %s)
+            ORDER BY n.reclassified_at DESC
+            LIMIT %s
+            """,
+            (str(business_id), str(individual_id), int(days), int(limit)),
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def count_user_reclassifications(conn, business_id, individual_id):
+    """Total histórico de reclasificaciones manuales del cliente. Es el umbral
+    de arranque en frío del clasificador: con pocas, el prompt conserva el
+    catálogo genérico como puente."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM core.transactions_notifications
+            WHERE business_id = %s AND individual_id = %s
+              AND reclassified_by = 'user'
+            """,
+            (str(business_id), str(individual_id)),
+        )
+        return cur.fetchone()[0]
+
+
 def insert_classified_transaction(conn, row):
     """Insert one row into core.transactions_classified. Skips if raw_id already exists."""
     sql = """

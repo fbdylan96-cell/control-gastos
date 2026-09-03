@@ -19,8 +19,11 @@ from openai import OpenAI
 
 from banks.utils import clean_merchant_key, format_merchant_display
 from db import (
+    count_user_reclassifications,
     find_category_rule,
     get_categories,
+    get_client_rule_examples,
+    get_recent_user_reclassifications,
     get_unclassified_enriched,
     insert_classified_transaction,
     insert_notification_row,
@@ -28,8 +31,20 @@ from db import (
 
 log = logging.getLogger(__name__)
 
+# El contexto por-cliente entra al prompt hasta este tope de ejemplos
+# (reclasificaciones frescas primero, luego reglas; deduplicado por comercio).
+MAX_CONTEXT_EXAMPLES = 35
+
+# Arranque en frío: mientras el cliente tenga hasta este número de
+# reclasificaciones manuales, el prompt conserva el catálogo genérico como
+# puente. Después, sus propias decisiones lo reemplazan por completo.
+COLD_START_MAX_RECLASSIFICATIONS = 5
+
 # ---------------------------------------------------------------------------
-# Global merchant→category hint catalog (used to guide AI classification)
+# Generic merchant→category hint catalog — SOLO arranque en frío.
+# Sus etiquetas ("Restaurante", "Supermercado") no son la taxonomía de nadie:
+# el modelo debe traducirlas a un par válido del cliente. Para clientes con
+# historial, sus propias decisiones (en su vocabulario) lo sustituyen.
 # ---------------------------------------------------------------------------
 
 _GLOBAL_CATALOG = """
@@ -94,8 +109,8 @@ Libreria MTA -> Utilizables
 
 _AI_SYSTEM_PROMPT = """
 You are a transaction classification assistant for a personal expense tracker in Costa Rica.
-Given a merchant name (already normalized to lowercase), you must return the best matching
-category and subcategory from the provided list.
+Given a merchant name (already normalized to lowercase) and transaction details, you must
+return the best matching category and subcategory from the provided list.
 
 Rules:
 - The list shows VALID PAIRS in the format "Category / Subcategory" or just "Category" when no subcategory exists.
@@ -104,7 +119,13 @@ Rules:
 - If an entry shows only "Category" (no slash), return that category with null subcategory.
 - If no pair fits, return "Otros" with null subcategory.
 - NEVER invent categories or subcategories not in the list.
-- Use the global examples catalog only as a hint — the final answer must be a valid pair from the list.
+- "Previous decisions by THIS client" is your STRONGEST signal: it shows how this specific
+  client categorizes their merchants, in their own taxonomy. A similar merchant should get
+  the same category the client chose before.
+- The generic hints catalog (when present) uses labels that may NOT exist in the client's
+  list — treat it only as a weak semantic hint and always translate to a valid pair.
+- Amount and transaction type are secondary signals (e.g. a large amount at a hardware
+  store suggests home improvement, a credit is usually income).
 - Return valid JSON only, no markdown.
 """.strip()
 
@@ -123,7 +144,47 @@ def _build_taxonomy_text(categories: list[dict]) -> str:
     return "\n".join(sorted(lines))
 
 
-def _classify_with_ai(merchant_key: str, categories: list[dict]) -> dict:
+def _build_client_context(conn, business_id: str, individual_id: str) -> tuple[str, bool]:
+    """(texto de ejemplos del cliente, incluir_catalogo_generico).
+
+    Ejemplos = reclasificaciones manuales frescas (aún no son regla por la
+    ventana de 24h de la ingesta) + reglas del cliente, deduplicado por
+    comercio con la señal más fresca ganando, tope MAX_CONTEXT_EXAMPLES.
+    Cualquier fallo degrada a contexto vacío + catálogo genérico (= el
+    comportamiento previo): el contexto nunca puede tumbar la clasificación.
+    """
+    try:
+        recent = get_recent_user_reclassifications(conn, business_id, individual_id)
+        rules = get_client_rule_examples(conn, business_id, individual_id)
+        user_count = count_user_reclassifications(conn, business_id, individual_id)
+    except Exception as e:
+        log.warning(f"  Client context unavailable ({e}) — using generic catalog only")
+        return "", True
+
+    lines, seen = [], set()
+    for r in recent:
+        key = (r.get("merchant") or "").strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        pair = f"{r['category']} / {r['subcategory']}" if r["subcategory"] else r["category"]
+        lines.append(f"{key} -> {pair}")
+    for r in rules:
+        key = (r.get("merchant_key") or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        pair = f"{r['category']} / {r['subcategory']}" if r["subcategory"] else r["category"]
+        lines.append(f"{key} -> {pair}")
+    lines = lines[:MAX_CONTEXT_EXAMPLES]
+
+    include_global = user_count <= COLD_START_MAX_RECLASSIFICATIONS
+    return "\n".join(lines), include_global
+
+
+def _classify_with_ai(merchant_key: str, categories: list[dict],
+                      client_context: str = "", include_global: bool = True,
+                      txn_details: str = "") -> dict:
     """
     Call OpenAI to pick the best category/subcategory for merchant_key.
     Returns dict with keys: category, subcategory.
@@ -135,11 +196,17 @@ def _classify_with_ai(merchant_key: str, categories: list[dict]) -> dict:
         return {"category": "Otros", "subcategory": None}
 
     taxonomy_text = _build_taxonomy_text(categories)
-    user_content = (
-        f"Merchant: {merchant_key}\n\n"
-        f"Available categories:\n{taxonomy_text}\n\n"
-        f"Global catalog hints:\n{_GLOBAL_CATALOG}"
-    )
+    parts = [f"Merchant: {merchant_key}"]
+    if txn_details:
+        parts.append(txn_details)
+    parts.append(f"Available categories:\n{taxonomy_text}")
+    if client_context:
+        parts.append("Previous decisions by THIS client (merchant -> chosen pair; "
+                     f"strongest signal):\n{client_context}")
+    if include_global:
+        parts.append(f"Generic hints catalog (weak signal, labels may not be in "
+                     f"the list — translate to a valid pair):\n{_GLOBAL_CATALOG}")
+    user_content = "\n\n".join(parts)
 
     client = OpenAI(api_key=api_key)
     try:
@@ -209,14 +276,31 @@ def classify_transaction(conn, enriched_row: dict) -> bool:
         classified_by = "rules"
         log.info(f"  Rule hit → {category} / {subcategory}")
     else:
-        # Step 2B: AI classification
+        # Step 2B: AI classification con el contexto del propio cliente
         log.info(f"  No rule found — calling AI")
         categories = get_categories(conn, business_id, assigned_individual_id)
-        result = _classify_with_ai(merchant_key or merchant_guess or "desconocido", categories)
+        client_context, include_global = _build_client_context(
+            conn, business_id, assigned_individual_id)
+
+        details = []
+        if enriched_row.get("amount_guess") is not None:
+            details.append(f"Amount: {enriched_row['amount_guess']} "
+                           f"{enriched_row.get('currency_guess') or 'CRC'}")
+        txn_type = enriched_row.get("transaction_type_guess")
+        if txn_type and txn_type != "unknown":
+            details.append("Type: debit (money out)" if txn_type == "debito"
+                           else "Type: credit (money in)")
+
+        result = _classify_with_ai(
+            merchant_key or merchant_guess or "desconocido", categories,
+            client_context=client_context, include_global=include_global,
+            txn_details=" | ".join(details))
         category = result["category"]
         subcategory = result["subcategory"]
         classified_by = "openai"
-        log.info(f"  AI result → {category} / {subcategory}")
+        ctx_n = len(client_context.splitlines()) if client_context else 0
+        log.info(f"  AI result → {category} / {subcategory} "
+                 f"(contexto: {ctx_n} ejemplos, catálogo genérico: {include_global})")
 
     # Step 3: insert into transactions_classified under the assigned individual
     classified_id = str(uuid.uuid4())

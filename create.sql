@@ -384,6 +384,19 @@ CREATE INDEX idx_wa_chat_pending ON core.whatsapp_chat_messages (created_at)
     WHERE status = 'pending';
 CREATE INDEX idx_wa_chat_client_history ON core.whatsapp_chat_messages (client_id, created_at);
 
+-- Acción pendiente de un botón de notificación de WhatsApp que espera el
+-- SIGUIENTE mensaje del cliente (hoy solo 'nota': tap en "Añadir nota" → el
+-- próximo texto dentro de la ventana se guarda como client_notes en vez de ir
+-- al chat AI). Máximo una pendiente por cliente (la última gana). CASCADE en
+-- ambas FKs: los borrados de admin no necesitan tocar esta tabla.
+CREATE TABLE core.whatsapp_pending_actions (
+    id               UUID PRIMARY KEY,
+    client_id        UUID NOT NULL UNIQUE REFERENCES core.clients(id) ON DELETE CASCADE,
+    notification_id  UUID NOT NULL REFERENCES core.transactions_notifications(id) ON DELETE CASCADE,
+    action           TEXT NOT NULL CHECK (action IN ('nota')),
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 
 -- TRUNCATE core.transactions_raw CASCADE;
 -- ALTER TABLE core.transactions_enriched DROP COLUMN bank_email_adress;

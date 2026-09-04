@@ -150,6 +150,31 @@ def send_list_message(
     })
 
 
+def send_buttons_message(to: str, body_text: str, buttons: list[dict]) -> dict:
+    """Send an interactive reply-buttons message (only inside the 24h window).
+
+    buttons: [{"id": "...", "title": "..."}, ...] — Meta caps: 3 buttons,
+    title 20 chars, id 256 chars. The tap comes back to the webhook as
+    interactive.button_reply with the given id.
+    """
+    return _post({
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": body_text[:1024]},
+            "action": {
+                "buttons": [
+                    {"type": "reply",
+                     "reply": {"id": b["id"][:256], "title": b["title"][:20]}}
+                    for b in buttons[:3]
+                ],
+            },
+        },
+    })
+
+
 def send_text(to: str, body: str, preview_url: bool = True) -> dict:
     """Send a plain text message (only valid inside the 24h customer service window)."""
     return _post({

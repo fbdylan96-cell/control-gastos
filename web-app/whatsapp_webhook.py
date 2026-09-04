@@ -57,6 +57,11 @@ CHAT_RATE_LIMIT_REPLY = (
     "Has alcanzado el límite de consultas por hora. Intenta de nuevo más tarde."
 )
 
+# "Añadir nota": minutos que el próximo texto del cliente cuenta como la nota
+# de la transacción (después vuelve a ser chat AI normal).
+NOTE_WINDOW_MINUTES = 10
+NOTE_MAX_LEN = 280  # mismo tope que client_notes en las apps
+
 ROW_TITLE_MAX = 20  # per PROMPT_requests.md
 SECTION_TITLE_MAX = 24
 ROW_DESCRIPTION_MAX = 72
@@ -99,10 +104,12 @@ def _parse_row_id(raw: str) -> dict | None:
 
 
 def _parse_button_payload(payload: str) -> dict | None:
-    """Parse a quick-reply button payload.
+    """Parse a quick-reply / reply-button payload.
 
-    Transaction templates (whatsapp_notifier._button_payloads) use
-    'rc|nid=...' / 'go|nid=...' → {"action", "notification_id"}.
+    Transaction templates (whatsapp_notifier._button_payloads):
+      v1 'rc|nid=...' / 'go|nid=...'; v2 agrega 'nt|nid=...' (Añadir nota) y
+      'dl|nid=...' (Eliminar). La confirmación del Eliminar usa
+      'dlok|nid=...' / 'dlno|nid=...' (botones interactivos, no de plantilla).
     The advisory weekly summary (advisory_scheduler) uses 'ad|cid=...'
     → {"action": "ad", "client_id": "..."}. Returns None on mismatch.
     """
@@ -112,7 +119,7 @@ def _parse_button_payload(payload: str) -> dict | None:
     if len(parts) < 2:
         return None
     action = parts[0]
-    if action not in ("rc", "go", "ad"):
+    if action not in ("rc", "go", "ad", "nt", "dl", "dlok", "dlno"):
         return None
     fields = dict(p.split("=", 1) for p in parts[1:] if "=" in p)
     if action == "ad":
@@ -254,6 +261,107 @@ def _enqueue_chat_message(conn, client_id: str, phone: str, wamid: str | None,
         inserted = cur.fetchone() is not None
     conn.commit()
     return inserted
+
+
+def _verify_notification_owner(conn, notification_id: str, from_phone: str) -> dict | None:
+    """Contexto de la notificación SOLO si el teléfono que tocó el botón es de
+    su dueño (misma disciplina server-side que el breakdown de asesoría —
+    'nota' y 'eliminar' escriben/ocultan datos, así que el payload no basta)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            r"""
+            SELECT n.individual_id, e.merchant_guess, e.amount_guess,
+                   e.currency_guess, e.desc_guess
+            FROM core.transactions_notifications n
+            JOIN core.clients c ON c.id = n.individual_id
+            JOIN core.transactions_classified cl ON cl.id = n.classified_id
+            JOIN core.transactions_enriched e ON e.raw_id = cl.raw_id
+            WHERE n.id = %s AND c.active = TRUE
+              AND c.phone_number IS NOT NULL
+              AND regexp_replace(c.phone_number, '\D', '', 'g') = %s
+            """,
+            (notification_id, re.sub(r"\D", "", from_phone or "")),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+
+
+def _set_pending_note(conn, client_id: str, notification_id: str) -> None:
+    """Marca que el PRÓXIMO texto de este cliente es la nota de esa
+    transacción. Una pendiente por cliente: la última gana (UNIQUE)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO core.whatsapp_pending_actions
+                (id, client_id, notification_id, action)
+            VALUES (%s, %s, %s, 'nota')
+            ON CONFLICT (client_id) DO UPDATE
+                SET notification_id = EXCLUDED.notification_id,
+                    action = EXCLUDED.action,
+                    created_at = now()
+            """,
+            (str(uuid.uuid4()), client_id, notification_id),
+        )
+    conn.commit()
+
+
+def _pop_pending_note(conn, client_id: str) -> str | None:
+    """Consume (y borra) la nota pendiente del cliente si sigue vigente.
+    Devuelve el notification_id o None. Las vencidas se borran igual."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM core.whatsapp_pending_actions
+            WHERE client_id = %s AND action = 'nota'
+            RETURNING notification_id,
+                      created_at > now() - make_interval(mins => %s) AS vigente
+            """,
+            (client_id, NOTE_WINDOW_MINUTES),
+        )
+        row = cur.fetchone()
+    conn.commit()
+    if row and row[1]:
+        return str(row[0])
+    return None
+
+
+def _save_note(conn, notification_id: str, note: str) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE core.transactions_notifications
+            SET client_notes = %s,
+                whatsapp_action_at = now(),
+                whatsapp_action_value = %s
+            WHERE id = %s
+            """,
+            (note, "nota", notification_id),
+        )
+    conn.commit()
+
+
+def _discard_transaction(conn, notification_id: str) -> bool:
+    """Marca la transacción como Descartada (misma semántica que el botón
+    Descartar del portal empresa: desaparece de vistas y reportes, la fila
+    queda en la BD). Devuelve False si ya estaba descartada/duplicada."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE core.transactions_enriched e
+            SET transaction_status = 'Descartado'
+            FROM core.transactions_notifications n
+            JOIN core.transactions_classified cl ON cl.id = n.classified_id
+            WHERE n.id = %s AND e.raw_id = cl.raw_id
+              AND e.transaction_status NOT IN ('Descartado', 'Duplicado')
+            """,
+            (notification_id,),
+        )
+        updated = cur.rowcount
+    conn.commit()
+    return bool(updated)
 
 
 def _update_whatsapp_action(conn, notification_id: str, action_value: str) -> None:
@@ -422,6 +530,69 @@ def _send_webapp_url(conn, to: str, notification_id: str) -> None:
     whatsapp_client.send_text(to, url)
 
 
+def _txn_label(ctx: dict) -> str:
+    desc = ctx.get("desc_guess") or ctx.get("merchant_guess") or "la transacción"
+    amount = _fmt_amount(ctx.get("currency_guess"), ctx.get("amount_guess"))
+    return f"{desc} ({amount})" if amount else desc
+
+
+def _handle_note_tap(conn, from_phone: str, notification_id: str) -> None:
+    """Tap en 'Añadir nota' → el próximo texto del cliente es la nota."""
+    ctx = _verify_notification_owner(conn, notification_id, from_phone)
+    if not ctx:
+        log.warning(f"  Nota tap: phone {from_phone} no es dueño de "
+                    f"notification {notification_id} — ignorado")
+        return
+    _set_pending_note(conn, str(ctx["individual_id"]), notification_id)
+    whatsapp_client.send_text(
+        from_phone,
+        f"📝 Escribime la nota para *{_txn_label(ctx)}* "
+        f"(máx. {NOTE_MAX_LEN} caracteres). Para cancelar, escribí \"cancelar\".",
+        preview_url=False,
+    )
+
+
+def _handle_delete_tap(conn, from_phone: str, notification_id: str) -> None:
+    """Tap en 'Eliminar' → pide confirmación con botones (nunca directo)."""
+    ctx = _verify_notification_owner(conn, notification_id, from_phone)
+    if not ctx:
+        log.warning(f"  Eliminar tap: phone {from_phone} no es dueño de "
+                    f"notification {notification_id} — ignorado")
+        return
+    whatsapp_client.send_buttons_message(
+        from_phone,
+        f"¿Eliminar esta transacción?\n*{_txn_label(ctx)}*\n\n"
+        "Dejará de aparecer en tus reportes y totales.",
+        buttons=[
+            {"id": f"dlok|nid={notification_id}", "title": "Sí, eliminar"},
+            {"id": f"dlno|nid={notification_id}", "title": "Cancelar"},
+        ],
+    )
+
+
+def _handle_delete_confirm(conn, from_phone: str, notification_id: str, confirmed: bool) -> None:
+    ctx = _verify_notification_owner(conn, notification_id, from_phone)
+    if not ctx:
+        log.warning(f"  Eliminar confirm: phone {from_phone} no es dueño de "
+                    f"notification {notification_id} — ignorado")
+        return
+    if not confirmed:
+        whatsapp_client.send_text(from_phone, "Ok, no se eliminó.", preview_url=False)
+        return
+    if _discard_transaction(conn, notification_id):
+        _update_whatsapp_action(conn, notification_id, "eliminada")
+        whatsapp_client.send_text(
+            from_phone,
+            f"🗑️ Transacción eliminada: *{_txn_label(ctx)}*. "
+            "Ya no aparecerá en tus reportes.",
+            preview_url=False,
+        )
+    else:
+        whatsapp_client.send_text(
+            from_phone, "Esa transacción ya estaba eliminada.", preview_url=False,
+        )
+
+
 def _fmt_crc(amount) -> str:
     return f"₡{float(amount):,.0f}"
 
@@ -585,6 +756,10 @@ def _handle_message(msg: dict, from_phone: str | None) -> None:
                 _send_reclassify_list(conn, from_phone, nid)
             elif parsed["action"] == "go":
                 _send_webapp_url(conn, from_phone, nid)
+            elif parsed["action"] == "nt":
+                _handle_note_tap(conn, from_phone, nid)
+            elif parsed["action"] == "dl":
+                _handle_delete_tap(conn, from_phone, nid)
 
         elif msg_type == "interactive":
             interactive = msg.get("interactive") or {}
@@ -612,7 +787,8 @@ def _handle_message(msg: dict, from_phone: str | None) -> None:
                     preview_url=False,
                 )
             elif itype == "button_reply":
-                # Free-form interactive button reply (not used today, but tolerate it)
+                # Interactive reply buttons: hoy los usa la confirmación del
+                # Eliminar (dlok/dlno); el resto se tolera por compatibilidad.
                 btn = interactive.get("button_reply") or {}
                 payload = btn.get("id", "")
                 parsed = _parse_button_payload(payload)
@@ -621,11 +797,21 @@ def _handle_message(msg: dict, from_phone: str | None) -> None:
                         _handle_breakdown_tap(conn, from_phone, parsed["client_id"])
                         return
                     nid = parsed["notification_id"]
+                    if parsed["action"] == "dlok":
+                        _handle_delete_confirm(conn, from_phone, nid, confirmed=True)
+                        return
+                    if parsed["action"] == "dlno":
+                        _handle_delete_confirm(conn, from_phone, nid, confirmed=False)
+                        return
                     _update_whatsapp_action(conn, nid, btn.get("title") or parsed["action"])
                     if parsed["action"] == "rc":
                         _send_reclassify_list(conn, from_phone, nid)
                     elif parsed["action"] == "go":
                         _send_webapp_url(conn, from_phone, nid)
+                    elif parsed["action"] == "nt":
+                        _handle_note_tap(conn, from_phone, nid)
+                    elif parsed["action"] == "dl":
+                        _handle_delete_tap(conn, from_phone, nid)
         elif msg_type == "text":
             # Consultation chat: queue only — the agent runs in
             # whatsapp_agent_worker.py so the LLM never blocks this request.
@@ -636,6 +822,25 @@ def _handle_message(msg: dict, from_phone: str | None) -> None:
             if not client:
                 log.info("  WA text from unregistered/inactive number — ignoring")
                 return
+
+            # "Añadir nota" pendiente: este texto es la nota, no chat AI.
+            pending_nid = _pop_pending_note(conn, str(client["id"]))
+            if pending_nid:
+                if body.strip().lower() in ("cancelar", "cancel"):
+                    whatsapp_client.send_text(
+                        from_phone, "Ok, nota cancelada.", preview_url=False)
+                    return
+                _save_note(conn, pending_nid, body.strip()[:NOTE_MAX_LEN])
+                log.info(f"  Nota guardada en notification {pending_nid} "
+                         f"({len(body.strip()[:NOTE_MAX_LEN])} chars)")
+                whatsapp_client.send_text(
+                    from_phone,
+                    "📝 Nota guardada. La podés ver y editar en la app, "
+                    "en el detalle de la transacción.",
+                    preview_url=False,
+                )
+                return
+
             if _count_recent_chat_messages(conn, str(client["id"])) >= CHAT_RATE_LIMIT_PER_HOUR:
                 log.info(f"  WA chat rate limit hit for client={client['id']}")
                 whatsapp_client.send_text(from_phone, CHAT_RATE_LIMIT_REPLY, preview_url=False)

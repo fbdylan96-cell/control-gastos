@@ -103,12 +103,28 @@ def _build_budget_extra_params(
     ]
 
 
-def _button_payloads(notification_id: str) -> list[str]:
-    """Ordered payloads for the two quick-reply buttons in both templates.
+def _templates_v2() -> bool:
+    """Plantillas v2 (3 botones: Reclasificar / Añadir nota / Eliminar).
 
-    Index 0 = Reclasificar; index 1 = Ir a aplicación. The webhook parses these.
-    Format kept short (well under Meta's 256-char payload limit).
+    El número de payloads DEBE calzar con los botones de la plantilla que
+    nombra el .env, así que el switch es atómico: nombres v2 + este flag en 1.
     """
+    return os.environ.get("META_WA_TEMPLATES_V2", "0").strip() == "1"
+
+
+def _button_payloads(notification_id: str) -> list[str]:
+    """Ordered payloads for the quick-reply buttons in both templates.
+
+    v1: index 0 = Reclasificar, 1 = Ir a aplicación.
+    v2: index 0 = Reclasificar, 1 = Añadir nota, 2 = Eliminar.
+    The webhook parses these. Format kept short (under Meta's 256-char limit).
+    """
+    if _templates_v2():
+        return [
+            f"rc|nid={notification_id}",
+            f"nt|nid={notification_id}",
+            f"dl|nid={notification_id}",
+        ]
     return [
         f"rc|nid={notification_id}",
         f"go|nid={notification_id}",

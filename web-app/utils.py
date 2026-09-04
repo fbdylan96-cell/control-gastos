@@ -79,6 +79,10 @@ BANK_NOTIFICATION_SENDERS = [
         ],
     },
     {
+        "bank": "Banco de Costa Rica (BCR)",
+        "emails": ["mensajero@bancobcr.com"],
+    },
+    {
         "bank": "Banco Promerica",
         "emails": ["info@promerica.fi.cr"],
     },

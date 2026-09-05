@@ -43,6 +43,15 @@ HISTORY_LIMIT = 10              # prior messages given to the agent as context
 MAX_AUDIO_BYTES = 3 * 1024 * 1024
 TRANSCRIBE_MODEL = os.environ.get("OPENAI_TRANSCRIBE_MODEL", "whisper-1")
 
+# Respuestas por audio (espejo): si el cliente mandó nota de voz Y el switch
+# WHATSAPP_AUDIO_REPLIES=1, la respuesta va como texto + nota de voz (TTS).
+# Apagar = poner el flag en 0 en .env y reiniciar este servicio.
+TTS_MODEL = os.environ.get("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+TTS_VOICE = os.environ.get("OPENAI_TTS_VOICE", "nova")
+# Respuestas más largas que esto solo van en texto: leídas en voz alta suenan
+# mal (tablas/listas) y acota el costo del TTS.
+TTS_MAX_CHARS = 1500
+
 FALLBACK_REPLY = (
     "Lo siento, no pude procesar tu consulta en este momento. "
     "Intenta de nuevo en unos minutos."
@@ -232,6 +241,42 @@ def transcribe_audio(media_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Respuestas por audio (TTS)
+# ---------------------------------------------------------------------------
+
+def _audio_replies_enabled() -> bool:
+    return os.environ.get("WHATSAPP_AUDIO_REPLIES", "0").strip() == "1"
+
+
+def synthesize_speech(text: str) -> bytes:
+    """Convierte la respuesta del agente a voz (OGG/Opus) con TTS de OpenAI."""
+    import openai
+
+    resp = openai.OpenAI().audio.speech.create(
+        model=TTS_MODEL,
+        voice=TTS_VOICE,
+        input=text,
+        response_format="opus",
+    )
+    return resp.content
+
+
+def send_voice_reply(phone: str, reply: str) -> None:
+    """Best-effort: sintetiza y envía la respuesta como nota de voz.
+
+    Nunca lanza — el texto ya fue entregado; el audio es un extra y su fallo
+    solo se registra en el log.
+    """
+    try:
+        audio = synthesize_speech(reply)
+        media_id = whatsapp_client.upload_media(audio, "audio/ogg", "respuesta.ogg")
+        whatsapp_client.send_audio(phone, media_id)
+        log.info(f"Voice reply sent ({len(audio)} bytes)")
+    except Exception as e:
+        log.error(f"Voice reply failed (text already sent): {e}")
+
+
+# ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
 
@@ -262,6 +307,10 @@ def process_message(conn, row):
     reply = agent.answer_query(conn, client, history, content)
 
     whatsapp_client.send_text(row["phone"], reply, preview_url=False)
+    # Espejo: el cliente habló en audio → respondemos también en audio (además
+    # del texto, que conserva montos/listas legibles).
+    if row.get("media_id") and _audio_replies_enabled() and len(reply) <= TTS_MAX_CHARS:
+        send_voice_reply(row["phone"], reply)
     insert_reply(conn, row["client_id"], row["phone"], reply)
     mark_done(conn, row["id"])
     log.info(

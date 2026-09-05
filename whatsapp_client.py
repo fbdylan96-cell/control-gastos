@@ -185,6 +185,47 @@ def send_text(to: str, body: str, preview_url: bool = True) -> dict:
     })
 
 
+def upload_media(data: bytes, mime_type: str, filename: str = "media") -> str:
+    """Upload a media file to the Cloud API and return its media id.
+
+    Separate endpoint from /messages (multipart form, not JSON). The id is
+    then referenced from a message payload (e.g. send_audio). Uploaded media
+    persists ~30 days on Meta's side.
+    """
+    phone_id = os.environ.get("META_WA_PHONE_ID", "").strip()
+    if not phone_id:
+        raise RuntimeError("META_WA_PHONE_ID env var is not set")
+    token = os.environ.get("META_WA_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError("META_WA_TOKEN env var is not set")
+
+    resp = requests.post(
+        f"https://graph.facebook.com/{API_VERSION}/{phone_id}/media",
+        headers={"Authorization": f"Bearer {token}"},
+        data={"messaging_product": "whatsapp"},
+        files={"file": (filename, data, mime_type)},
+        timeout=60,
+    )
+    if not resp.ok:
+        log.error(f"WhatsApp media upload failed [{resp.status_code}]: {resp.text}")
+        resp.raise_for_status()
+    return resp.json()["id"]
+
+
+def send_audio(to: str, media_id: str) -> dict:
+    """Send an audio message from an uploaded media id (24h window only).
+
+    OGG/Opus mono renders as a voice note (waveform bubble); other formats
+    arrive as a playable audio attachment.
+    """
+    return _post({
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "audio",
+        "audio": {"id": media_id},
+    })
+
+
 def get_media(media_id: str) -> tuple[bytes, str]:
     """Download an inbound media object (e.g. a voice note) from the Cloud API.
 

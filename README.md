@@ -41,7 +41,7 @@ Gmail (label: 'Finanzas Personales')
 | `tools/finance.py` | Portafolio de funciones de consulta financiera parametrizadas (resúmenes de ingresos/gastos, top de gastos, gasto mensual por categoría, presupuestos). Sin efectos secundarios; alimentan los dashboards web y el agente de WhatsApp |
 | `tools/agent.py` | Agente de IA (Claude, tool-use sobre `tools/finance.py`) que responde consultas financieras en lenguaje natural. El scope se inyecta server-side: el modelo nunca puede consultar datos de otro cliente |
 | `whatsapp_agent_worker.py` | Proceso worker (systemd) del chat de consulta: reclama mensajes encolados por el webhook (`FOR UPDATE SKIP LOCKED`), corre el agente y responde por WhatsApp. Ver `WHATSAPP_AI_CHAT_SETUP.md` |
-| `rate_scheduler.py` / `exchange_rate_update.py` | Actualización diaria (L-V 23:30) de tipos de cambio → `core.exchange_rates`. CRC y EUR del Ministerio de Hacienda (referencia oficial del BCCR); las otras 41 monedas de open.er-api |
+| `rate_scheduler.py` / `exchange_rate_update.py` | Actualización diaria (L-V 23:30) de tipos de cambio → `core.exchange_rates`. CRC y EUR del Ministerio de Hacienda (referencia oficial del BCCR); las otras 42 monedas de open.er-api |
 | `credit_products_update.py` | Comparador de productos crediticios del BCCR/MEIC (dashboard público de Power BI) → `core.credit_products`. Corre como job quincenal (días 8 y 22, 06:00) dentro de `rate_scheduler.py`. Guarda solo el último período: cada corrida reemplaza la tabla. Ver `extractorbccrmeic.md` y `test_credit_products.py` |
 | `advisory_scheduler.py` | Seguimiento de asesoría por WhatsApp: resumen semanal de presupuesto y seguimiento mensual del fondo de emergencia para clientes con plan (`core.client_advisory_plans`); idempotente vía `core.advisory_message_log`. Ver `PLAN_asesoria.md` |
 | `create.sql` | Esquema completo de la base de datos (fuente de verdad de nombres de columnas) |
@@ -75,7 +75,7 @@ Componentes adicionales:
 | `client_investment` | Clientes con servicio de inversión; token OAuth de Alpaca cifrado |
 | `categories` | Taxonomía de categorías/subcategorías por negocio (con presupuesto mensual opcional). `('Otros', NULL)` siempre existe y está protegida |
 | `category_rules` | Reglas comercio→categoría del motor de clasificación |
-| `exchange_rates` | Tipos de cambio diarios (44 monedas): CRC/EUR del Ministerio de Hacienda, el resto de open.er-api |
+| `exchange_rates` | Tipos de cambio diarios (45 monedas): CRC/EUR del Ministerio de Hacienda, el resto de open.er-api |
 | `transactions_raw` | Correo crudo, una fila por notificación |
 | `transactions_enriched` | Campos extraídos: monto, moneda, comercio, tipo, monto en colones |
 | `transactions_classified` | Categoría/subcategoría asignada y método (`rules` / `openai`) |

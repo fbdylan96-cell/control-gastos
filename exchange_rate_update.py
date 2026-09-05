@@ -34,12 +34,13 @@ log = logging.getLogger(__name__)
 # Universo de monedas que seguimos. Viene del catálogo que publicaba el
 # servicio del BCCR; se conserva tal cual para no cambiar lo que ya está en
 # core.exchange_rates. VERIFICADO 2026-08-16: open.er-api cubre las 44.
+# GBP agregada 2026-09-05 (el catálogo del BCCR nunca la incluyó).
 TRACKED_CURRENCIES = (
     'USD', 'CRC', 'EUR', 'JPY', 'CHF', 'CAD', 'MXN', 'SEK', 'KRW', 'GTQ',
     'HNL', 'NIO', 'DKK', 'NOK', 'ARS', 'COP', 'BRL', 'DOP', 'HKD', 'TWD',
     'BOB', 'CLP', 'RUB', 'PEN', 'CNY', 'PLN', 'LKR', 'BDT', 'THB', 'IDR',
     'AED', 'MAD', 'ILS', 'INR', 'EGP', 'NZD', 'SGD', 'VND', 'ZAR', 'JOD',
-    'MYR', 'BHD', 'VES', 'UYU',
+    'MYR', 'BHD', 'VES', 'UYU', 'GBP',
 )
 
 # Monedas imprescindibles para el negocio: CRC convierte TODO a colones y EUR

@@ -22,6 +22,7 @@ Run with:  python whatsapp_agent_worker.py
 
 import logging
 import os
+import re
 import time
 import uuid
 
@@ -47,7 +48,16 @@ TRANSCRIBE_MODEL = os.environ.get("OPENAI_TRANSCRIBE_MODEL", "whisper-1")
 # WHATSAPP_AUDIO_REPLIES=1, la respuesta va como texto + nota de voz (TTS).
 # Apagar = poner el flag en 0 en .env y reiniciar este servicio.
 TTS_MODEL = os.environ.get("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
-TTS_VOICE = os.environ.get("OPENAI_TTS_VOICE", "nova")
+TTS_VOICE = os.environ.get("OPENAI_TTS_VOICE", "coral")
+# Solo lo soporta gpt-4o-mini-tts (los modelos tts-1* lo rechazan). Dirige el
+# estilo de habla; la lectura de ₡ además se fuerza en _speakable() porque las
+# instrucciones son probabilísticas.
+TTS_INSTRUCTIONS = os.environ.get(
+    "OPENAI_TTS_INSTRUCTIONS",
+    "Hablá en español latinoamericano neutro, con tono natural, cálido y "
+    "conversacional, como un asesor financiero de confianza. Los montos son "
+    "colones costarricenses: decí siempre 'colones', nunca 'pesos'.",
+)
 # Respuestas más largas que esto solo van en texto: leídas en voz alta suenan
 # mal (tablas/listas) y acota el costo del TTS.
 TTS_MAX_CHARS = 1500
@@ -248,15 +258,28 @@ def _audio_replies_enabled() -> bool:
     return os.environ.get("WHATSAPP_AUDIO_REPLIES", "0").strip() == "1"
 
 
+_CRC_AMOUNT_RE = re.compile(r"₡\s*([\d.,]+)")
+
+
+def _speakable(text: str) -> str:
+    """Ajusta el texto SOLO para el audio (el mensaje de texto va intacto):
+    '₡50,000' → '50,000 colones', porque el TTS tiende a leer ₡ como 'pesos'."""
+    return _CRC_AMOUNT_RE.sub(r"\1 colones", text)
+
+
 def synthesize_speech(text: str) -> bytes:
     """Convierte la respuesta del agente a voz (OGG/Opus) con TTS de OpenAI."""
     import openai
 
+    kwargs = {}
+    if not TTS_MODEL.startswith("tts-"):
+        kwargs["instructions"] = TTS_INSTRUCTIONS
     resp = openai.OpenAI().audio.speech.create(
         model=TTS_MODEL,
         voice=TTS_VOICE,
-        input=text,
+        input=_speakable(text),
         response_format="opus",
+        **kwargs,
     )
     return resp.content
 

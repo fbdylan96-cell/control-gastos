@@ -260,33 +260,38 @@ def _audio_replies_enabled() -> bool:
     return os.environ.get("WHATSAPP_AUDIO_REPLIES", "0").strip() == "1"
 
 
-# Montos en colones tal como los escribe el agente: "₡2 000" (espacio de miles,
-# también NBSP/narrow-NBSP), "₡50,000.00", "₡2.000", "₡2000".
-_CRC_AMOUNT_RE = re.compile(
-    r"₡\s*("
-    "\d{1,3}(?:[   ]\d{3})+(?:[.,]\d{1,2})?"  # 2 000 / 1 234 567,50
-    r"|\d(?:[\d.,]*\d)?"                                 # 2000 / 50,000.00 / 2.000
-    r")"
-)
+# Montos tal como los escribe el agente: "₡2 000" / "$15 500" (espacio de
+# miles, tambien NBSP/narrow-NBSP), "₡50,000.00", "₡2.000", y a veces en
+# negrita de WhatsApp (*₡15 500*).
+_SEP = "[   ]"  # espacio, NBSP, narrow-NBSP
+_NUM = "\d{1,3}(?:" + _SEP + "\d{3})+(?:[.,]\d{1,2})?|\d(?:[\d.,]*\d)?"
+_AMOUNT_RE = re.compile("([₡$€])\s*(" + _NUM + ")")
+_GROUPED_NUM_RE = re.compile("(?<!\d)\d{1,3}(?:" + _SEP + "\d{3})+(?:[.,]\d{1,2})?(?!\d)")
+_CURRENCY_WORD = {"₡": "colones", "$": "dólares", "€": "euros"}
 
 
-def _spoken_amount(num: str) -> str:
-    """Normaliza un monto a cantidad plana para que el TTS lo lea como número
-    ('2000' → 'dos mil') y no dígito por dígito ('2 000' → 'dos cero cero cero')."""
-    compact = re.sub("[   ]", "", num)
+def _spoken_amount(num: str, currency_word: str = "") -> str:
+    """Normaliza un monto a cantidad plana para que el TTS lo lea como numero
+    ('2000' -> 'dos mil') y no digito por digito ('2 000' -> 'dos cero cero cero')."""
+    compact = re.sub(_SEP, "", num)
     m = re.match(r"^(\d[\d.,]*?)[.,](\d{1,2})$", compact)  # 1-2 decimales al final
     integer, dec = (m.group(1), m.group(2)) if m else (compact, "")
-    integer = re.sub(r"[.,]", "", integer)  # el resto de [.,] es agrupación de miles
-    if dec and int(dec) != 0:
-        return f"{integer}.{dec} colones"
-    return f"{integer} colones"
+    integer = re.sub(r"[.,]", "", integer)  # el resto de [.,] es agrupacion de miles
+    amount = f"{integer}.{dec}" if dec and int(dec) != 0 else integer
+    return f"{amount} {currency_word}".strip()
 
 
 def _speakable(text: str) -> str:
     """Ajusta el texto SOLO para el audio (el mensaje de texto va intacto):
-    '₡2 000' → '2000 colones', porque el TTS lee ₡ como 'pesos' y los números
-    con separadores los deletrea."""
-    return _CRC_AMOUNT_RE.sub(lambda m: _spoken_amount(m.group(1)), text)
+    quita negritas de WhatsApp, convierte montos a cantidad + moneda hablada
+    ('*₡2 000*' -> '2000 colones', '$15 500' -> '15500 dolares') y compacta
+    numeros agrupados con espacios aun sin simbolo (el TTS lee ₡ como 'pesos'
+    y deletrea numeros con separadores)."""
+    text = text.replace("*", "")
+    text = _AMOUNT_RE.sub(
+        lambda m: _spoken_amount(m.group(2), _CURRENCY_WORD[m.group(1)]), text
+    )
+    return _GROUPED_NUM_RE.sub(lambda m: _spoken_amount(m.group(0)), text)
 
 
 def synthesize_speech(text: str) -> bytes:

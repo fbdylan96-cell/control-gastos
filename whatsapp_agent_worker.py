@@ -56,7 +56,9 @@ TTS_INSTRUCTIONS = os.environ.get(
     "OPENAI_TTS_INSTRUCTIONS",
     "Hablá en español latinoamericano neutro, con tono natural, cálido y "
     "conversacional, como un asesor financiero de confianza. Los montos son "
-    "colones costarricenses: decí siempre 'colones', nunca 'pesos'.",
+    "colones costarricenses: decí siempre 'colones', nunca 'pesos'. Leé los "
+    "números como cantidades completas ('2000' es 'dos mil'), nunca dígito "
+    "por dígito.",
 )
 # Respuestas más largas que esto solo van en texto: leídas en voz alta suenan
 # mal (tablas/listas) y acota el costo del TTS.
@@ -258,13 +260,33 @@ def _audio_replies_enabled() -> bool:
     return os.environ.get("WHATSAPP_AUDIO_REPLIES", "0").strip() == "1"
 
 
-_CRC_AMOUNT_RE = re.compile(r"₡\s*([\d.,]+)")
+# Montos en colones tal como los escribe el agente: "₡2 000" (espacio de miles,
+# también NBSP/narrow-NBSP), "₡50,000.00", "₡2.000", "₡2000".
+_CRC_AMOUNT_RE = re.compile(
+    r"₡\s*("
+    "\d{1,3}(?:[   ]\d{3})+(?:[.,]\d{1,2})?"  # 2 000 / 1 234 567,50
+    r"|\d(?:[\d.,]*\d)?"                                 # 2000 / 50,000.00 / 2.000
+    r")"
+)
+
+
+def _spoken_amount(num: str) -> str:
+    """Normaliza un monto a cantidad plana para que el TTS lo lea como número
+    ('2000' → 'dos mil') y no dígito por dígito ('2 000' → 'dos cero cero cero')."""
+    compact = re.sub("[   ]", "", num)
+    m = re.match(r"^(\d[\d.,]*?)[.,](\d{1,2})$", compact)  # 1-2 decimales al final
+    integer, dec = (m.group(1), m.group(2)) if m else (compact, "")
+    integer = re.sub(r"[.,]", "", integer)  # el resto de [.,] es agrupación de miles
+    if dec and int(dec) != 0:
+        return f"{integer}.{dec} colones"
+    return f"{integer} colones"
 
 
 def _speakable(text: str) -> str:
     """Ajusta el texto SOLO para el audio (el mensaje de texto va intacto):
-    '₡50,000' → '50,000 colones', porque el TTS tiende a leer ₡ como 'pesos'."""
-    return _CRC_AMOUNT_RE.sub(r"\1 colones", text)
+    '₡2 000' → '2000 colones', porque el TTS lee ₡ como 'pesos' y los números
+    con separadores los deletrea."""
+    return _CRC_AMOUNT_RE.sub(lambda m: _spoken_amount(m.group(1)), text)
 
 
 def synthesize_speech(text: str) -> bytes:

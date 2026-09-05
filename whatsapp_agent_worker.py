@@ -264,9 +264,9 @@ def _audio_replies_enabled() -> bool:
 # miles, tambien NBSP/narrow-NBSP), "₡50,000.00", "₡2.000", y a veces en
 # negrita de WhatsApp (*₡15 500*).
 _SEP = "[   ]"  # espacio, NBSP, narrow-NBSP
-_NUM = "\d{1,3}(?:" + _SEP + "\d{3})+(?:[.,]\d{1,2})?|\d(?:[\d.,]*\d)?"
-_AMOUNT_RE = re.compile("([₡$€])\s*(" + _NUM + ")")
-_GROUPED_NUM_RE = re.compile("(?<!\d)\d{1,3}(?:" + _SEP + "\d{3})+(?:[.,]\d{1,2})?(?!\d)")
+_NUM = r"\d{1,3}(?:" + _SEP + r"\d{3})+(?:[.,]\d{1,2})?|\d(?:[\d.,]*\d)?"
+_AMOUNT_RE = re.compile(r"([₡$€])\s*(" + _NUM + ")")
+_GROUPED_NUM_RE = re.compile(r"(?<!\d)\d{1,3}(?:" + _SEP + r"\d{3})+(?:[.,]\d{1,2})?(?!\d)")
 _CURRENCY_WORD = {"₡": "colones", "$": "dólares", "€": "euros"}
 
 

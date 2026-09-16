@@ -14,6 +14,7 @@ from openai import OpenAI
 import db as _db
 from banks.bac import BacParser
 from banks.bcr import BcrParser
+from banks.bn import BnParser
 from banks.davibank import DavibankParser
 from banks.grupomutual import GrupoMutualParser
 from banks.mucap import MucapParser
@@ -29,6 +30,7 @@ log = logging.getLogger(__name__)
 _BANK_PARSERS = [
     BacParser(),
     BcrParser(),
+    BnParser(),
     DavibankParser(),
     PromericaParser(),
     GrupoMutualParser(),

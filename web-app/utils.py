@@ -83,6 +83,10 @@ BANK_NOTIFICATION_SENDERS = [
         "emails": ["mensajero@bancobcr.com"],
     },
     {
+        "bank": "Banco Nacional (BN)",
+        "emails": ["bncontacto@bncr.fi.cr"],
+    },
+    {
         "bank": "Banco Promerica",
         "emails": ["info@promerica.fi.cr"],
     },

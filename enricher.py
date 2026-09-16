@@ -44,6 +44,12 @@ _BANK_KEYWORDS = {
     "davibank": [r"davibank", r"davivienda"],
     "grupomutual": [r"grupo\s*mutual", r"grupomutual"],
     "mucap": [r"\bmucap\b"],
+    # BN va de ultimo: "banco nacional" aparece como banco DESTINO en los
+    # SINPE de otros bancos, asi que los bancos con keyword propia deben
+    # ganar primero (detect_bank devuelve el primer match). Sin parser aun
+    # (falta muestra de mas formatos): el correo cae al fallback de IA igual,
+    # pero al menos queda registrado de que banco viene.
+    "bn": [r"bncr\.fi\.cr", r"banco\s+nacional"],
 }
 
 # ---------------------------------------------------------------------------

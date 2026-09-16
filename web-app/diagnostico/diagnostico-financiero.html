@@ -75,6 +75,7 @@ section.phase.visible{display:block}
 .row input[type=text]{border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-family:var(--sans);font-size:14px;width:100%;background:#FDFDFB}
 .row input.amount{font-family:var(--mono);font-size:14px;text-align:right;border:1px solid var(--line);border-radius:7px;padding:9px 11px;width:100%;background:#FDFDFB}
 .row input:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+.row input.est::placeholder{color:var(--gold);font-style:italic;opacity:1}
 .row .del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px;border-radius:6px}
 .row .del:hover{color:var(--red);background:#FBEEE9}
 .add-row{background:none;border:1px dashed var(--line);color:var(--accent);font-family:var(--sans);font-weight:600;font-size:13px;padding:9px;border-radius:7px;cursor:pointer;width:100%;margin-top:4px}
@@ -436,6 +437,58 @@ function curSelHTML(cat, id, cur='crc'){
     <option value="usd" ${cur === 'usd' ? 'selected' : ''} ${TC || cur === 'usd' ? '' : 'disabled'}>$</option>
   </select>`;
 }
+// ---------- Matemática de deudas ----------
+// Portado de ruta-financiera.html (Paso 2) para que el diagnóstico y la ruta
+// den el mismo número. El espejo en Python vive en diagnostico_report.py.
+function _pago(saldo, i, meses){
+  return i === 0 ? saldo / meses : saldo * i / (1 - Math.pow(1 + i, -meses));
+}
+function tasaImplicita(saldo, cuota, meses){
+  // Cuando el cliente sabe cuota y plazo pero no la tasa. Bisección: la cuota
+  // necesaria crece de forma monótona con la tasa.
+  if(!(saldo > 0) || !(cuota > 0) || !(meses > 0)) return null;
+  const ratio = cuota * meses / saldo;
+  if(ratio < 1 - 1e-9) return null;               // ni siquiera cubre el capital
+  if(ratio < 1 + 1e-9) return 0;                  // promoción a 0% (existen en CR)
+  let lo = 0, hi = 1;                             // 0% a 1200% anual
+  if(_pago(saldo, hi, meses) < cuota) return null;
+  for(let k = 0; k < 100; k++){
+    const mid = (lo + hi) / 2;
+    if(_pago(saldo, mid, meses) < cuota) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2 * 12 * 100;
+}
+// Tasa que se usa en los cálculos: la declarada o, si no vino, la despejada.
+// Solo se adopta si es plausible (>150% los datos están mal y una tasa
+// inventada contaminaría el KPI). No muta el state: lo que se guarda sigue
+// siendo lo que el cliente escribió, y el servidor recalcula igual.
+const TASA_ESTIMADA_MAX = 150;
+function tasaEfectiva(d){
+  if(d.tasa > 0) return {tasa: d.tasa, estimada: false};
+  const t = tasaImplicita(d.saldo, d.cuota, d.plazo);
+  if(t !== null && t <= TASA_ESTIMADA_MAX) return {tasa: t, estimada: true};
+  return {tasa: 0, estimada: false};
+}
+// Intereses acumulados en los próximos 12 meses pagando solo la cuota actual.
+// Si la cuota no cubre los intereses el saldo crece y el interés se capitaliza;
+// si la deuda se cancela antes del mes 12, el interés deja de correr.
+// Devuelve el monto en la MONEDA DE LA DEUDA (el llamador convierte).
+function interesAnual(d){
+  let saldo = d.saldo || 0, total = 0;
+  const i = tasaEfectiva(d).tasa / 100 / 12, cuota = d.cuota || 0;
+  for(let m = 0; m < 12 && saldo > 0.5; m++){
+    const int = saldo * i;
+    total += int;
+    saldo = saldo + int - cuota;
+  }
+  return total;
+}
+// La cuota no cubre ni el interés del mes: el saldo crece aunque pague puntual.
+function deudaCrece(d){
+  const i = tasaEfectiva(d).tasa / 100 / 12;
+  return d.saldo > 0 && i > 0 && (d.cuota || 0) <= d.saldo * i;
+}
+
 // Los nombres pueden venir de la base (modo editor): escapar siempre antes de
 // meterlos en un atributo.
 function escAttr(v){
@@ -497,6 +550,28 @@ function delRow(cat, id){
   recalc();
 }
 
+// El campo de tasa es opcional: cuando se puede despejar de saldo/cuota/plazo
+// se muestra la estimación como placeholder (gris = no lo escribió el cliente).
+// Se refresca en cada recalc porque depende de los otros tres campos.
+function syncTasasEstimadas(){
+  for(const d of state.deudas){
+    const row = document.getElementById(d.id);
+    if(!row) continue;
+    const input = row.querySelectorAll('input')[2];
+    if(!input) continue;
+    const {tasa, estimada} = tasaEfectiva(d);
+    input.classList.toggle('est', estimada);
+    if(estimada){
+      input.placeholder = '≈ ' + tasa.toFixed(1);
+      input.title = 'Tasa estimada a partir del saldo, la cuota y el plazo. '
+                  + 'Si conoce la tasa real, escríbala.';
+    } else {
+      input.placeholder = '%';
+      input.title = '';
+    }
+  }
+}
+
 // ---------- Totals (siempre en colones) ----------
 function sum(cat, field='amount'){ return state[cat].reduce((a,x)=>a+toCRC(x[field]||0, x.currency),0); }
 
@@ -509,6 +584,11 @@ function recalc(){
   const gastos = tf+tv+th+tc;
   const flujo = ti - gastos;
   const patri = ta - td;
+  // Interés de los próximos 12 meses: se simula en la moneda de cada deuda y
+  // se convierte el resultado (la simulación escala lineal con saldo y cuota,
+  // así que convertir antes o después da el mismo número).
+  const tia = state.deudas.reduce((a,d)=>a+toCRC(interesAnual(d), d.currency),0);
+  syncTasasEstimadas();
 
   document.getElementById('sub-fijos').textContent = fmt(tf);
   document.getElementById('sub-variables').textContent = fmt(tv);
@@ -524,7 +604,7 @@ function recalc(){
   document.getElementById('lg-gas').textContent = fmt(gastos);
   lgF.textContent = fmt(flujo); lgF.className = 'amt ' + (flujo>=0?'pos':'neg');
   lgP.textContent = fmt(patri); lgP.className = 'amt ' + (patri>=0?'pos':'neg');
-  return {tf,tv,th,ti,ta,td,tc,gastos,flujo,patri};
+  return {tf,tv,th,ti,ta,td,tc,gastos,flujo,patri,tia};
 }
 
 // ---------- Navigation ----------
@@ -546,18 +626,23 @@ function buildSummary(){
   const t = recalc();
   const feMonto = toCRC(parseAmt(document.getElementById('fe-monto').value),
                         document.getElementById('fe-moneda').value);
-  const gastosBasicos = t.tf + t.tv; // proxy for essential expenses
+  // Quedarse sin trabajo no suspende las cuotas: el colchón tiene que cubrir
+  // también la deuda, o el número sale optimista.
+  const gastosBasicos = t.tf + t.tv + t.tc;
   const mesesFE = gastosBasicos>0 ? feMonto/gastosBasicos : 0;
   const pctDeuda = t.ti>0 ? (t.tc/t.ti)*100 : 0;
   const pctHormiga = t.ti>0 ? (t.th/t.ti)*100 : 0;
   const tasaAhorro = t.ti>0 ? (t.flujo/t.ti)*100 : 0;
+  const ingresoAnual = t.ti * 12;
+  const pctInteres = ingresoAnual>0 ? (t.tia/ingresoAnual)*100 : 0;
 
   const kpis = [
     {lbl:'Flujo de caja mensual', val:fmt(t.flujo), sub: t.ti>0? tasaAhorro.toFixed(0)+'% del ingreso' :'', cls: t.flujo>0?'good':'bad'},
     {lbl:'Patrimonio neto', val:fmt(t.patri), sub:'Activos − deudas', cls: t.patri>=0?'good':'bad'},
     {lbl:'Carga de deuda', val:pctDeuda.toFixed(0)+'%', sub:'Cuotas / ingreso · ideal < 35%', cls: pctDeuda<35?'good':(pctDeuda<45?'mid':'bad')},
-    {lbl:'Fondo de emergencia', val:mesesFE.toFixed(1)+' meses', sub:'Meta: 3–6 meses de gastos', cls: mesesFE>=3?'good':(mesesFE>=1?'mid':'bad')},
-    {lbl:'Gastos no necesarios', val:pctHormiga.toFixed(0)+'%', sub:'del ingreso mensual', cls: pctHormiga<8?'good':(pctHormiga<15?'mid':'bad')}
+    {lbl:'Fondo de emergencia', val:mesesFE.toFixed(1)+' meses', sub:'Meta: 3–6 meses de gastos + cuotas', cls: mesesFE>=3?'good':(mesesFE>=1?'mid':'bad')},
+    {lbl:'Gastos no necesarios', val:pctHormiga.toFixed(0)+'%', sub:'del ingreso mensual', cls: pctHormiga<8?'good':(pctHormiga<15?'mid':'bad')},
+    {lbl:'Interés anual', val:fmt(t.tia), sub: ingresoAnual>0 ? pctInteres.toFixed(1)+'% del ingreso anual · sano < 5%' : 'Próximos 12 meses', cls: pctInteres<5?'good':(pctInteres<=10?'mid':'bad')}
   ];
   document.getElementById('kpis').innerHTML = kpis.map(k=>
     `<div class="kpi ${k.cls}"><div class="lbl">${k.lbl}</div><div class="val">${k.val}</div><div class="sub">${k.sub}</div></div>`).join('');
@@ -591,8 +676,12 @@ function buildSummary(){
   const ret = document.getElementById('retiro').value;
   if(ret==='no') alerts.push('🔴 <b>No cotiza para el retiro:</b> tema clave de largo plazo.');
   if(ret==='solo-obligatorio') alerts.push('🟢 <b>Retiro:</b> cotiza el régimen obligatorio — evaluar si conviene aporte voluntario.');
-  const deudasCaras = state.deudas.filter(d=>d.tasa>=30);
-  if(deudasCaras.length) alerts.push('🔴 <b>Deuda(s) con tasa ≥30%:</b> '+deudasCaras.map(d=>d.name||'sin nombre').join(', ')+'. Candidatas a pago acelerado.');
+  const deudasCaras = state.deudas.filter(d=>tasaEfectiva(d).tasa>=30);
+  if(deudasCaras.length) alerts.push('🔴 <b>Deuda(s) con tasa ≥30%:</b> '+deudasCaras.map(d=>escAttr(d.name)||'sin nombre').join(', ')+'. Candidatas a pago acelerado.');
+  const deudasQueCrecen = state.deudas.filter(deudaCrece);
+  if(deudasQueCrecen.length) alerts.push('🔴 <b>Deuda(s) que crecen aunque pague puntual:</b> '+deudasQueCrecen.map(d=>escAttr(d.name)||'sin nombre').join(', ')+'. La cuota no cubre ni el interés del mes — renegociar antes de cualquier plan de pago.');
+  if(pctInteres > 10) alerts.push('🔴 <b>Intereses altos ('+pctInteres.toFixed(1)+'% del ingreso anual):</b> '+fmt(t.tia)+' al año solo en intereses. Prioridad de refinanciamiento.');
+  else if(pctInteres >= 5) alerts.push('🟡 <b>Intereses moderados ('+pctInteres.toFixed(1)+'% del ingreso anual):</b> vale la pena revisar tasas y orden de pago.');
   if(!alerts.length) alerts.push('🟢 Sin señales críticas evidentes. La sesión se puede enfocar en optimización y metas.');
   document.getElementById('alertas').innerHTML = alerts.map(a=>'<li>'+a+'</li>').join('');
 }

@@ -937,7 +937,11 @@ function simularSnowball(ds, extraMensual, cadencia){
 function simDeudas(){
   const ds = ordenarDeudas();
   if (!ds.length) return;
-  const malas = ds.filter(d => (d.cuota || 0) <= d.saldo * (d.tasa || 0) / 100 / 12);
+  // La tasa > 0 evita marcar como "crece" una fila a medio llenar (sin tasa ni
+  // cuota): sin interés el saldo no puede subir. Mismo criterio que deudaCrece()
+  // en diagnostico-financiero.html.
+  const malas = ds.filter(d => (d.tasa || 0) > 0
+                            && (d.cuota || 0) <= d.saldo * d.tasa / 100 / 12);
   const cad = Number($("simCad").value);
   const flujo = Number($("simFlujo").value) || 0;
   const extra = Math.max(0, Number($("simMonto").value) || 0);  // se acumula mensual, se abona por cadencia

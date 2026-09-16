@@ -323,6 +323,93 @@ def clasificacion_general(t):
             "nombre": nombre, "desc": desc}
 
 
+# ── Matemática de deudas ─────────────────────────────────────────────────────
+# Espejo de las funciones homónimas en diagnostico/diagnostico-financiero.html
+# (y en ruta-financiera.html): la pantalla y el reporte tienen que dar el mismo
+# número. Aquí los montos ya vienen en colones — aplicar_tipo_cambio() corre
+# antes, en run.py — así que no hay conversión que hacer.
+
+TASA_ESTIMADA_MAX = 150  # arriba de esto los datos están mal; no se adopta
+
+
+def _pago(saldo, i, meses):
+    """Cuota que amortiza `saldo` en `meses` a la tasa mensual `i`."""
+    if i == 0:
+        return saldo / meses
+    return saldo * i / (1 - (1 + i) ** -meses)
+
+
+def _tasa_implicita(saldo, cuota, meses):
+    """Tasa anual (%) despejada de saldo/cuota/plazo por bisección, o None.
+
+    La cuota necesaria crece de forma monótona con la tasa, así que bisecar
+    sobre la tasa mensual converge sin derivadas.
+    """
+    if not (saldo > 0 and cuota > 0 and meses > 0):
+        return None
+    ratio = cuota * meses / saldo
+    if ratio < 1 - 1e-9:
+        return None          # ni siquiera cubre el capital
+    if ratio < 1 + 1e-9:
+        return 0.0           # promoción a 0% (existen en CR)
+    lo, hi = 0.0, 1.0        # 0% a 1200% anual
+    if _pago(saldo, hi, meses) < cuota:
+        return None
+    for _ in range(100):
+        mid = (lo + hi) / 2
+        if _pago(saldo, mid, meses) < cuota:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2 * 12 * 100
+
+
+def tasa_efectiva(d):
+    """(tasa_anual_pct, estimada) — la declarada o la despejada del plazo.
+
+    El campo de tasa es opcional en el formulario y la copia promete estimarla.
+    Se recalcula acá en vez de viajar en el payload: así pantalla y reporte
+    derivan del mismo input crudo y no se pueden desincronizar.
+    """
+    tasa = d.get("tasa") or 0
+    if tasa > 0:
+        return float(tasa), False
+    t = _tasa_implicita(d.get("saldo") or 0, d.get("cuota") or 0,
+                        d.get("plazo") or 0)
+    if t is not None and t <= TASA_ESTIMADA_MAX:
+        return float(t), True
+    return 0.0, False
+
+
+def interes_anual_deuda(d):
+    """Intereses de los próximos 12 meses pagando solo la cuota actual.
+
+    Si la cuota no cubre el interés el saldo crece y el interés se capitaliza;
+    si la deuda se cancela antes del mes 12, el interés deja de correr.
+    """
+    saldo = d.get("saldo") or 0
+    cuota = d.get("cuota") or 0
+    i = tasa_efectiva(d)[0] / 100 / 12
+    total = 0.0
+    for _ in range(12):
+        if saldo <= 0.5:
+            break
+        interes = saldo * i
+        total += interes
+        saldo = saldo + interes - cuota
+    return total
+
+
+def deuda_crece(d):
+    """La cuota no cubre ni el interés del mes: el saldo sube pagando puntual."""
+    i = tasa_efectiva(d)[0] / 100 / 12
+    return (d.get("saldo") or 0) > 0 and i > 0 and (d.get("cuota") or 0) <= (d["saldo"] * i)
+
+
+def deudas_que_crecen(p):
+    return [d for d in p["deudas"] if deuda_crece(d)]
+
+
 def _totales(p):
     tf = sum(r["amount"] for r in p["fijos"])
     tv = sum(r["amount"] for r in p["variables"])
@@ -332,10 +419,15 @@ def _totales(p):
     td = sum(r["saldo"] for r in p["deudas"])
     tc = sum(r["cuota"] for r in p["deudas"])
     gastos = tf + tv + th + tc
+    intereses = sum(interes_anual_deuda(d) for d in p["deudas"])
+    ingreso_anual = ti * 12
     return {
         "fijos": tf, "variables": tv, "hormiga": th, "ingresos": ti,
         "activos": ta, "deudas": td, "cuotas": tc, "gastos": gastos,
         "flujo": ti - gastos, "patrimonio": ta - td,
+        # Interés de los próximos 12 meses y su peso sobre el ingreso anual.
+        "intereses": intereses,
+        "pct_intereses": (intereses / ingreso_anual * 100) if ingreso_anual > 0 else 0.0,
     }
 
 
@@ -443,10 +535,14 @@ def build_excel(p):
     put(4, row, "Cuota mensual", font=_FONT_BOLD, align="right")
     put(5, row, "Plazo (meses)", font=_FONT_BOLD, align="right")
     row += 1
+    hay_estimadas = False
     for d in p["deudas"]:
-        put(1, row, d["name"] or "(sin nombre)")
+        tasa, estimada = tasa_efectiva(d)
+        hay_estimadas = hay_estimadas or estimada
+        nombre = d["name"] or "(sin nombre)"
+        put(1, row, nombre + (" (tasa estimada)" if estimada else ""))
         put(2, row, d["saldo"], fmt=_CRC_FMT, align="right")
-        put(3, row, d["tasa"] / 100.0, fmt="0.0%", align="right")
+        put(3, row, tasa / 100.0, fmt="0.0%", align="right")
         put(4, row, d["cuota"], fmt=_CRC_FMT, align="right")
         # .get: los payloads guardados antes de agregar el campo no lo traen.
         put(5, row, d.get("plazo") or None, fmt="0", align="right")
@@ -460,13 +556,32 @@ def build_excel(p):
     put(5, row, None, fill=_FILL_SUBTOTAL)
     row += 1
 
+    row += 1
+    item("Intereses próximos 12 meses", t["intereses"])
+    if t["ingresos"] > 0:
+        item("Intereses / ingreso anual (sano < 5%)",
+             t["pct_intereses"] / 100.0, fmt="0.0%")
+    if hay_estimadas:
+        item("Nota sobre tasas estimadas",
+             "La tasa marcada como estimada se despejó del saldo, la cuota y el "
+             "plazo. Si la cuota incluye seguros o comisiones, la tasa estimada "
+             "queda por encima de la real.", fmt="General")
+    crecen = deudas_que_crecen(p)
+    if crecen:
+        item("Deudas que crecen aunque pague puntual",
+             ", ".join(d["name"] or "(sin nombre)" for d in crecen)
+             + " — la cuota no cubre ni el interés del mes.",
+             fmt="General", bold=True)
+
     section("PROTECCIÓN Y RETIRO")
     item("¿Tiene fondo de emergencia?",
          {"si": "Sí", "no": "No"}.get(p["fe_tiene"], "—"), fmt="General")
     item("Monto disponible para emergencias", p["fe_monto"])
-    gastos_basicos = t["fijos"] + t["variables"]
+    # Quedarse sin trabajo no suspende las cuotas: el colchón tiene que cubrir
+    # también la deuda, o el número sale optimista.
+    gastos_basicos = t["fijos"] + t["variables"] + t["cuotas"]
     if gastos_basicos > 0:
-        item("Meses de gastos cubiertos (meta 3–6)",
+        item("Meses de gastos + cuotas cubiertos (meta 3–6)",
              p["fe_monto"] / gastos_basicos, fmt="0.0")
     item("Seguros vigentes", ", ".join(p["seguros"]) or "Ninguno reportado",
          fmt="General")
@@ -644,12 +759,38 @@ def _html_clasificacion(t):
       </table>"""
 
 
+def _html_deudas_crecen(p):
+    """Aviso cuando la cuota no cubre ni el interés: el saldo sube pagando puntual."""
+    crecen = deudas_que_crecen(p)
+    if not crecen:
+        return ""
+    nombres = ", ".join(html_mod.escape(d["name"] or "(sin nombre)") for d in crecen)
+    return f"""
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+             style="margin-top:16px;">
+        <tr>
+          <td width="4" bgcolor="#B3402E" style="border-radius:4px 0 0 4px;font-size:0;">&nbsp;</td>
+          <td bgcolor="#FBEEE9" style="padding:14px 16px;border-radius:0 4px 4px 0;
+              font-family:Helvetica,Arial,sans-serif;">
+            <div style="font-size:13px;font-weight:bold;color:#1B1C20;">
+              Deuda que crece aunque pague puntual</div>
+            <div style="font-size:12.5px;color:#4B5563;padding-top:3px;line-height:1.5;">
+              {nombres} — la cuota no cubre ni el interés del mes, así que el saldo
+              sube. Es el primer tema a resolver en la sesión.</div>
+          </td>
+        </tr>
+      </table>"""
+
+
 def _build_html(p, fecha_larga, archivo):
     """Cuerpo HTML del correo con la marca neto (logo inline cid:netologo)."""
     esc = html_mod.escape
     t = _totales(p)
     flujo_color = "#3A9C8E" if t["flujo"] >= 0 else "#B3402E"
     patri_color = "#3A9C8E" if t["patrimonio"] >= 0 else "#B3402E"
+    pct_int = t["pct_intereses"]
+    int_color = ("#3A9C8E" if pct_int < 5 else "#EFA91A" if pct_int <= 10 else "#B3402E")
+    int_sub = f"{pct_int:.1f}% del ingreso anual" if t["ingresos"] > 0 else "Próximos 12 meses"
 
     def kpi(label, value, color="#1B1C20"):
         return f"""
@@ -722,7 +863,15 @@ def _build_html(p, fecha_larga, archivo):
           <td width="2%">&nbsp;</td>
           <td width="49%" valign="top">{kpi("Patrimonio neto", _fmt_crc(t["patrimonio"]), patri_color)}</td>
         </tr>
+        <tr><td colspan="3" height="10" style="font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr>
+          <td width="49%" valign="top">{kpi("Interés / año", _fmt_crc(t["intereses"]), int_color)}</td>
+          <td width="2%">&nbsp;</td>
+          <td width="49%" valign="top">{kpi("Intereses / ingreso", int_sub, int_color)}</td>
+        </tr>
       </table>
+
+      {_html_deudas_crecen(p)}
 
       {_html_personalidades(p)}
 

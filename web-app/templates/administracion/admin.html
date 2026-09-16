@@ -106,6 +106,40 @@
 
         .tab-content { display: none; }
         .tab-content.active { display: block; }
+        /* ─── Tab Enlaces ─── */
+        .link-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 12px;
+        }
+        .link-item {
+            display: block;
+            padding: 14px 16px;
+            border: 1px solid var(--gray-300);
+            border-radius: var(--radius);
+            text-decoration: none;
+            background: var(--white);
+            transition: border-color .15s, box-shadow .15s, transform .15s;
+        }
+        .link-item:hover {
+            border-color: var(--primary-light);
+            box-shadow: var(--shadow);
+            transform: translateY(-1px);
+        }
+        .link-item .li-name {
+            font-size: 14px; font-weight: 600; color: var(--primary);
+            display: flex; align-items: center; gap: 7px;
+        }
+        .link-item .li-desc { font-size: 12.5px; color: var(--gray-600); margin-top: 4px; line-height: 1.45; }
+        .link-item .li-url  { font-size: 11.5px; color: var(--gray-500); margin-top: 6px; word-break: break-all; }
+        /* Endpoints: no son links navegables (POST), se copian */
+        .endpoint-row {
+            display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+            padding: 11px 14px; border: 1px solid var(--gray-300);
+            border-radius: var(--radius); margin-bottom: 8px; background: var(--gray-100);
+        }
+        .endpoint-row .ep-name { font-size: 13px; font-weight: 600; color: var(--gray-800); min-width: 150px; }
+        .endpoint-row .ep-url  { font-size: 12px; color: var(--gray-700); font-family: ui-monospace, Menlo, Consolas, monospace; flex: 1; word-break: break-all; }
 
         /* ── Card ── */
         .card {
@@ -421,6 +455,7 @@
         <button class="tab-btn"        onclick="switchTab('clientes',   this)">Clientes Existentes</button>
         <button class="tab-btn"        onclick="switchTab('modificar',  this)">Modificar Datos</button>
         <button class="tab-btn"        onclick="switchTab('facturacion', this)">Facturación</button>
+        <button class="tab-btn"        onclick="switchTab('enlaces',    this)">Enlaces</button>
     </div>
 
     <!-- ══ Tab: Individuos ══ -->
@@ -596,6 +631,95 @@
         </div>
     </div>
 
+    <!-- ══ Tab: Enlaces ══ -->
+    <div class="tab-content" id="tab-enlaces">
+        <div class="card">
+            <div class="card-title">Portales de neto</div>
+            <div class="link-grid">
+                <a class="link-item" href="/persona/" target="_blank" rel="noopener">
+                    <div class="li-name">👤 Portal Persona</div>
+                    <div class="li-desc">Clientes individuales: transacciones, dashboard, reportes, categorías.</div>
+                </a>
+                <a class="link-item" href="/empresa/" target="_blank" rel="noopener">
+                    <div class="li-name">👨‍👩‍👧 Portal Familia / Empresa</div>
+                    <div class="li-desc">Admin del negocio: miembros, categorías compartidas, reportes.</div>
+                </a>
+                <a class="link-item" href="/calculadora/" target="_blank" rel="noopener">
+                    <div class="li-name">📊 Calculadora de Retiro</div>
+                    <div class="li-desc">Estrategias de inversión (Streamlit). Requiere sesión de administrador.</div>
+                </a>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+            <div class="card-title">Asesoría</div>
+            <div class="link-grid">
+                <a class="link-item" href="/diagnostico/" target="_blank" rel="noopener">
+                    <div class="li-name">📝 Diagnóstico Financiero</div>
+                    <div class="li-desc">Formulario público de captación. Es el link que se comparte al prospecto.</div>
+                </a>
+                <a class="link-item" href="/diagnostico/editar" target="_blank" rel="noopener">
+                    <div class="li-name">✏️ Diagnóstico — editor del asesor</div>
+                    <div class="li-desc">Carga un diagnóstico ya enviado para corregirlo y reenviarlo.</div>
+                </a>
+                <a class="link-item" href="/ruta" target="_blank" rel="noopener">
+                    <div class="li-name">🗺️ Ruta Financiera</div>
+                    <div class="li-desc">Plan de pago de deudas y proyecciones para la sesión de asesoría.</div>
+                </a>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+            <div class="card-title">Consolas externas</div>
+            <div class="link-grid">
+                <a class="link-item" href="https://business.facebook.com/" target="_blank" rel="noopener">
+                    <div class="li-name">💬 Meta Business / WhatsApp</div>
+                    <div class="li-desc">Plantillas, número, calidad y límites del canal de WhatsApp.</div>
+                </a>
+                <a class="link-item" href="https://www.paypal.com/billing/subscriptions" target="_blank" rel="noopener">
+                    <div class="li-name">💳 PayPal — Suscripciones</div>
+                    <div class="li-desc">Suscripciones activas y cobros reales de los clientes.</div>
+                </a>
+                <a class="link-item" href="https://developer.paypal.com/dashboard/" target="_blank" rel="noopener">
+                    <div class="li-name">🔧 PayPal — Developer</div>
+                    <div class="li-desc">Credenciales, webhooks y ambiente sandbox.</div>
+                </a>
+                <a class="link-item" href="https://console.aws.amazon.com/" target="_blank" rel="noopener">
+                    <div class="li-name">☁️ AWS</div>
+                    <div class="li-desc">EC2 (webapp, lector de correo, workers) y RDS Postgres.</div>
+                </a>
+                <a class="link-item" href="https://app.alpaca.markets/connect" target="_blank" rel="noopener">
+                    <div class="li-name">📈 Alpaca</div>
+                    <div class="li-desc">Portafolios de inversión de los clientes (solo lectura desde la app).</div>
+                </a>
+                <a class="link-item" href="https://github.com/fbdylan96-cell/control-gastos" target="_blank" rel="noopener">
+                    <div class="li-name">🐙 Repositorio</div>
+                    <div class="li-desc">Código fuente, historial y despliegues.</div>
+                </a>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+            <div class="card-title">Endpoints para configurar servicios</div>
+            <p style="font-size:13px;color:var(--gray-600);margin:-10px 0 16px">
+                No se abren en el navegador (solo reciben POST). Se copian para pegarlos
+                en la consola de Meta o PayPal cuando haya que reconfigurar un webhook.</p>
+            <div id="endpointList"></div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+            <div class="card-title">Páginas legales</div>
+            <div class="link-grid">
+                <a class="link-item" href="/terminos" target="_blank" rel="noopener">
+                    <div class="li-name">📄 Términos y condiciones</div>
+                </a>
+                <a class="link-item" href="/privacidad-datos" target="_blank" rel="noopener">
+                    <div class="li-name">🔒 Privacidad de datos</div>
+                </a>
+            </div>
+        </div>
+    </div>
+
 </div><!-- /container -->
 
 <!-- ─── Password Modal ─── -->
@@ -659,6 +783,40 @@ function switchTab(name, btn) {
     if (name === 'clientes') loadClients();
     if (name === 'modificar') loadEditClients();
     if (name === 'facturacion') loadDiscountCodes();
+    if (name === 'enlaces')     renderEndpoints();
+}
+
+// ════════════ TAB ENLACES ════════════
+// Los endpoints se arman sobre el origen actual: así el panel muestra la URL
+// correcta sin depender de un dominio escrito a mano.
+const ENDPOINTS = [
+    ['Webhook de WhatsApp', '/whatsapp/webhook',
+     'Meta → WhatsApp → Configuración → Webhook (callback URL).'],
+    ['Webhook de PayPal', '/paypal/webhook',
+     'PayPal Developer → tu app → Webhooks. Sin el webhook id en el .env se rechazan todos.'],
+    ['Reclasificación por correo', '/reclassify',
+     'Lo usan los botones de los correos de notificación.'],
+];
+
+function renderEndpoints() {
+    const wrap = document.getElementById('endpointList');
+    if (!wrap || wrap.dataset.ready) return;
+    wrap.innerHTML = ENDPOINTS.map(([name, path, desc]) => {
+        const url = window.location.origin + path;
+        return `<div class="endpoint-row">
+                    <span class="ep-name">${name}</span>
+                    <span class="ep-url">${url}</span>
+                    <button class="btn btn-outline btn-sm" onclick="copyEndpoint(this, '${url}')">Copiar</button>
+                </div>
+                <div style="font-size:12px;color:var(--gray-600);margin:-4px 0 12px 14px">${desc}</div>`;
+    }).join('');
+    wrap.dataset.ready = '1';
+}
+
+function copyEndpoint(btn, url) {
+    navigator.clipboard.writeText(url)
+        .then(() => toast('Endpoint copiado'))
+        .catch(() => toast('No se pudo copiar', 'error'));
 }
 
 // ════════════ HELPERS ════════════

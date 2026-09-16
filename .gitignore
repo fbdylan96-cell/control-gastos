@@ -26,3 +26,8 @@ PROMPT_*.md
 .idea/
 .claude/settings.local.json
 **/.claude/settings.local.json
+
+# Videotutoriales: se sirven desde el servidor, no viajan en el repo
+# (pesan decenas de MB). Subirlos con scp a /srv/control-gastos/web-app/static/video/
+web-app/static/video/*
+!web-app/static/video/.gitkeep

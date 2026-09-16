@@ -93,6 +93,15 @@
           <i class="bi bi-box-arrow-up-right"></i>Filtros y direcciones bloqueadas
         </a>
       </div>
+      <div class="cfg-video">
+        <video controls preload="metadata" playsinline
+               src="{{ url_for('static', filename='video/setup_reenvio_gmail.mp4') }}">
+          Tu navegador no puede reproducir el video. Seguí los pasos escritos aquí abajo.
+        </video>
+      </div>
+      <p class="cfg-note" style="margin:0 0 1rem">
+        Videotutorial (1:51). Si preferís leer, los mismos pasos están aquí abajo.</p>
+
       <ol class="cfg-steps">
         <li>Abre <strong>Configuración → Reenvío y correo POP/IMAP</strong> y haz clic
           en <em>«Agregar una dirección de reenvío»</em>. Pega esta dirección y confirma
@@ -241,6 +250,19 @@
   .cfg-steps { margin: 0; padding-left: 1.25rem; line-height: 1.7; }
   .cfg-steps li { margin-bottom: 0.6rem; }
   .cfg-note { font-size: 0.85rem; color: var(--ink-soft, #777); margin: 0.75rem 0 0; }
+
+  /* Videotutorial. preload=metadata a proposito: sin eso el navegador bajaria
+     los 11 MB al abrir el tab, aunque el cliente nunca le de play. */
+  .cfg-video {
+    max-width: 720px;
+    margin: 0 0 0.5rem;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 10px;
+    overflow: hidden;
+    background: #000;
+    line-height: 0;
+  }
+  .cfg-video video { width: 100%; height: auto; aspect-ratio: 16 / 9; display: block; }
   .copy-btn.copied { border-color: var(--green, #3a8); color: var(--green, #3a8); }
 
   /* Inline copy-paste field embedded inside a step */

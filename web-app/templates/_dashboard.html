@@ -1,0 +1,165 @@
+{#
+  Dashboard de inicio — partial compartido por persona y empresa.
+  Espera `dash_urls` = {resumen, categoria, descargar} (lo pasa la ruta).
+  El JS va en _dashboard_scripts.html (mismo contrato).
+#}
+<style>
+  .dash-period { font-size: 0.88rem; color: rgba(21,25,30,0.6); }
+  .dash-period b { color: var(--dark); font-weight: 600; }
+  .dash-band { margin-bottom: 1.25rem; }
+  .dash-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .dash-stat-value { font-size: 1.55rem; }
+  .dash-delta { font-weight: 600; }
+  .dash-delta.up { color: #0ca30c; }
+  .dash-delta.down { color: #d03b3b; }
+
+  .dash-split { display: grid; grid-template-columns: 5fr 7fr; gap: 12px; }
+  .dash-hint { font-weight: 400; font-size: 0.78rem; color: rgba(21,25,30,0.45); }
+
+  .donut-wrap { position: relative; height: 240px; }
+  .donut-center {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; pointer-events: none; text-align: center;
+  }
+  .donut-center .pct { font-size: 1.6rem; font-weight: 700; line-height: 1; color: var(--dark); }
+  .donut-center .name { font-size: 0.76rem; color: rgba(21,25,30,0.6); margin-top: 4px; max-width: 120px; }
+  .donut-center .amt { font-size: 0.8rem; font-weight: 600; margin-top: 2px; }
+
+  .dash-legend { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .dash-legend button {
+    width: 100%; display: grid; grid-template-columns: 12px 1fr auto auto; align-items: center; gap: 10px;
+    background: none; border: 0; border-radius: 8px; padding: 6px 8px; text-align: left;
+    color: var(--dark); cursor: pointer; font: inherit; font-size: 0.85rem;
+  }
+  .dash-legend button:hover, .dash-legend button:focus-visible { background: var(--mint-muted); outline: none; }
+  .dash-legend button[aria-pressed="true"] { background: var(--mint-muted); font-weight: 600; }
+  .dash-legend .sw { width: 12px; height: 12px; border-radius: 3px; }
+  .dash-legend .n { color: rgba(21,25,30,0.6); font-variant-numeric: tabular-nums; font-size: 0.8rem; }
+  .dash-legend .p { font-variant-numeric: tabular-nums; font-size: 0.8rem; min-width: 46px; text-align: right; }
+
+  .dash-detail-title { display: flex; align-items: center; gap: 8px; }
+  .dash-detail-title .sw { width: 10px; height: 10px; border-radius: 3px; }
+  .bars-wrap { position: relative; height: 210px; }
+  .dash-top3 td.num, .dash-top3 th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .dash-top3 .rank { color: rgba(21,25,30,0.45); width: 22px; }
+
+  .dash-budgets { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .budget { background: #fff; border: 1px solid rgba(21,25,30,0.08); border-radius: 12px; padding: 14px 16px; display: grid; gap: 8px; }
+  .budget .row1 { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .budget .cat { font-weight: 600; font-size: 0.88rem; }
+  .budget .cat small { font-weight: 400; color: rgba(21,25,30,0.6); }
+  .pill { font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .pill.ok { background: rgba(12,163,12,0.12); color: #0ca30c; }
+  .pill.over { background: rgba(208,59,59,0.12); color: #d03b3b; }
+  .pill.none { background: var(--mint-muted); color: rgba(21,25,30,0.6); }
+  .meter { height: 8px; background: #E4E8E6; border-radius: 999px; overflow: hidden; position: relative; }
+  .meter .fill { height: 100%; border-radius: 999px; background: #0ca30c; }
+  .meter .fill.over { background: #d03b3b; }
+  .meter .cap { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--dark); opacity: .55; }
+  .budget .txt { font-size: 0.8rem; color: rgba(21,25,30,0.6); font-variant-numeric: tabular-nums; }
+  .budget .txt b { color: var(--dark); font-weight: 600; }
+
+  .hist-legend { display: flex; gap: 16px; font-size: 0.8rem; color: rgba(21,25,30,0.6); margin-bottom: 8px; flex-wrap: wrap; }
+  .hist-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .hist-legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+  .hist-lines { position: relative; height: 230px; }
+  .hist-rate { position: relative; height: 130px; }
+  .dash-since { font-size: 0.78rem; color: rgba(21,25,30,0.45); margin: 10px 0 0; }
+  .dash-empty { color: rgba(21,25,30,0.5); font-size: 0.85rem; padding: 1.5rem 0; text-align: center; }
+
+  @media (max-width: 900px) { .dash-split { grid-template-columns: 1fr; } }
+</style>
+
+<div class="page-heading" style="justify-content:space-between; flex-wrap:wrap; gap:8px;">
+  <span><i class="bi bi-bar-chart-line"></i>Dashboard</span>
+  <span class="dash-period" id="dashPeriod">Cargando…</span>
+</div>
+
+<!-- 1. Mes en curso -->
+<div class="dash-band dash-tiles">
+  <div class="dash-stat">
+    <div class="dash-stat-label">Ingresos detectados</div>
+    <div class="dash-stat-value" id="tIng">—</div>
+    <div class="dash-stat-unit"><span class="dash-delta" id="dIng"></span> <span id="dIngTxt"></span></div>
+  </div>
+  <div class="dash-stat">
+    <div class="dash-stat-label">Gastos detectados</div>
+    <div class="dash-stat-value" id="tGas">—</div>
+    <div class="dash-stat-unit"><span class="dash-delta" id="dGas"></span> <span id="dGasTxt"></span></div>
+  </div>
+  <div class="dash-stat">
+    <div class="dash-stat-label">Tasa de ahorro</div>
+    <div class="dash-stat-value" id="tTasa">—</div>
+    <div class="dash-stat-unit" id="tTasaTxt"></div>
+  </div>
+</div>
+
+<!-- 2. Composición + detalle -->
+<div class="dash-band dash-split">
+  <div class="ei-card">
+    <div class="ei-card-header" style="justify-content:space-between;">
+      <span><i class="bi bi-pie-chart"></i>¿En qué se va el gasto?</span>
+      <span class="dash-hint" id="donutHint"></span>
+    </div>
+    <div class="ei-card-body">
+      <div id="donutEmpty" class="dash-empty" style="display:none;">Todavía no hay gastos en lo que va del mes.</div>
+      <div id="donutBlock">
+        <div class="donut-wrap">
+          <canvas id="donut" aria-label="Participación de cada categoría en el gasto del mes"></canvas>
+          <div class="donut-center">
+            <div class="pct" id="cPct"></div>
+            <div class="name" id="cName"></div>
+            <div class="amt" id="cAmt"></div>
+          </div>
+        </div>
+        <ul class="dash-legend" id="legend"></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="ei-card">
+    <div class="ei-card-header" style="justify-content:space-between;">
+      <span class="dash-detail-title"><i class="sw" id="dSw"></i><span id="dTitle">Tocá una categoría</span></span>
+      <span class="dash-hint">últimos 6 meses</span>
+    </div>
+    <div class="ei-card-body">
+      <div class="bars-wrap"><canvas id="bars" aria-label="Gasto mensual de la categoría seleccionada"></canvas></div>
+      <div style="overflow-x:auto; margin-top:14px;">
+        <table class="ei-table dash-top3" aria-label="Comercios con más gasto en el mes">
+          <thead><tr><th colspan="2">Dónde se gastó más este mes</th><th class="num">Movs.</th><th class="num">Monto</th></tr></thead>
+          <tbody id="top3"><tr><td colspan="4" class="muted">—</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 3. Presupuestos -->
+<div class="dash-band">
+  <div style="font-weight:700; font-size:0.9rem; margin-bottom:0.6rem;">Presupuestos del mes</div>
+  <div class="dash-budgets" id="budgets"></div>
+</div>
+
+<!-- 4. Histórico -->
+<div class="dash-band ei-card">
+  <div class="ei-card-header" style="justify-content:space-between; flex-wrap:wrap; gap:8px;">
+    <span><i class="bi bi-graph-up"></i>Últimos 12 meses <span class="dash-hint">ingreso, gasto y tasa de ahorro por mes</span></span>
+    <a class="btn-outline-ei" id="btnDescargar" href="{{ dash_urls.descargar }}"
+       title="Excel con ingresos y gastos por categoría y subcategoría, mes a mes">
+      <i class="bi bi-download"></i>Descargar datos (Excel)
+    </a>
+  </div>
+  <div class="ei-card-body">
+    <div id="histEmpty" class="dash-empty" style="display:none;">Todavía no hay transacciones registradas.</div>
+    <div id="histBlock">
+      <div class="hist-legend">
+        <span><i style="background:#1F4D8E"></i>Ingresos</span>
+        <span><i style="background:#3A9C8E"></i>Gastos</span>
+      </div>
+      <div class="hist-lines"><canvas id="lines" aria-label="Ingresos y gastos mensuales"></canvas></div>
+      <div class="hist-legend" style="margin-top:12px;"><span><i style="background:rgba(21,25,30,0.45)"></i>Tasa de ahorro (%)</span></div>
+      <div class="hist-rate"><canvas id="rate" aria-label="Tasa de ahorro mensual"></canvas></div>
+      <p class="dash-since" id="histSince"></p>
+    </div>
+  </div>
+</div>

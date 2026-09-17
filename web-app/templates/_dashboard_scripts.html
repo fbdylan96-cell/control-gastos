@@ -1,0 +1,239 @@
+{# JS del dashboard de inicio. Contrato: dash_urls = {resumen, categoria, descargar}. #}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  const URL_RESUMEN   = "{{ dash_urls.resumen }}";
+  const URL_CATEGORIA = "{{ dash_urls.categoria }}";
+
+  // Paleta categórica en orden fijo (validada para daltonismo); "Otros" va en
+  // gris a propósito: es lo que falta por clasificar, no una categoría más.
+  const PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#4a3aa7", "#0d366b", "#8a6d3b"];
+  const OTROS = "#A9B0AE";
+  const INK2 = "rgba(21,25,30,0.6)", INK3 = "rgba(21,25,30,0.45)", GRID = "#E4E8E6";
+  const BLUE = "#1F4D8E", TEAL = "#3A9C8E", CRIT = "#d03b3b";
+  const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+  const MESES_LARGO = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+                       "septiembre", "octubre", "noviembre", "diciembre"];
+
+  const $ = (id) => document.getElementById(id);
+  const crc = (n) => "₡" + Math.round(n).toLocaleString("es-CR");
+  const crcK = (n) => n >= 1e6 ? (n / 1e6).toLocaleString("es-CR", {maximumFractionDigits: 1}) + " M"
+                               : Math.round(n / 1000).toLocaleString("es-CR") + " mil";
+  const pct1 = (n) => n.toLocaleString("es-CR", {maximumFractionDigits: 1}) + " %";
+  const ym = (s) => { const [y, m] = s.split("-"); return MESES[+m - 1] + " " + y.slice(2); };
+  const label = (c) => c.subcategory ? `${c.category} / ${c.subcategory}` : c.category;
+  const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  let CATS = [], selected = 0, diasRestantes = 0;
+  let donut = null, bars = null, lines = null, rate = null;
+
+  // ── 1. Mes en curso ──────────────────────────────────────────────────────
+  function renderMes(d) {
+    const hoy = new Date(d.hoy + "T00:00:00");
+    diasRestantes = d.mes.dias_restantes;
+    $("dashPeriod").innerHTML = `En lo que va de <b>${MESES_LARGO[hoy.getMonth()]}</b> · 1 al ${hoy.getDate()}`
+      + (diasRestantes > 0 ? ` · ${diasRestantes} día${diasRestantes === 1 ? "" : "s"} por delante` : "");
+
+    const a = d.mes.actual, p = d.mes.mismo_tramo_anterior;
+    $("tIng").textContent = crc(a.ingresos);
+    $("tGas").textContent = crc(a.gastos);
+    $("tTasa").textContent = a.tasa_ahorro === null ? "—" : pct1(a.tasa_ahorro);
+    $("tTasaTxt").textContent = a.tasa_ahorro === null
+      ? "sin ingresos detectados este mes"
+      : (a.tasa_ahorro >= 0 ? "de lo que ingresó quedó sin gastar" : "gastaste más de lo que ingresó");
+
+    const delta = (el, txt, now, before, goodWhenUp) => {
+      if (!before) { el.textContent = ""; txt.textContent = "sin dato del mes anterior"; return; }
+      const v = (now - before) / before * 100, up = v >= 0;
+      el.textContent = (up ? "▲ " : "▼ ") + Math.abs(v).toFixed(0) + " %";
+      el.className = "dash-delta " + ((up === goodWhenUp) ? "up" : "down");
+      txt.textContent = "vs. mismo tramo del mes anterior";
+    };
+    delta($("dIng"), $("dIngTxt"), a.ingresos, p.ingresos, true);
+    delta($("dGas"), $("dGasTxt"), a.gastos, p.gastos, false);
+  }
+
+  // ── 2. Composición + detalle ─────────────────────────────────────────────
+  function colorOf(i) {
+    const c = CATS[i];
+    return (c.category === "Otros" && !c.subcategory) ? OTROS : c.color;
+  }
+
+  function renderDonut(d) {
+    CATS = d.categorias;
+    const total = CATS.reduce((s, c) => s + c.total, 0);
+    $("donutHint").textContent = CATS.length ? `${crc(total)} en ${CATS.length} categoría${CATS.length === 1 ? "" : "s"}` : "";
+    if (!CATS.length) {
+      $("donutEmpty").style.display = "block"; $("donutBlock").style.display = "none";
+      $("dTitle").textContent = "Sin gastos este mes";
+      return;
+    }
+    // Un color por categoría en orden fijo; Otros no consume color.
+    let k = 0;
+    CATS.forEach(c => { c.color = (c.category === "Otros" && !c.subcategory) ? OTROS : PALETTE[k++ % PALETTE.length]; });
+
+    if (donut) donut.destroy();
+    donut = new Chart($("donut"), {
+      type: "doughnut",
+      data: { labels: CATS.map(label), datasets: [{
+        data: CATS.map(c => c.total), backgroundColor: CATS.map((_, i) => colorOf(i)),
+        borderColor: "#fff", borderWidth: 2, hoverOffset: 8, offset: CATS.map(() => 0),
+      }]},
+      options: {
+        cutout: "64%", responsive: true, maintainAspectRatio: false, layout: { padding: 10 },
+        plugins: { legend: { display: false },
+          tooltip: { callbacks: { label: (ctx) => ` ${crc(ctx.parsed)} · ${pct1(CATS[ctx.dataIndex].share_pct)}` } } },
+        onClick: (_, els) => { if (els.length) select(els[0].index); },
+        onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
+      },
+    });
+
+    $("legend").innerHTML = CATS.map((c, i) => `
+      <li><button type="button" data-i="${i}" aria-pressed="false">
+        <span class="sw" style="background:${colorOf(i)}"></span>
+        <span>${esc(label(c))}</span>
+        <span class="n">${crc(c.total)}</span>
+        <span class="p">${pct1(c.share_pct)}</span>
+      </button></li>`).join("");
+    $("legend").querySelectorAll("button").forEach(b => b.addEventListener("click", () => select(+b.dataset.i)));
+
+    // Arranca en la categoría más grande que no sea "Otros" (si existe).
+    const first = CATS.findIndex(c => !(c.category === "Otros" && !c.subcategory));
+    select(first >= 0 ? first : 0);
+  }
+
+  async function select(i) {
+    selected = i;
+    const c = CATS[i];
+    $("cPct").textContent = pct1(c.share_pct);
+    $("cName").textContent = label(c);
+    $("cAmt").textContent = crc(c.total);
+    $("dSw").style.background = colorOf(i);
+    $("dTitle").textContent = label(c);
+    donut.data.datasets[0].offset = CATS.map((_, k) => k === i ? 10 : 0);
+    donut.update();
+    $("legend").querySelectorAll("button").forEach((b, k) => b.setAttribute("aria-pressed", String(k === i)));
+
+    const params = new URLSearchParams({ cat: c.category, sub: c.subcategory || "" });
+    const res = await fetch(`${URL_CATEGORIA}?${params}`);
+    const d = await res.json();
+    if (selected !== i) return;   // el usuario ya tocó otra
+
+    $("top3").innerHTML = d.comercios.length ? d.comercios.map((m, k) => `
+      <tr><td class="rank">${k + 1}</td>
+          <td>${m.merchant ? esc(m.merchant) : '<span class="muted">Sin comercio (SINPE / transferencia)</span>'}</td>
+          <td class="num">${m.count}</td><td class="num">${crc(m.total)}</td></tr>`).join("")
+      : '<tr><td colspan="4" class="muted">Sin gastos este mes.</td></tr>';
+
+    const datasets = [{ label: "Gasto", data: d.serie.map(p => p.total), backgroundColor: colorOf(i), borderRadius: 4, maxBarThickness: 44 }];
+    if (d.budget !== null) datasets.push({
+      type: "line", label: "Presupuesto", data: d.serie.map(() => d.budget),
+      borderColor: CRIT, borderWidth: 2, borderDash: [6, 4], pointRadius: 0, fill: false,
+    });
+    if (bars) bars.destroy();
+    bars = new Chart($("bars"), {
+      type: "bar",
+      data: { labels: d.serie.map(p => ym(p.month)), datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: d.budget !== null, position: "bottom", labels: { color: INK2, boxWidth: 12, font: { size: 11 } } },
+          tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${crc(ctx.parsed.y)}` } },
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: INK2, font: { size: 11 } }, border: { color: GRID } },
+          y: { beginAtZero: true, grid: { color: GRID }, border: { display: false },
+               ticks: { color: INK3, font: { size: 11 }, callback: crcK, maxTicksLimit: 5 } },
+        },
+      },
+    });
+  }
+
+  // ── 3. Presupuestos ──────────────────────────────────────────────────────
+  function renderBudgets(list) {
+    if (!list.length) {
+      $("budgets").innerHTML = '<div class="dash-empty" style="text-align:left; padding:0.5rem 0;">'
+        + 'Ninguna categoría tiene presupuesto. Se define en <b>Categorías</b>.</div>';
+      return;
+    }
+    $("budgets").innerHTML = list.map(b => {
+      const pct = b.budget ? b.spent / b.budget * 100 : 0;
+      const over = b.spent > b.budget;
+      const resto = b.budget - b.spent;
+      const name = b.subcategory ? `${esc(b.category)} <small>/ ${esc(b.subcategory)}</small>` : esc(b.category);
+      const dias = `${diasRestantes} día${diasRestantes === 1 ? "" : "s"}`;
+      let pill, txt;
+      if (b.spent === 0) {
+        pill = '<span class="pill none">Sin gastos todavía</span>';
+        txt = `Presupuesto de <b>${crc(b.budget)}</b> intacto con ${dias} por delante.`;
+      } else if (over) {
+        pill = '<span class="pill over">Superado</span>';
+        txt = `Llevás <b>${crc(b.spent)}</b> de ${crc(b.budget)} — te pasaste por <b>${crc(-resto)}</b> (${pct.toFixed(0)} %).`;
+      } else {
+        pill = '<span class="pill ok">Dentro del presupuesto</span>';
+        txt = `Llevás <b>${crc(b.spent)}</b> de ${crc(b.budget)} (${pct.toFixed(0)} %). Te quedan <b>${crc(resto)}</b> para ${dias}.`;
+      }
+      const cap = over ? `<span class="cap" style="left:${(b.budget / b.spent * 100).toFixed(1)}%"></span>` : "";
+      return `<div class="budget">
+        <div class="row1"><span class="cat">${name}</span>${pill}</div>
+        <div class="meter"><div class="fill${over ? " over" : ""}" style="width:${Math.min(pct, 100)}%"></div>${cap}</div>
+        <div class="txt">${txt}</div>
+      </div>`;
+    }).join("");
+  }
+
+  // ── 4. Histórico: dos paneles, un eje X ──────────────────────────────────
+  function renderHist(h) {
+    if (!h.primera_transaccion) {
+      $("histEmpty").style.display = "block"; $("histBlock").style.display = "none";
+      return;
+    }
+    const labels = h.serie.map(p => ym(p.month));
+    const common = { responsive: true, maintainAspectRatio: false,
+                     interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false } } };
+    const xAxis = { grid: { display: false }, ticks: { color: INK2, font: { size: 11 } }, border: { color: GRID } };
+
+    if (lines) lines.destroy();
+    lines = new Chart($("lines"), {
+      type: "line",
+      data: { labels, datasets: [
+        { label: "Ingresos", data: h.serie.map(p => p.ingresos), borderColor: BLUE, backgroundColor: BLUE, borderWidth: 2, pointRadius: 4, pointBorderColor: "#fff", pointBorderWidth: 2, tension: 0.25 },
+        { label: "Gastos", data: h.serie.map(p => p.gastos), borderColor: TEAL, backgroundColor: TEAL, borderWidth: 2, pointRadius: 4, pointBorderColor: "#fff", pointBorderWidth: 2, tension: 0.25 },
+      ]},
+      options: { ...common,
+        plugins: { ...common.plugins, tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${crc(ctx.parsed.y)}` } } },
+        scales: { x: xAxis, y: { beginAtZero: true, grid: { color: GRID }, border: { display: false },
+                                 ticks: { color: INK3, font: { size: 11 }, callback: crcK, maxTicksLimit: 5 } } } },
+    });
+
+    if (rate) rate.destroy();
+    const tasas = h.serie.map(p => p.tasa_ahorro);
+    rate = new Chart($("rate"), {
+      type: "bar",
+      data: { labels, datasets: [{ label: "Tasa de ahorro", data: tasas, borderRadius: 3, maxBarThickness: 36,
+        backgroundColor: tasas.map(v => (v !== null && v < 0) ? CRIT : INK3) }]},
+      options: { ...common,
+        plugins: { ...common.plugins, tooltip: { callbacks: { label: (ctx) =>
+          ctx.parsed.y === null ? " Sin ingresos ese mes" : ` Tasa de ahorro: ${pct1(ctx.parsed.y)}` } } },
+        scales: { x: xAxis, y: { grid: { color: GRID }, border: { display: false },
+                                 ticks: { color: INK3, font: { size: 11 }, callback: (v) => v + " %", maxTicksLimit: 4 } } } },
+    });
+
+    const p = new Date(h.primera_transaccion + "T00:00:00");
+    const desde = new Date(h.desde + "T00:00:00");
+    $("histSince").innerHTML = h.serie.length < 12
+      ? `El histórico empieza en <b>${MESES_LARGO[desde.getMonth()]} de ${desde.getFullYear()}</b>, el mes de tu primera transacción (${p.getDate()} de ${MESES_LARGO[p.getMonth()]}).`
+      : "";
+  }
+
+  // ── Carga ────────────────────────────────────────────────────────────────
+  fetch(URL_RESUMEN).then(r => r.json()).then(d => {
+    renderMes(d);
+    renderDonut(d);
+    renderBudgets(d.presupuestos);
+    renderHist(d.historico);
+  }).catch(() => {
+    $("dashPeriod").textContent = "No se pudo cargar el dashboard. Recargá la página.";
+  });
+})();
+</script>

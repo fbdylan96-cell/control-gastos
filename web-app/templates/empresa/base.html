@@ -45,6 +45,14 @@
 
     <nav class="sidebar">
       <ul style="list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px;">
+        {% if session.business_admin %}
+        <li>
+          <a href="{{ url_for('empresa.dashboard') }}"
+             class="nav-link {% if request.endpoint == 'empresa.dashboard' %}active{% endif %}">
+            <i class="bi bi-bar-chart-line"></i>Dashboard
+          </a>
+        </li>
+        {% endif %}
         <li>
           <a href="{{ url_for('empresa.transacciones') }}"
              class="nav-link {% if request.endpoint == 'empresa.transacciones' %}active{% endif %}">
@@ -79,12 +87,6 @@
           <a href="{{ url_for('empresa.reportes') }}"
              class="nav-link {% if request.endpoint in ['empresa.reportes', 'empresa.reportes_download'] %}active{% endif %}">
             <i class="bi bi-file-earmark-spreadsheet"></i>Reportes
-          </a>
-        </li>
-        <li>
-          <a href="{{ url_for('empresa.dashboard') }}"
-             class="nav-link {% if request.endpoint == 'empresa.dashboard' %}active{% endif %}">
-            <i class="bi bi-bar-chart-line"></i>Dashboard
           </a>
         </li>
         <li>

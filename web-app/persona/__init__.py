@@ -24,6 +24,7 @@ from db import (activate_subscription_from_paypal, apply_discount_code,
                 touch_broker_credentials_used, update_subscription_from_paypal)
 from mailer import enviar_aviso_cambio_contrasena, enviar_link_reset_contrasena
 from tools import finance
+import dashboard_data
 from utils import (BANK_NOTIFICATION_SENDERS, CLIENT_NOTES_MAX_LEN,
                    clean_client_notes, load_reset_token, make_reset_token,
                    rate_limit_ok, validar_nueva_contrasena)
@@ -51,7 +52,7 @@ def login_required(f):
 @persona_bp.route("/", methods=["GET", "POST"])
 def login():
     if "user_id" in session and session.get("app") == "persona":
-        return redirect(url_for("persona.transacciones"))
+        return redirect(url_for("persona.dashboard"))
 
     error = None
     if request.method == "POST":
@@ -85,7 +86,8 @@ def login():
             session["client_name"] = user["client_name"]
             session["app"] = "persona"
             session["consent_ok"] = bool(user["data_privacy_approval"] and user["messaging_approval"])
-            return redirect(url_for("persona.transacciones"))
+            # El dashboard es lo primero que ve el cliente al entrar.
+            return redirect(url_for("persona.dashboard"))
 
     return render_template("persona/login.html", error=error)
 
@@ -768,29 +770,21 @@ def agregar_transaccion():
 @persona_bp.route("/dashboard")
 @login_required
 def dashboard():
-    return render_template("persona/dashboard.html")
+    return render_template("persona/dashboard.html", dash_urls={
+        "resumen": url_for("persona.dashboard_resumen"),
+        "categoria": url_for("persona.dashboard_categoria"),
+        "descargar": url_for("persona.dashboard_descargar"),
+    })
 
 
-@persona_bp.route("/dashboard/general")
+@persona_bp.route("/dashboard/resumen")
 @login_required
-def dashboard_general():
-    date_from, date_to = finance.resolve_range(request.args.get("range", "ultimo_anio"))
+def dashboard_resumen():
     conn = get_connection()
     try:
-        summary = finance.get_income_expense_summary(
-            conn, individual_id=session["user_id"], date_from=date_from, date_to=date_to)
-        top = finance.get_top_spending(
-            conn, individual_id=session["user_id"], date_from=date_from, date_to=date_to, limit=5)
-        categories = finance.list_categories(conn, individual_id=session["user_id"])
+        return jsonify(dashboard_data.resumen(conn, {"individual_id": session["user_id"]}))
     finally:
         conn.close()
-    return jsonify({
-        "summary": summary,
-        "top": top,
-        "categories": categories,
-        "date_from": str(date_from),
-        "date_to": str(date_to),
-    })
 
 
 @persona_bp.route("/dashboard/categoria")
@@ -800,22 +794,28 @@ def dashboard_categoria():
     subcategory = request.args.get("sub", "").strip() or None
     if not category:
         return jsonify({"error": "missing category"}), 400
-    date_from, date_to = finance.last_12_months_range(date.today())
     conn = get_connection()
     try:
-        series = finance.get_monthly_category_spending(
-            conn, individual_id=session["user_id"], category=category,
-            subcategory=subcategory, date_from=date_from, date_to=date_to)
-        budget = finance.get_category_budget(
-            conn, individual_id=session["user_id"], category=category, subcategory=subcategory)
+        return jsonify(dashboard_data.categoria(
+            conn, {"individual_id": session["user_id"]}, category, subcategory))
     finally:
         conn.close()
-    return jsonify({
-        "series": series,
-        "budget": budget,
-        "category": category,
-        "subcategory": subcategory,
-    })
+
+
+@persona_bp.route("/dashboard/descargar")
+@login_required
+def dashboard_descargar():
+    conn = get_connection()
+    try:
+        buf, filename = dashboard_data.excel(conn, {"individual_id": session["user_id"]})
+    finally:
+        conn.close()
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 # ── Inversión ─────────────────────────────────────────────────────────────────

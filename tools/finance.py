@@ -262,3 +262,137 @@ def list_categories(conn, *, individual_id=None, business_id=None):
                 (str(business_id),),
             )
         return [{"category": c, "subcategory": s} for c, s in cur.fetchall()]
+
+
+# ---------------------------------------------------------------------------
+# Section 3: dashboard de inicio (mes en curso + histórico)
+# ---------------------------------------------------------------------------
+
+def get_first_transaction_date(conn, *, individual_id=None, business_id=None):
+    """Date of the scope's earliest usable transaction, or None.
+
+    The history charts start here instead of a fixed 12 months back: a client
+    who joined in May would otherwise stare at seven empty months.
+    """
+    scope_sql, params = _scope_filter(individual_id, business_id)
+    sql = f"""
+        SELECT MIN(r.local_date::date)
+        FROM core.transactions_enriched e
+        JOIN core.transactions_raw r ON r.id = e.raw_id
+        WHERE {scope_sql} AND {_BASE_FILTERS}
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        row = cur.fetchone()
+    return row[0] if row else None
+
+
+def get_monthly_income_expense(conn, *, individual_id=None, business_id=None,
+                               date_from, date_to):
+    """Per-month {'month', 'ingresos', 'gastos', 'tasa_ahorro'} over the range.
+
+    Every month of the range is present (zeros where nothing happened);
+    tasa_ahorro is None for months without income, same rule as the summary.
+    """
+    scope_sql, params = _scope_filter(individual_id, business_id)
+    sql = f"""
+        SELECT to_char(date_trunc('month', r.local_date), 'YYYY-MM') AS ym,
+               COALESCE(SUM(e.amount_local) FILTER (WHERE e.transaction_type_guess = 'credito'), 0),
+               COALESCE(SUM(e.amount_local) FILTER (WHERE e.transaction_type_guess = 'debito'), 0)
+        FROM core.transactions_enriched e
+        JOIN core.transactions_raw r ON r.id = e.raw_id
+        WHERE {scope_sql} AND {_BASE_FILTERS}
+          AND r.local_date::date BETWEEN %s AND %s
+        GROUP BY ym
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql, params + [date_from, date_to])
+        found = {ym: (float(i), float(g)) for ym, i, g in cur.fetchall()}
+
+    out = []
+    for m in month_buckets(date_from, date_to):
+        ingresos, gastos = found.get(m, (0.0, 0.0))
+        tasa = ((ingresos - gastos) / ingresos * 100) if ingresos > 0 else None
+        out.append({"month": m, "ingresos": ingresos, "gastos": gastos, "tasa_ahorro": tasa})
+    return out
+
+
+def get_top_merchants(conn, *, individual_id=None, business_id=None,
+                      category, subcategory, date_from, date_to, limit=3):
+    """Top merchants by gasto inside one Categoría/Subcategoría.
+
+    merchant is None for movements the bank reports without one (SINPE,
+    transferencias); the caller shows those as a bucket, not as a gap.
+    """
+    scope_sql, params = _scope_filter(individual_id, business_id)
+    sql = f"""
+        SELECT c.merchant, SUM(e.amount_local) AS total, COUNT(*) AS n
+        FROM core.transactions_enriched e
+        JOIN core.transactions_raw r ON r.id = e.raw_id
+        JOIN core.transactions_classified c ON c.raw_id = e.raw_id
+        JOIN core.transactions_notifications n ON n.classified_id = c.id
+        WHERE {scope_sql} AND {_BASE_FILTERS}
+          AND e.transaction_type_guess = 'debito'
+          AND n.final_category = %s
+          AND (n.final_subcategory = %s OR (n.final_subcategory IS NULL AND %s IS NULL))
+          AND r.local_date::date BETWEEN %s AND %s
+        GROUP BY c.merchant
+        ORDER BY total DESC
+        LIMIT %s
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql, params + [category, subcategory, subcategory, date_from, date_to, limit])
+        return [{"merchant": m, "total": float(t), "count": n} for m, t, n in cur.fetchall()]
+
+
+def get_budget_status(conn, *, individual_id=None, business_id=None, date_from, date_to):
+    """Every Categoría/Subcategoría that has a monthly_budget, with its gasto
+    in the range: [{'category', 'subcategory', 'budget', 'spent'}]."""
+    spent = {(r["category"], r["subcategory"]): r["total"]
+             for r in get_top_spending(conn, individual_id=individual_id, business_id=business_id,
+                                       date_from=date_from, date_to=date_to, limit=10_000)}
+    out = []
+    for c in list_categories(conn, individual_id=individual_id, business_id=business_id):
+        budget = get_category_budget(conn, individual_id=individual_id, business_id=business_id,
+                                     category=c["category"], subcategory=c["subcategory"])
+        if not budget:
+            continue
+        out.append({
+            "category": c["category"],
+            "subcategory": c["subcategory"],
+            "budget": budget,
+            "spent": spent.get((c["category"], c["subcategory"]), 0.0),
+        })
+    return out
+
+
+def get_category_month_matrix(conn, *, individual_id=None, business_id=None,
+                              date_from, date_to):
+    """Ingresos and gastos per Categoría/Subcategoría per month, for export.
+
+    Returns [{'tipo': 'credito'|'debito', 'category', 'subcategory',
+    'by_month': {'YYYY-MM': total}}], ingresos first, then gastos, each
+    alphabetical by category.
+    """
+    scope_sql, params = _scope_filter(individual_id, business_id)
+    sql = f"""
+        SELECT e.transaction_type_guess, n.final_category, n.final_subcategory,
+               to_char(date_trunc('month', r.local_date), 'YYYY-MM') AS ym,
+               SUM(e.amount_local)
+        FROM core.transactions_enriched e
+        JOIN core.transactions_raw r ON r.id = e.raw_id
+        JOIN core.transactions_classified c ON c.raw_id = e.raw_id
+        JOIN core.transactions_notifications n ON n.classified_id = c.id
+        WHERE {scope_sql} AND {_BASE_FILTERS}
+          AND e.transaction_type_guess IN ('credito', 'debito')
+          AND r.local_date::date BETWEEN %s AND %s
+        GROUP BY 1, 2, 3, 4
+        ORDER BY (e.transaction_type_guess = 'credito') DESC, 2, 3 NULLS FIRST, 4
+    """
+    rows = {}
+    with conn.cursor() as cur:
+        cur.execute(sql, params + [date_from, date_to])
+        for tipo, cat, sub, ym, total in cur.fetchall():
+            rows.setdefault((tipo, cat, sub), {})[ym] = float(total)
+    return [{"tipo": t, "category": c, "subcategory": s, "by_month": bm}
+            for (t, c, s), bm in rows.items()]

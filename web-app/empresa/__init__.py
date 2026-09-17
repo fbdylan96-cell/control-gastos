@@ -24,6 +24,7 @@ from db import (activate_subscription_from_paypal, apply_discount_code,
                 touch_broker_credentials_used, update_subscription_from_paypal)
 from mailer import enviar_aviso_cambio_contrasena, enviar_link_reset_contrasena
 from tools import finance
+import dashboard_data
 from utils import (BANK_NOTIFICATION_SENDERS, CLIENT_NOTES_MAX_LEN,
                    clean_client_notes, gen_email_forward, gen_password,
                    load_reset_token, make_reset_token, rate_limit_ok,
@@ -61,7 +62,8 @@ def admin_required(f):
 @empresa_bp.route("/", methods=["GET", "POST"])
 def login():
     if "user_id" in session:
-        return redirect(url_for("empresa.transacciones"))
+        return redirect(url_for("empresa.dashboard" if session.get("business_admin")
+                                else "empresa.transacciones"))
 
     error = None
     if request.method == "POST":
@@ -90,7 +92,10 @@ def login():
             session["business_id"] = str(user["business_id"])
             session["client_name"] = user["client_name"]
             session["consent_ok"] = bool(user["data_privacy_approval"] and user["messaging_approval"])
-            return redirect(url_for("empresa.transacciones"))
+            # El dashboard es lo primero que ve el admin al entrar; los miembros
+            # sin rol de admin no lo tienen y van a sus transacciones.
+            return redirect(url_for("empresa.dashboard" if session["business_admin"]
+                                    else "empresa.transacciones"))
 
         error = "Usuario o contraseña incorrectos."
 
@@ -835,29 +840,21 @@ def agregar_transaccion():
 @empresa_bp.route("/dashboard")
 @admin_required
 def dashboard():
-    return render_template("empresa/dashboard.html")
+    return render_template("empresa/dashboard.html", dash_urls={
+        "resumen": url_for("empresa.dashboard_resumen"),
+        "categoria": url_for("empresa.dashboard_categoria"),
+        "descargar": url_for("empresa.dashboard_descargar"),
+    })
 
 
-@empresa_bp.route("/dashboard/general")
+@empresa_bp.route("/dashboard/resumen")
 @admin_required
-def dashboard_general():
-    date_from, date_to = finance.resolve_range(request.args.get("range", "ultimo_anio"))
+def dashboard_resumen():
     conn = get_connection()
     try:
-        summary = finance.get_income_expense_summary(
-            conn, business_id=session["business_id"], date_from=date_from, date_to=date_to)
-        top = finance.get_top_spending(
-            conn, business_id=session["business_id"], date_from=date_from, date_to=date_to, limit=5)
-        categories = finance.list_categories(conn, business_id=session["business_id"])
+        return jsonify(dashboard_data.resumen(conn, {"business_id": session["business_id"]}))
     finally:
         conn.close()
-    return jsonify({
-        "summary": summary,
-        "top": top,
-        "categories": categories,
-        "date_from": str(date_from),
-        "date_to": str(date_to),
-    })
 
 
 @empresa_bp.route("/dashboard/categoria")
@@ -867,22 +864,28 @@ def dashboard_categoria():
     subcategory = request.args.get("sub", "").strip() or None
     if not category:
         return jsonify({"error": "missing category"}), 400
-    date_from, date_to = finance.last_12_months_range(date.today())
     conn = get_connection()
     try:
-        series = finance.get_monthly_category_spending(
-            conn, business_id=session["business_id"], category=category,
-            subcategory=subcategory, date_from=date_from, date_to=date_to)
-        budget = finance.get_category_budget(
-            conn, business_id=session["business_id"], category=category, subcategory=subcategory)
+        return jsonify(dashboard_data.categoria(
+            conn, {"business_id": session["business_id"]}, category, subcategory))
     finally:
         conn.close()
-    return jsonify({
-        "series": series,
-        "budget": budget,
-        "category": category,
-        "subcategory": subcategory,
-    })
+
+
+@empresa_bp.route("/dashboard/descargar")
+@admin_required
+def dashboard_descargar():
+    conn = get_connection()
+    try:
+        buf, filename = dashboard_data.excel(conn, {"business_id": session["business_id"]})
+    finally:
+        conn.close()
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 # ── Reportes ──────────────────────────────────────────────────────────────────

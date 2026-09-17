@@ -46,6 +46,12 @@
     <nav class="sidebar">
       <ul style="list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px;">
         <li>
+          <a href="{{ url_for('persona.dashboard') }}"
+             class="nav-link {% if request.endpoint == 'persona.dashboard' %}active{% endif %}">
+            <i class="bi bi-bar-chart-line"></i>Dashboard
+          </a>
+        </li>
+        <li>
           <a href="{{ url_for('persona.transacciones') }}"
              class="nav-link {% if request.endpoint == 'persona.transacciones' %}active{% endif %}">
             <i class="bi bi-clock-history"></i>Transacciones recientes
@@ -76,12 +82,6 @@
           <a href="{{ url_for('persona.reportes') }}"
              class="nav-link {% if request.endpoint in ['persona.reportes', 'persona.reportes_download'] %}active{% endif %}">
             <i class="bi bi-file-earmark-spreadsheet"></i>Reportes
-          </a>
-        </li>
-        <li>
-          <a href="{{ url_for('persona.dashboard') }}"
-             class="nav-link {% if request.endpoint == 'persona.dashboard' %}active{% endif %}">
-            <i class="bi bi-bar-chart-line"></i>Dashboard
           </a>
         </li>
         <li>
